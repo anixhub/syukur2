@@ -493,10 +493,20 @@ export default function HomeView({
   const [activitySearchTerm, setActivitySearchTerm] = useState('');
   const [activityAdminFilter, setActivityAdminFilter] = useState('semua');
   const [activityModuleFilter, setActivityModuleFilter] = useState('semua');
-  const [activityDateFilter, setActivityDateFilter] = useState<'1hari' | '2minggu' | 'custom' | 'semua'>('1hari');
+  const [activityDateFilter, setActivityDateFilter] = useState<'1hari' | 'custom'>('1hari');
   const [activitySelectedDate, setActivitySelectedDate] = useState<string>(
     () => new Date().toISOString().split('T')[0]
   );
+
+  const getTodayYMD = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const getTwoWeeksAgoYMD = () => {
+    const d = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
   const [registeredAccounts, setRegisteredAccounts] = useState<any[]>([]);
 
   const [activityRefreshTrigger, setActivityRefreshTrigger] = useState(0);
@@ -921,9 +931,15 @@ export default function HomeView({
       }
     });
 
-    // Filter activities: only report santri data changes across all accounts; exclude system-only changes
+    // Filter activities: only report santri data changes; exclude system-only changes AND delete logs older than 14 days
+    const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
     const filteredList = list.filter(item => {
       if (item.module === 'Sistem' || item.actionType?.toLowerCase().includes('sistem') || item.actionType?.toLowerCase().includes('hak akses')) {
+        return false;
+      }
+      // Delete/Prune any log older than 14 days
+      if (now - item.timestamp > FOURTEEN_DAYS_MS) {
         return false;
       }
       return true;
@@ -936,20 +952,23 @@ export default function HomeView({
   const uniqueModules = ['Sekretariat', 'Keamanan', 'Keuangan', 'Pendidikan', 'Humas'];
 
   const filteredAdminActivities = useMemo(() => {
-    const now = Date.now();
-    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-    const TWO_WEEKS_MS = 14 * ONE_DAY_MS;
+    const todayYMD = getTodayYMD();
+    const minTwoWeeksYMD = getTwoWeeksAgoYMD();
+
+    // Clamp custom date if outside 2 weeks
+    let targetCustomYMD = activitySelectedDate;
+    if (targetCustomYMD < minTwoWeeksYMD) targetCustomYMD = minTwoWeeksYMD;
+    if (targetCustomYMD > todayYMD) targetCustomYMD = todayYMD;
 
     return adminActivityLogs.filter(item => {
-      // 1. Date Range Filter
+      const itemDate = new Date(item.timestamp);
+      const itemYMD = `${itemDate.getFullYear()}-${String(itemDate.getMonth() + 1).padStart(2, '0')}-${String(itemDate.getDate()).padStart(2, '0')}`;
+
+      // 1. Date Filter (Hari Ini vs Tanggal Spesifik maks 2 minggu)
       if (activityDateFilter === '1hari') {
-        if (now - item.timestamp > ONE_DAY_MS) return false;
-      } else if (activityDateFilter === '2minggu') {
-        if (now - item.timestamp > TWO_WEEKS_MS) return false;
-      } else if (activityDateFilter === 'custom' && activitySelectedDate) {
-        const itemDate = new Date(item.timestamp);
-        const itemYMD = `${itemDate.getFullYear()}-${String(itemDate.getMonth() + 1).padStart(2, '0')}-${String(itemDate.getDate()).padStart(2, '0')}`;
-        if (itemYMD !== activitySelectedDate) return false;
+        if (itemYMD !== todayYMD) return false;
+      } else if (activityDateFilter === 'custom') {
+        if (itemYMD !== targetCustomYMD) return false;
       }
 
       // 2. Search Term Filter
@@ -2370,26 +2389,33 @@ export default function HomeView({
                   </div>
 
                   {/* Filter Rentang Tanggal / Waktu */}
-                  <div className={activityDateFilter === 'custom' ? 'md:col-span-2' : 'md:col-span-3'}>
+                  <div className={activityDateFilter === 'custom' ? 'md:col-span-3' : 'md:col-span-3'}>
                     <select
                       value={activityDateFilter}
-                      onChange={(e) => setActivityDateFilter(e.target.value as any)}
+                      onChange={(e) => setActivityDateFilter(e.target.value as '1hari' | 'custom')}
                       className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-slate-700 cursor-pointer"
                     >
-                      <option value="1hari">⏱️ 1 Hari (Hari Ini)</option>
-                      <option value="2minggu">🗓️ 2 Minggu Terakhir</option>
-                      <option value="custom">📅 Tanggal Spesifik...</option>
-                      <option value="semua">♾️ Semua Waktu</option>
+                      <option value="1hari">⏱️ Hari Ini</option>
+                      <option value="custom">📅 Tanggal Spesifik (Maks. 2 Minggu)</option>
                     </select>
                   </div>
 
                   {/* Date Input if custom */}
                   {activityDateFilter === 'custom' && (
-                    <div className="md:col-span-2">
+                    <div className="md:col-span-3">
                       <input
                         type="date"
                         value={activitySelectedDate}
-                        onChange={(e) => setActivitySelectedDate(e.target.value)}
+                        min={getTwoWeeksAgoYMD()}
+                        max={getTodayYMD()}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const minD = getTwoWeeksAgoYMD();
+                          const maxD = getTodayYMD();
+                          if (val && val < minD) setActivitySelectedDate(minD);
+                          else if (val && val > maxD) setActivitySelectedDate(maxD);
+                          else setActivitySelectedDate(val);
+                        }}
                         className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-slate-700 cursor-pointer"
                       />
                     </div>
@@ -2434,10 +2460,8 @@ export default function HomeView({
                     <span className="flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                       Filter Waktu: {
-                        activityDateFilter === '1hari' ? '1 Hari Terakhir (Hari Ini)' :
-                        activityDateFilter === '2minggu' ? '2 Minggu Terakhir' :
-                        activityDateFilter === 'custom' ? `Tanggal: ${activitySelectedDate}` :
-                        'Semua Waktu'
+                        activityDateFilter === '1hari' ? 'Hari Ini' :
+                        `Tanggal: ${activitySelectedDate}`
                       }
                     </span>
                     <span>Menampilkan <strong>{filteredAdminActivities.length}</strong> aktivitas</span>

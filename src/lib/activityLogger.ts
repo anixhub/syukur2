@@ -48,7 +48,9 @@ export function logAdminActivity(
     const existing = localStorage.getItem('smartsantri_admin_activity_logs');
     const logs: AdminActivityLog[] = existing ? JSON.parse(existing) : [];
     logs.unshift(newLog);
-    const trimmed = logs.slice(0, 100);
+    const now = Date.now();
+    const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
+    const trimmed = logs.filter(l => (now - l.timestamp) <= FOURTEEN_DAYS_MS).slice(0, 100);
     localStorage.setItem('smartsantri_admin_activity_logs', JSON.stringify(trimmed));
     window.dispatchEvent(new Event('smartsantri_activity_updated'));
   } catch (e) {
