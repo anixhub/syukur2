@@ -52,6 +52,7 @@ import DeleteConfirmModal from './sekretaris/DeleteConfirmModal';
 import SantriFormModal from './sekretaris/SantriFormModal';
 import OverviewSubModule from './sekretaris/OverviewSubModule';
 import AgeFilterModal, { AgeFilterConfig, DEFAULT_AGE_FILTER_CONFIG, calculateAgeOnDate } from './sekretaris/AgeFilterModal';
+import { ExcelColumnFilterModal, getColumnValueString } from './sekretaris/ExcelColumnFilter';
 
 // Extracted Modular Components
 import SantriTableView from './sekretaris/table/SantriTableView';
@@ -129,6 +130,32 @@ export default function SekretarisView({
   const [showEmisFilterDropdown, setShowEmisFilterDropdown] = useState<boolean>(false);
   const [isAgeModalOpen, setIsAgeModalOpen] = useState(false);
   const [ageFilterConfig, setAgeFilterConfig] = useState<AgeFilterConfig>(DEFAULT_AGE_FILTER_CONFIG);
+
+  // Excel Column Specific Filters State
+  const [excelColumnFilters, setExcelColumnFilters] = useState<Record<string, string[]>>({});
+  const [isExcelFilterModalOpen, setIsExcelFilterModalOpen] = useState(false);
+
+  const handleApplyExcelFilter = (colKey: string, selectedValues: string[] | undefined) => {
+    setExcelColumnFilters(prev => {
+      const next = { ...prev };
+      if (!selectedValues || selectedValues.length === 0) {
+        delete next[colKey];
+      } else {
+        next[colKey] = selectedValues;
+      }
+      return next;
+    });
+    setCurrentPage(1);
+  };
+
+  const handleResetAllExcelFilters = () => {
+    setExcelColumnFilters({});
+    setCurrentPage(1);
+  };
+
+  const activeExcelFilterCount = Object.keys(excelColumnFilters).filter(
+    k => excelColumnFilters[k] && excelColumnFilters[k].length > 0
+  ).length;
 
   // Sorting, Pagination, and Column Visibility States
   const [sortKey, setSortKey] = useState<string>('nama');
@@ -1181,7 +1208,19 @@ export default function SekretarisView({
       }
     }
 
-    return matchesSearch && matchesStatus && matchesGender && matchesDomisili && matchesEmis && matchesAge;
+    // Excel Column Filters
+    let matchesExcelColumnFilters = true;
+    for (const [colKey, allowedVals] of Object.entries(excelColumnFilters)) {
+      if (allowedVals && allowedVals.length > 0) {
+        const val = getColumnValueString(s, colKey, ageFilterConfig);
+        if (!allowedVals.includes(val)) {
+          matchesExcelColumnFilters = false;
+          break;
+        }
+      }
+    }
+
+    return matchesSearch && matchesStatus && matchesGender && matchesDomisili && matchesEmis && matchesAge && matchesExcelColumnFilters;
   });
 
   // Sort Data
@@ -1211,7 +1250,7 @@ export default function SekretarisView({
   // Reset page number on filter changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, statusFilter, genderFilter, domisiliFilter, emisFilter, ageFilterConfig]);
+  }, [searchQuery, statusFilter, genderFilter, domisiliFilter, emisFilter, ageFilterConfig, excelColumnFilters]);
 
   // Pagination calculation
   const totalItems = sortedSantri.length;
@@ -1879,10 +1918,33 @@ export default function SekretarisView({
                     ? 'border-emerald-200 bg-emerald-50/30 text-emerald-800'
                     : 'border-slate-200 bg-white text-slate-600'
                 }`}
-                title="Filter"
+                title="Filter Umum"
               >
                 <Filter className="h-4 w-4 text-current" />
                 <span>Filter</span>
+              </button>
+
+              {/* Tombol Filter Excel Per Kolom */}
+              <button
+                id="btn-excel-filter-modal-toggle"
+                type="button"
+                onClick={() => setIsExcelFilterModalOpen(true)}
+                className={`flex h-11 items-center justify-center gap-1.5 rounded-xl border px-3.5 sm:px-4 font-display text-xs font-bold transition-all hover:bg-slate-50 shrink-0 whitespace-nowrap cursor-pointer ${
+                  isSelectionMode ? 'hidden' : 'flex'
+                } ${
+                  activeExcelFilterCount > 0
+                    ? 'border-emerald-300 bg-emerald-50 text-emerald-800 shadow-2xs'
+                    : 'border-slate-200 bg-white text-slate-600'
+                }`}
+                title="Filter & Urutkan Excel Per Kolom"
+              >
+                <SlidersHorizontal className="h-4 w-4 text-emerald-600 shrink-0" />
+                <span>Filter Kolom</span>
+                {activeExcelFilterCount > 0 && (
+                  <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-emerald-600 px-1.5 text-[10px] font-bold text-white shrink-0">
+                    {activeExcelFilterCount}
+                  </span>
+                )}
               </button>
 
               {/* Mobile Sort Button (Card mode & Santri subtab) */}
@@ -2513,6 +2575,8 @@ export default function SekretarisView({
               isMonitoringMode={isMonitoringMode}
               monitoringActiveTab={monitoringActiveTab}
               mandatoryKeys={mandatoryKeys}
+              excelColumnFilters={excelColumnFilters}
+              onApplyExcelFilter={handleApplyExcelFilter}
             />
           ) : (
             <SantriCardView
@@ -3055,6 +3119,22 @@ export default function SekretarisView({
           </motion.div>
         )}
       </AnimatePresence>
+      {/* Excel Column Filter Modal */}
+      <ExcelColumnFilterModal
+        isOpen={isExcelFilterModalOpen}
+        onClose={() => setIsExcelFilterModalOpen(false)}
+        santriList={santriList}
+        excelColumnFilters={excelColumnFilters}
+        onApplyFilter={handleApplyExcelFilter}
+        onResetAllFilters={handleResetAllExcelFilters}
+        sortKey={sortKey}
+        sortDirection={sortDirection}
+        onApplySort={(colKey, dir) => {
+          setSortKey(colKey);
+          setSortDirection(dir);
+        }}
+        ageFilterConfig={ageFilterConfig}
+      />
     </div>
   );
 }

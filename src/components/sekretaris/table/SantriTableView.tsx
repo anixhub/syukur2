@@ -20,7 +20,8 @@ import {
   AlertTriangle,
   AlertCircle,
   Lock,
-  School
+  School,
+  Filter
 } from 'lucide-react';
 import { Santri, Lembaga, Kelas, isGenderMatch } from '../../../types';
 import { demoteSantriToCalonPesertaDidik, PENDIDIKAN_OPTIONS, normalizePendidikan, formatDateDDMMYYYY, parseCatatanInvalid, formatCatatanWithInvalid, parseCatatanInvalidParts, formatCatatanParts } from '../../../lib/utils';
@@ -29,6 +30,7 @@ import { MembershipBadge } from '../components/HelperComponents';
 import { AgeFilterConfig, calculateAgeOnDate } from '../AgeFilterModal';
 import { fetchTableData } from '../../../lib/api';
 import { DEFAULT_WAJIB_KEYS } from '../../../constants/monitoringColumns';
+import { ExcelFilterPopover, getColumnLabel } from '../ExcelColumnFilter';
 
 interface SantriTableViewProps {
   paginatedSantri: Santri[];
@@ -58,6 +60,8 @@ interface SantriTableViewProps {
   isMonitoringMode?: boolean;
   monitoringActiveTab?: 'wajib' | 'tidak_wajib';
   mandatoryKeys?: (keyof Santri)[];
+  excelColumnFilters?: Record<string, string[]>;
+  onApplyExcelFilter?: (colKey: string, selectedValues: string[] | undefined) => void;
 }
 
 const isSantriDataComplete = (s: Santri): boolean => {
@@ -204,7 +208,9 @@ export default function SantriTableView({
   isMonitoringMode = false,
   monitoringActiveTab = 'wajib',
   mandatoryKeys = [],
-  allSantri
+  allSantri,
+  excelColumnFilters,
+  onApplyExcelFilter
 }: SantriTableViewProps) {
   const shouldShowColumn = (colKey: string): boolean => {
     if (colKey === 'nama') return true;
@@ -246,6 +252,9 @@ export default function SantriTableView({
     rect: { top: number; bottom: number; left: number; width: number; height: number };
     colStats: { total: number; filled: number; empty: number; pct: number };
   } | null>(null);
+
+  const [activeHeaderFilterKey, setActiveHeaderFilterKey] = React.useState<string | null>(null);
+  const [headerFilterAnchor, setHeaderFilterAnchor] = React.useState<{ top: number; left: number; right?: number; bottom?: number } | null>(null);
 
   const isNoColumnComplete = (): boolean => {
     const dataset = getSantriDataset();
@@ -1073,6 +1082,30 @@ export default function SantriTableView({
               )
             ) : (
               <ArrowUpDown className="h-3 w-3 text-slate-300 hover:text-slate-500 shrink-0" />
+            )}
+            {key !== 'nama' && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  setActiveHeaderFilterKey(key);
+                  setHeaderFilterAnchor({
+                    top: rect.top,
+                    left: rect.left,
+                    bottom: rect.bottom,
+                    right: rect.right
+                  });
+                }}
+                className={`ml-1 flex h-5 w-5 items-center justify-center rounded transition-all cursor-pointer ${
+                  excelColumnFilters?.[key] && excelColumnFilters[key].length > 0
+                    ? 'bg-emerald-600 text-white shadow-2xs hover:bg-emerald-700'
+                    : 'text-slate-300 hover:text-emerald-700 hover:bg-emerald-50'
+                }`}
+                title={`Filter & Urutkan Excel Kolom ${label}`}
+              >
+                <Filter className="h-3 w-3 stroke-[2.5]" />
+              </button>
             )}
           </div>
           {subtext && (
@@ -2995,6 +3028,30 @@ export default function SantriTableView({
           </div>
         </div>,
         document.body
+      )}
+      {/* Render Excel Filter Popover for Header Click */}
+      {activeHeaderFilterKey && headerFilterAnchor && (
+        <ExcelFilterPopover
+          colKey={activeHeaderFilterKey}
+          colLabel={getColumnLabel(activeHeaderFilterKey)}
+          santriList={allSantri && allSantri.length > 0 ? allSantri : paginatedSantri}
+          selectedValues={excelColumnFilters?.[activeHeaderFilterKey]}
+          onApplyFilter={(colKey, vals) => {
+            onApplyExcelFilter?.(colKey, vals);
+          }}
+          sortKey={sortKey}
+          sortDirection={sortDirection}
+          onApplySort={(colKey, dir) => {
+            setSortKey(colKey);
+            setSortDirection(dir);
+          }}
+          onClose={() => {
+            setActiveHeaderFilterKey(null);
+            setHeaderFilterAnchor(null);
+          }}
+          anchorRect={headerFilterAnchor}
+          ageFilterConfig={ageFilterConfig}
+        />
       )}
     </div>
   );
