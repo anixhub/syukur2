@@ -2,8 +2,6 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   Filter, 
-  ArrowUp, 
-  ArrowDown, 
   Search, 
   X, 
   Check, 
@@ -211,7 +209,7 @@ export function ExcelFilterPopover({
           </div>
           <div className="min-w-0">
             <h4 className="text-xs font-bold text-slate-800 truncate">{colLabel}</h4>
-            <p className="text-[10px] text-slate-400 font-medium">Filter & Pengurutan Excel</p>
+            <p className="text-[10px] text-slate-400 font-medium">Filter Nilai Unik</p>
           </div>
         </div>
         <button
@@ -223,51 +221,8 @@ export function ExcelFilterPopover({
         </button>
       </div>
 
-      {/* Sorting Buttons */}
-      <div className="my-2.5 flex flex-col gap-1">
-        <button
-          type="button"
-          onClick={() => {
-            onApplySort(colKey, 'asc');
-            onClose();
-          }}
-          className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ${
-            isCurrentSortedAsc
-              ? 'bg-emerald-50 text-emerald-700 font-bold border border-emerald-200'
-              : 'text-slate-700 hover:bg-slate-100/80'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <ArrowUp className="h-3.5 w-3.5 text-emerald-600" />
-            <span>Urutkan A → Z (Ascending)</span>
-          </div>
-          {isCurrentSortedAsc && <Check className="h-3.5 w-3.5 text-emerald-600 stroke-[3]" />}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            onApplySort(colKey, 'desc');
-            onClose();
-          }}
-          className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ${
-            isCurrentSortedDesc
-              ? 'bg-emerald-50 text-emerald-700 font-bold border border-emerald-200'
-              : 'text-slate-700 hover:bg-slate-100/80'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <ArrowDown className="h-3.5 w-3.5 text-emerald-600" />
-            <span>Urutkan Z → A (Descending)</span>
-          </div>
-          {isCurrentSortedDesc && <Check className="h-3.5 w-3.5 text-emerald-600 stroke-[3]" />}
-        </button>
-      </div>
-
-      <div className="border-t border-slate-100 my-2" />
-
       {/* Filter Section */}
-      <div className="space-y-2">
+      <div className="mt-2.5 space-y-2">
         {/* Search Input */}
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
@@ -453,9 +408,9 @@ export function ExcelColumnFilterModal({
               <SlidersHorizontal className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-800">Filter & Urutkan Per Kolom (Excel)</h3>
+              <h3 className="text-base font-bold text-slate-800">Filter Per Kolom (Excel)</h3>
               <p className="text-xs text-slate-500">
-                Atur filter nilai unik dan pengurutan untuk seluruh kolom
+                Atur filter nilai unik untuk seluruh kolom
               </p>
             </div>
           </div>
