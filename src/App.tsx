@@ -568,12 +568,53 @@ export default function App() {
         `Status Keanggotaan: ${newStatus} | NIS: ${processed.nis || '-'} | Kamar: ${processed.kamar || '-'}`
       );
     } else {
-      logAdminActivity(
-        'Sekretariat',
-        'Update Data Santri',
-        `Memperbarui data santri "${processed.nama}" (Status: ${newStatus})`,
-        `Kamar: ${processed.kamar || '-'} | Kelas: ${processed.kelas || '-'}`
-      );
+      const changes: string[] = [];
+      let isClassChanged = false;
+
+      if (existingSantri) {
+        if ((existingSantri.kelas || '') !== (processed.kelas || '')) {
+          isClassChanged = true;
+          changes.push(`Kelas: "${existingSantri.kelas || 'Tanpa Kelas'}" ➔ "${processed.kelas || 'Tanpa Kelas'}"`);
+        }
+        if ((existingSantri.kamar || '') !== (processed.kamar || '')) {
+          changes.push(`Kamar: "${existingSantri.kamar || '-'}" ➔ "${processed.kamar || '-'}"`);
+        }
+        if ((existingSantri.nomorLemari || '') !== (processed.nomorLemari || '')) {
+          changes.push(`Lemari: "${existingSantri.nomorLemari || '-'}" ➔ "${processed.nomorLemari || '-'}"`);
+        }
+        if ((existingSantri.pendidikanFormal || '') !== (processed.pendidikanFormal || '')) {
+          changes.push(`Formal: "${existingSantri.pendidikanFormal || '-'}" ➔ "${processed.pendidikanFormal || '-'}"`);
+        }
+        if ((existingSantri.pendidikanInternal || '') !== (processed.pendidikanInternal || '')) {
+          changes.push(`Internal: "${existingSantri.pendidikanInternal || '-'}" ➔ "${processed.pendidikanInternal || '-'}"`);
+        }
+        if (existingSantri.nama !== processed.nama) {
+          changes.push(`Nama: "${existingSantri.nama}" ➔ "${processed.nama}"`);
+        }
+      }
+
+      if (isClassChanged) {
+        logAdminActivity(
+          'Pendidikan',
+          'Update Kelas Santri',
+          `Mengubah data kelas santri "${processed.nama}"`,
+          changes.join(' | ')
+        );
+      } else if (changes.length > 0) {
+        logAdminActivity(
+          'Sekretariat',
+          'Update Data Santri',
+          `Memperbarui data santri "${processed.nama}"`,
+          changes.join(' | ')
+        );
+      } else {
+        logAdminActivity(
+          'Sekretariat',
+          'Update Data Santri',
+          `Memperbarui data santri "${processed.nama}" (Status: ${newStatus})`,
+          `Kamar: ${processed.kamar || '-'} | Kelas: ${processed.kelas || '-'}`
+        );
+      }
     }
 
     pendingOperations.current.set(processed.id, { data: processed, timestamp: Date.now() });
