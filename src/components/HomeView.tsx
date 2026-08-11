@@ -493,6 +493,10 @@ export default function HomeView({
   const [activitySearchTerm, setActivitySearchTerm] = useState('');
   const [activityAdminFilter, setActivityAdminFilter] = useState('semua');
   const [activityModuleFilter, setActivityModuleFilter] = useState('semua');
+  const [activityDateFilter, setActivityDateFilter] = useState<'1hari' | '2minggu' | 'custom' | 'semua'>('1hari');
+  const [activitySelectedDate, setActivitySelectedDate] = useState<string>(
+    () => new Date().toISOString().split('T')[0]
+  );
   const [registeredAccounts, setRegisteredAccounts] = useState<any[]>([]);
 
   const [activityRefreshTrigger, setActivityRefreshTrigger] = useState(0);
@@ -932,18 +936,38 @@ export default function HomeView({
   const uniqueModules = ['Sekretariat', 'Keamanan', 'Keuangan', 'Pendidikan', 'Humas'];
 
   const filteredAdminActivities = useMemo(() => {
+    const now = Date.now();
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    const TWO_WEEKS_MS = 14 * ONE_DAY_MS;
+
     return adminActivityLogs.filter(item => {
+      // 1. Date Range Filter
+      if (activityDateFilter === '1hari') {
+        if (now - item.timestamp > ONE_DAY_MS) return false;
+      } else if (activityDateFilter === '2minggu') {
+        if (now - item.timestamp > TWO_WEEKS_MS) return false;
+      } else if (activityDateFilter === 'custom' && activitySelectedDate) {
+        const itemDate = new Date(item.timestamp);
+        const itemYMD = `${itemDate.getFullYear()}-${String(itemDate.getMonth() + 1).padStart(2, '0')}-${String(itemDate.getDate()).padStart(2, '0')}`;
+        if (itemYMD !== activitySelectedDate) return false;
+      }
+
+      // 2. Search Term Filter
       if (activitySearchTerm.trim()) {
         const q = activitySearchTerm.toLowerCase();
         const fullText = `${item.adminName} ${item.adminRole} ${item.module} ${item.actionType} ${item.description} ${item.details}`.toLowerCase();
         if (!fullText.includes(q)) return false;
       }
+
+      // 3. Admin Filter
       if (activityAdminFilter !== 'semua') {
         const filterLow = activityAdminFilter.toLowerCase();
         if (!item.adminName.toLowerCase().includes(filterLow) && !item.adminRole.toLowerCase().includes(filterLow)) {
           return false;
         }
       }
+
+      // 4. Module Filter
       if (activityModuleFilter !== 'semua') {
         if (item.module.toLowerCase() !== activityModuleFilter.toLowerCase()) {
           return false;
@@ -951,7 +975,7 @@ export default function HomeView({
       }
       return true;
     });
-  }, [adminActivityLogs, activitySearchTerm, activityAdminFilter, activityModuleFilter]);
+  }, [adminActivityLogs, activitySearchTerm, activityAdminFilter, activityModuleFilter, activityDateFilter, activitySelectedDate]);
 
   const allActivities = useMemo(() => {
     if (adminActivityLogs.length === 0) {
@@ -2326,13 +2350,13 @@ export default function HomeView({
               <div className="p-4 bg-slate-50/80 border-b border-slate-200 space-y-3 shrink-0">
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5">
                   {/* Search box */}
-                  <div className="md:col-span-6 relative">
+                  <div className={`relative ${activityDateFilter === 'custom' ? 'md:col-span-3' : 'md:col-span-5'}`}>
                     <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
                       value={activitySearchTerm}
                       onChange={(e) => setActivitySearchTerm(e.target.value)}
-                      placeholder="Cari nama admin, santri, atau deskripsi aktivitas..."
+                      placeholder="Cari nama admin, santri, atau deskripsi..."
                       className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
                     />
                     {activitySearchTerm && (
@@ -2345,14 +2369,40 @@ export default function HomeView({
                     )}
                   </div>
 
+                  {/* Filter Rentang Tanggal / Waktu */}
+                  <div className={activityDateFilter === 'custom' ? 'md:col-span-2' : 'md:col-span-3'}>
+                    <select
+                      value={activityDateFilter}
+                      onChange={(e) => setActivityDateFilter(e.target.value as any)}
+                      className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-slate-700 cursor-pointer"
+                    >
+                      <option value="1hari">⏱️ 1 Hari (Hari Ini)</option>
+                      <option value="2minggu">🗓️ 2 Minggu Terakhir</option>
+                      <option value="custom">📅 Tanggal Spesifik...</option>
+                      <option value="semua">♾️ Semua Waktu</option>
+                    </select>
+                  </div>
+
+                  {/* Date Input if custom */}
+                  {activityDateFilter === 'custom' && (
+                    <div className="md:col-span-2">
+                      <input
+                        type="date"
+                        value={activitySelectedDate}
+                        onChange={(e) => setActivitySelectedDate(e.target.value)}
+                        className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-slate-700 cursor-pointer"
+                      />
+                    </div>
+                  )}
+
                   {/* Filter Admin */}
-                  <div className="md:col-span-3">
+                  <div className={activityDateFilter === 'custom' ? 'md:col-span-3' : 'md:col-span-2'}>
                     <select
                       value={activityAdminFilter}
                       onChange={(e) => setActivityAdminFilter(e.target.value)}
                       className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-slate-700 cursor-pointer"
                     >
-                      <option value="semua">👥 Semua Admin ({uniqueAdmins.length})</option>
+                      <option value="semua">👥 Semua Admin</option>
                       {uniqueAdmins.map((adm) => (
                         <option key={adm} value={adm}>
                           👤 {adm}
@@ -2362,7 +2412,7 @@ export default function HomeView({
                   </div>
 
                   {/* Filter Modul */}
-                  <div className="md:col-span-3">
+                  <div className={activityDateFilter === 'custom' ? 'md:col-span-2' : 'md:col-span-2'}>
                     <select
                       value={activityModuleFilter}
                       onChange={(e) => setActivityModuleFilter(e.target.value)}
@@ -2371,7 +2421,7 @@ export default function HomeView({
                       <option value="semua">📁 Semua Modul</option>
                       {uniqueModules.map((mod) => (
                         <option key={mod} value={mod}>
-                          📁 Modul {mod}
+                          📁 {mod}
                         </option>
                       ))}
                     </select>
@@ -2379,20 +2429,27 @@ export default function HomeView({
                 </div>
 
                 {/* Quick Info Bar */}
-                <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 pt-0.5">
-                  <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-between text-[11px] font-semibold text-slate-500 pt-0.5 gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                      Pencatatan Otomatis Aktif
+                      Filter Waktu: {
+                        activityDateFilter === '1hari' ? '1 Hari Terakhir (Hari Ini)' :
+                        activityDateFilter === '2minggu' ? '2 Minggu Terakhir' :
+                        activityDateFilter === 'custom' ? `Tanggal: ${activitySelectedDate}` :
+                        'Semua Waktu'
+                      }
                     </span>
                     <span>Menampilkan <strong>{filteredAdminActivities.length}</strong> aktivitas</span>
                   </div>
-                  {(activitySearchTerm || activityAdminFilter !== 'semua' || activityModuleFilter !== 'semua') && (
+                  {(activitySearchTerm || activityAdminFilter !== 'semua' || activityModuleFilter !== 'semua' || activityDateFilter !== '1hari') && (
                     <button
                       onClick={() => {
                         setActivitySearchTerm('');
                         setActivityAdminFilter('semua');
                         setActivityModuleFilter('semua');
+                        setActivityDateFilter('1hari');
+                        setActivitySelectedDate(new Date().toISOString().split('T')[0]);
                       }}
                       className="text-emerald-700 hover:text-emerald-800 font-bold underline cursor-pointer"
                     >
