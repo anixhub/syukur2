@@ -16,6 +16,14 @@ export interface AccountRole {
   permissions: { [key: string]: boolean };
 }
 
+export function normalizeRoleId(roleId: string): string {
+  if (!roleId) return 'superadmin';
+  const lowered = roleId.toLowerCase().trim();
+  if (lowered === 'humas_putra') return 'humasy_putra';
+  if (lowered === 'humas_putri') return 'humasy_putri';
+  return lowered;
+}
+
 // Dynamic builder to construct full 20 permissions dict per role
 export const buildPermissions = (activeModules: string | string[], activeActions: string[]) => {
   const perms: { [key: string]: boolean } = {};
@@ -28,13 +36,16 @@ export const buildPermissions = (activeModules: string | string[], activeActions
   ];
   const actions = ['view', 'write'];
 
-  const activeList = typeof activeModules === 'string' ? [activeModules] : activeModules;
+  const activeListRaw = typeof activeModules === 'string' ? [activeModules] : activeModules;
+  const activeList = activeListRaw.map(normalizeRoleId);
 
   modules.forEach(m => {
     actions.forEach(a => {
       const key = `${m}.${a}`;
+      const aliasKey = `${m.replace('humasy_', 'humas_')}.${a}`;
       if (activeList.includes('superadmin')) {
         perms[key] = true;
+        perms[aliasKey] = true;
       } else {
         let matched = activeList.includes(m);
         if (activeList.includes('bendahara_pusat') && (m === 'bendahara_putra' || m === 'bendahara_putri')) {
@@ -45,9 +56,13 @@ export const buildPermissions = (activeModules: string | string[], activeActions
         }
 
         if (matched) {
-          perms[key] = activeActions.includes(a);
+          const val = activeActions.includes(a);
+          perms[key] = val;
+          perms[aliasKey] = val;
         } else {
-          perms[key] = a === 'view';
+          const val = a === 'view';
+          perms[key] = val;
+          perms[aliasKey] = val;
         }
       }
     });
@@ -179,6 +194,46 @@ export const DEFAULT_ROLES: AccountRole[] = [
   }
 ];
 
+export function getPermissionsForRole(roleId: string): { [key: string]: boolean } {
+  const normRole = normalizeRoleId(roleId);
+  if (normRole === 'superadmin') {
+    return buildPermissions('superadmin', []);
+  }
+
+  let roleObj: AccountRole | undefined;
+
+  const rolesPermissionsStr = localStorage.getItem('smartsantri_roles_permissions');
+  if (rolesPermissionsStr) {
+    try {
+      const rolesList = JSON.parse(rolesPermissionsStr);
+      if (Array.isArray(rolesList)) {
+        roleObj = rolesList.find((r: any) => normalizeRoleId(r.id) === normRole);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  if (!roleObj) {
+    roleObj = DEFAULT_ROLES.find((r: any) => normalizeRoleId(r.id) === normRole);
+  }
+
+  const perms = roleObj ? { ...(roleObj.permissions || {}) } : {};
+
+  // Ensure both humasy_ and humas_ key formats are present in returned object
+  Object.keys(perms).forEach(key => {
+    if (key.startsWith('humasy_')) {
+      const aliasKey = key.replace('humasy_', 'humas_');
+      perms[aliasKey] = perms[key];
+    } else if (key.startsWith('humas_')) {
+      const aliasKey = key.replace('humas_', 'humasy_');
+      perms[aliasKey] = perms[key];
+    }
+  });
+
+  return perms;
+}
+
 import { getApiUrl } from './api';
 
 export async function fetchAndSyncPermissionsFromDatabase(): Promise<AccountRole[]> {
@@ -230,13 +285,12 @@ export async function fetchAndSyncPermissionsFromDatabase(): Promise<AccountRole
     }
 
     const updatedRoles: AccountRole[] = DEFAULT_ROLES.map(defaultRole => {
-      const localRole = localRoles?.find(r => r.id === defaultRole.id) || defaultRole;
-      const matchedDbRole = dbRoles.find((r: any) => r.name === defaultRole.id);
-      if (!matchedDbRole) return localRole;
+      const localRole = localRoles?.find(r => normalizeRoleId(r.id) === defaultRole.id) || defaultRole;
+      const matchedDbRole = dbRoles.find((r: any) => normalizeRoleId(r.name) === defaultRole.id);
 
-      const assignedPermIds = dbRolePerms
+      const assignedPermIds = matchedDbRole ? dbRolePerms
         .filter((rp: any) => String(rp.role_id) === String(matchedDbRole.id))
-        .map((rp: any) => rp.permission_id);
+        .map((rp: any) => rp.permission_id) : [];
 
       const permissionsMap: { [key: string]: boolean } = {};
       
@@ -248,17 +302,25 @@ export async function fetchAndSyncPermissionsFromDatabase(): Promise<AccountRole
         'pendidikan_putra', 'pendidikan_putri'
       ];
       const actions = ['view', 'write'];
+
       modules.forEach(m => {
         actions.forEach(a => {
-          permissionsMap[`${m}.${a}`] = defaultRole.id === 'superadmin';
+          const permKey = `${m}.${a}`;
+          const val = localRole.permissions?.[permKey] ?? defaultRole.permissions[permKey] ?? (a === 'view');
+          permissionsMap[permKey] = val;
+          permissionsMap[`${m.replace('humasy_', 'humas_')}.${a}`] = val;
         });
       });
 
-      dbPerms.forEach((p: any) => {
-        if (assignedPermIds.includes(p.id)) {
-          permissionsMap[p.name] = true;
-        }
-      });
+      if (assignedPermIds.length > 0) {
+        dbPerms.forEach((p: any) => {
+          if (assignedPermIds.includes(p.id)) {
+            const normName = p.name.replace('humas_', 'humasy_');
+            permissionsMap[normName] = true;
+            permissionsMap[p.name] = true;
+          }
+        });
+      }
 
       return {
         ...defaultRole,

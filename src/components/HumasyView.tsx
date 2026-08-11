@@ -4,7 +4,7 @@ import { HumasAgenda, Santri, Kompleks, Kamar } from '../types';
 import KamarSub from './humas/KamarSub';
 import DataKamarSantriSub from './humas/DataKamarSantriSub';
 import { fetchTableData, insertTableRow, updateTableRow, deleteTableRow, subscribeRealtimeChanges } from '../lib/api';
-import { DEFAULT_ROLES } from '../lib/permissions';
+import { DEFAULT_ROLES, getPermissionsForRole, normalizeRoleId } from '../lib/permissions';
 
 interface HumasyViewProps {
   humasList?: HumasAgenda[];
@@ -36,34 +36,12 @@ export default function HumasyView({
 
   try {
     const activeRole = localStorage.getItem('smartsantri_active_role') || 'superadmin';
-    if (activeRole !== 'superadmin') {
-      const permissionsStr = localStorage.getItem('smartsantri_roles_permissions');
-      let roleObj;
-      if (permissionsStr) {
-        try {
-          const parsedRoles = JSON.parse(permissionsStr);
-          if (Array.isArray(parsedRoles)) {
-            roleObj = parsedRoles.find((r: any) => r.id === activeRole);
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      }
-      if (!roleObj) {
-        roleObj = DEFAULT_ROLES.find((r: any) => r.id === activeRole);
-      }
-
-      if (roleObj && roleObj.permissions) {
-        canViewPutra = !!roleObj.permissions['humasy_putra.view'];
-        canViewPutri = !!roleObj.permissions['humasy_putri.view'];
-        canWritePutra = !!roleObj.permissions['humasy_putra.write'];
-        canWritePutri = !!roleObj.permissions['humasy_putri.write'];
-      } else {
-        canViewPutra = false;
-        canViewPutri = false;
-        canWritePutra = false;
-        canWritePutri = false;
-      }
+    if (normalizeRoleId(activeRole) !== 'superadmin') {
+      const perms = getPermissionsForRole(activeRole);
+      canViewPutra = !!perms['humasy_putra.view'] || !!perms['humas_putra.view'];
+      canViewPutri = !!perms['humasy_putri.view'] || !!perms['humas_putri.view'];
+      canWritePutra = !!perms['humasy_putra.write'] || !!perms['humas_putra.write'];
+      canWritePutri = !!perms['humasy_putri.write'] || !!perms['humas_putri.write'];
     }
   } catch (e) {
     console.error('Error parsing permissions in HumasyView:', e);

@@ -27,7 +27,7 @@ import {
   Check,
   X
 } from 'lucide-react';
-import { DEFAULT_ROLES } from '../lib/permissions';
+import { DEFAULT_ROLES, getPermissionsForRole, normalizeRoleId } from '../lib/permissions';
 
 interface SidebarProps {
   activeModule: string;
@@ -221,30 +221,10 @@ export default function Sidebar({ activeModule, activeSubTab, onChangeModule, is
   }, []);
 
   const activeRole = localStorage.getItem('smartsantri_active_role') || 'superadmin';
-  const rolesPermissionsStr = localStorage.getItem('smartsantri_roles_permissions');
-
-  const permissions = (() => {
-    if (activeRole === 'superadmin') return null;
-    let currentRoleObj;
-    if (rolesPermissionsStr) {
-      try {
-        const rolesList = JSON.parse(rolesPermissionsStr);
-        if (Array.isArray(rolesList)) {
-          currentRoleObj = rolesList.find((r: any) => r.id === activeRole);
-        }
-      } catch (e) {
-        console.error(e);
-      }
-    }
-    // Fallback to DEFAULT_ROLES if not found in custom role permissions list
-    if (!currentRoleObj) {
-      currentRoleObj = DEFAULT_ROLES.find((r: any) => r.id === activeRole);
-    }
-    return currentRoleObj ? currentRoleObj.permissions || {} : {};
-  })();
+  const permissions = getPermissionsForRole(activeRole);
 
   const getFilteredMenuItems = () => {
-    if (activeRole === 'superadmin') return MENU_ITEMS;
+    if (normalizeRoleId(activeRole) === 'superadmin') return MENU_ITEMS;
     return MENU_ITEMS.filter(item => {
       if (item.id === 'home') return true;
       if (!permissions) return false;
@@ -271,7 +251,11 @@ export default function Sidebar({ activeModule, activeSubTab, onChangeModule, is
         return !!permissions['humasy_putra.view'] || 
                !!permissions['humasy_putra.write'] || 
                !!permissions['humasy_putri.view'] || 
-               !!permissions['humasy_putri.write'];
+               !!permissions['humasy_putri.write'] ||
+               !!permissions['humas_putra.view'] || 
+               !!permissions['humas_putra.write'] || 
+               !!permissions['humas_putri.view'] || 
+               !!permissions['humas_putri.write'];
       }
       if (item.id === 'keamanan') {
         return !!permissions['keamanan_putra.view'] || 

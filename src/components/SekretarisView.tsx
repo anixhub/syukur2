@@ -37,7 +37,7 @@ import {
 import { ALL_COLUMNS, DEFAULT_WAJIB_KEYS, DEFAULT_TABLE_COLUMNS } from '../constants/monitoringColumns';
 import { Santri } from '../types';
 import { formatClassNameOnly } from '../lib/utils';
-import { DEFAULT_ROLES } from '../lib/permissions';
+import { DEFAULT_ROLES, getPermissionsForRole, normalizeRoleId } from '../lib/permissions';
 import { 
   renderSantriAvatar,
   PrintTemplate,
@@ -232,34 +232,12 @@ export default function SekretarisView({
 
   try {
     const activeRole = localStorage.getItem('smartsantri_active_role') || 'superadmin';
-    if (activeRole !== 'superadmin') {
-      const permissionsStr = localStorage.getItem('smartsantri_roles_permissions');
-      let roleObj;
-      if (permissionsStr) {
-        try {
-          const parsedRoles = JSON.parse(permissionsStr);
-          if (Array.isArray(parsedRoles)) {
-            roleObj = parsedRoles.find((r: any) => r.id === activeRole);
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      }
-      if (!roleObj) {
-        roleObj = DEFAULT_ROLES.find((r: any) => r.id === activeRole);
-      }
-
-      if (roleObj && roleObj.permissions) {
-        canViewPutra = !!roleObj.permissions['sekretaris_putra.view'];
-        canViewPutri = !!roleObj.permissions['sekretaris_putri.view'];
-        canWritePutra = !!roleObj.permissions['sekretaris_putra.write'];
-        canWritePutri = !!roleObj.permissions['sekretaris_putri.write'];
-      } else {
-        canViewPutra = false;
-        canViewPutri = false;
-        canWritePutra = false;
-        canWritePutri = false;
-      }
+    if (normalizeRoleId(activeRole) !== 'superadmin') {
+      const perms = getPermissionsForRole(activeRole);
+      canViewPutra = !!perms['sekretaris_putra.view'];
+      canViewPutri = !!perms['sekretaris_putri.view'];
+      canWritePutra = !!perms['sekretaris_putra.write'];
+      canWritePutri = !!perms['sekretaris_putri.write'];
     }
   } catch (e) {
     console.error('Error parsing permissions in SekretarisView:', e);

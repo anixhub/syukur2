@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Eye, EyeOff, LogIn, Flag, Shield, Info, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { fetchTableData, insertTableRow, updateTableRow, getApiUrl } from '../lib/api';
-import { fetchAndSyncPermissionsFromSupabase } from '../lib/permissions';
+import { fetchAndSyncPermissionsFromSupabase, normalizeRoleId } from '../lib/permissions';
 import { AppCredentials } from '../types';
 
 interface LoginViewProps {
@@ -16,8 +16,8 @@ const ACCOUNT_TYPES = [
   { value: 'bendahara_putri', label: 'Bendahara Putri' },
   { value: 'pendidikan_putra', label: 'Pendidikan Putra' },
   { value: 'pendidikan_putri', label: 'Pendidikan Putri' },
-  { value: 'humas_putra', label: 'Humas Putra' },
-  { value: 'humas_putri', label: 'Humas Putri' },
+  { value: 'humasy_putra', label: 'Humas Putra' },
+  { value: 'humasy_putri', label: 'Humas Putri' },
   { value: 'keamanan_putra', label: 'Keamanan Putra' },
   { value: 'keamanan_putri', label: 'Keamanan Putri' }
 ];
@@ -231,7 +231,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
 
       // Successful login state
       localStorage.setItem('smartsantri_is_logged_in', 'true');
-      localStorage.setItem('smartsantri_active_role', user.role || 'superadmin');
+      localStorage.setItem('smartsantri_active_role', normalizeRoleId(user.role || 'superadmin'));
       localStorage.setItem('smartsantri_active_username', user.username || '');
       
       localStorage.setItem('smartsantri_active_display_name', user.displayName || user.username || '');
