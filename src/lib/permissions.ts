@@ -182,6 +182,21 @@ export const DEFAULT_ROLES: AccountRole[] = [
 import { getApiUrl } from './api';
 
 export async function fetchAndSyncPermissionsFromDatabase(): Promise<AccountRole[]> {
+  const getLocalRoles = (): AccountRole[] | null => {
+    try {
+      const local = localStorage.getItem('smartsantri_roles_permissions');
+      if (local) {
+        const parsed = JSON.parse(local);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed as AccountRole[];
+        }
+      }
+    } catch (e) {}
+    return null;
+  };
+
+  const localRoles = getLocalRoles();
+
   try {
     const [rolesRes, permsRes, rolePermsRes] = await Promise.all([
       fetch(getApiUrl("/api/db/roles")).catch(() => null),
@@ -190,7 +205,7 @@ export async function fetchAndSyncPermissionsFromDatabase(): Promise<AccountRole
     ]);
 
     if (!rolesRes || !permsRes || !rolePermsRes || !rolesRes.ok || !permsRes.ok || !rolePermsRes.ok) {
-      return DEFAULT_ROLES;
+      return localRoles || DEFAULT_ROLES;
     }
 
     let rolesData, permsData, rolePermsData;
@@ -199,20 +214,25 @@ export async function fetchAndSyncPermissionsFromDatabase(): Promise<AccountRole
       permsData = await permsRes.json();
       rolePermsData = await rolePermsRes.json();
     } catch (e) {
-      return DEFAULT_ROLES;
+      return localRoles || DEFAULT_ROLES;
     }
 
     if (!rolesData?.success || !permsData?.success || !rolePermsData?.success) {
-      return DEFAULT_ROLES;
+      return localRoles || DEFAULT_ROLES;
     }
 
     const dbRoles = rolesData.data || [];
     const dbPerms = permsData.data || [];
     const dbRolePerms = rolePermsData.data || [];
 
+    if (!Array.isArray(dbRoles) || dbRoles.length === 0 || !Array.isArray(dbPerms) || dbPerms.length === 0) {
+      return localRoles || DEFAULT_ROLES;
+    }
+
     const updatedRoles: AccountRole[] = DEFAULT_ROLES.map(defaultRole => {
+      const localRole = localRoles?.find(r => r.id === defaultRole.id) || defaultRole;
       const matchedDbRole = dbRoles.find((r: any) => r.name === defaultRole.id);
-      if (!matchedDbRole) return defaultRole;
+      if (!matchedDbRole) return localRole;
 
       const assignedPermIds = dbRolePerms
         .filter((rp: any) => String(rp.role_id) === String(matchedDbRole.id))
@@ -249,8 +269,8 @@ export async function fetchAndSyncPermissionsFromDatabase(): Promise<AccountRole
     localStorage.setItem('smartsantri_roles_permissions', JSON.stringify(updatedRoles));
     return updatedRoles;
   } catch (error) {
-    console.warn("Sinkronisasi hak akses menggunakan konfigurasi default:", error);
-    return DEFAULT_ROLES;
+    console.warn("Sinkronisasi hak akses menggunakan konfigurasi lokal/default:", error);
+    return localRoles || DEFAULT_ROLES;
   }
 }
 

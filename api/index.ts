@@ -589,7 +589,181 @@ function sanitizePayload(payload: any): any {
   return payload;
 }
 
+const DEFAULT_ROLE_NAMES = [
+  'superadmin',
+  'sekretaris_putra',
+  'sekretaris_putri',
+  'bendahara_putra',
+  'bendahara_putri',
+  'kepala_keamanan',
+  'keamanan_putra',
+  'keamanan_putri',
+  'humasy_putra',
+  'humasy_putri',
+  'pendidikan_putra',
+  'pendidikan_putri'
+];
+
+const DEFAULT_MODULES = [
+  'sekretaris_putra', 'sekretaris_putri',
+  'bendahara_putra', 'bendahara_putri',
+  'keamanan_putra', 'keamanan_putri',
+  'humasy_putra', 'humasy_putri',
+  'pendidikan_putra', 'pendidikan_putri'
+];
+
+const DEFAULT_ACTIONS = ['view', 'write'];
+
+const DEFAULT_PERMISSIONS: string[] = [];
+DEFAULT_MODULES.forEach(m => {
+  DEFAULT_ACTIONS.forEach(a => {
+    DEFAULT_PERMISSIONS.push(`${m}.${a}`);
+  });
+});
+
+async function ensurePermissionsTablesAndSeed(pool: mysql.Pool | null) {
+  if (pool) {
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS \`permissions\` (
+          \`id\` BIGINT AUTO_INCREMENT PRIMARY KEY,
+          \`name\` VARCHAR(255) NOT NULL,
+          \`guard_name\` VARCHAR(255) NOT NULL DEFAULT 'web',
+          \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP,
+          \`updated_at\` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          UNIQUE KEY \`permissions_name_guard\` (\`name\`, \`guard_name\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `);
+
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS \`roles\` (
+          \`id\` BIGINT AUTO_INCREMENT PRIMARY KEY,
+          \`name\` VARCHAR(255) NOT NULL,
+          \`guard_name\` VARCHAR(255) NOT NULL DEFAULT 'web',
+          \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP,
+          \`updated_at\` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          UNIQUE KEY \`roles_name_guard\` (\`name\`, \`guard_name\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `);
+
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS \`role_has_permissions\` (
+          \`permission_id\` BIGINT NOT NULL,
+          \`role_id\` BIGINT NOT NULL,
+          PRIMARY KEY (\`permission_id\`, \`role_id\`),
+          FOREIGN KEY (\`permission_id\`) REFERENCES \`permissions\`(\`id\`) ON DELETE CASCADE,
+          FOREIGN KEY (\`role_id\`) REFERENCES \`roles\`(\`id\`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `);
+
+      for (const roleName of DEFAULT_ROLE_NAMES) {
+        await pool.query(
+          "INSERT INTO `roles` (`name`, `guard_name`) VALUES (?, 'web') ON DUPLICATE KEY UPDATE `name`=`name`",
+          [roleName]
+        );
+      }
+
+      for (const permName of DEFAULT_PERMISSIONS) {
+        await pool.query(
+          "INSERT INTO `permissions` (`name`, `guard_name`) VALUES (?, 'web') ON DUPLICATE KEY UPDATE `name`=`name`",
+          [permName]
+        );
+      }
+
+      const [rhpRows]: any = await pool.query("SELECT COUNT(*) as cnt FROM `role_has_permissions`");
+      if (!rhpRows?.[0]?.cnt || rhpRows[0].cnt === 0) {
+        const [rRows]: any = await pool.query("SELECT `id`, `name` FROM `roles`");
+        const [pRows]: any = await pool.query("SELECT `id`, `name` FROM `permissions`");
+
+        const roleMap = new Map<string, number>();
+        (rRows || []).forEach((r: any) => roleMap.set(r.name, r.id));
+
+        const permMap = new Map<string, number>();
+        (pRows || []).forEach((p: any) => permMap.set(p.name, p.id));
+
+        for (const rName of DEFAULT_ROLE_NAMES) {
+          const rId = roleMap.get(rName);
+          if (!rId) continue;
+
+          for (const pName of DEFAULT_PERMISSIONS) {
+            const pId = permMap.get(pName);
+            if (!pId) continue;
+
+            const parts = pName.split('.');
+            const mod = parts[0];
+            const act = parts[1];
+
+            let isAllowed = false;
+            if (rName === 'superadmin') {
+              isAllowed = true;
+            } else if (rName === mod) {
+              isAllowed = true;
+            } else if (rName === 'kepala_keamanan' && (mod === 'keamanan_putra' || mod === 'keamanan_putri')) {
+              isAllowed = true;
+            } else if (rName === 'keamanan_putra' && mod === 'keamanan_putra' && act === 'view') {
+              isAllowed = true;
+            } else if (rName === 'keamanan_putri' && mod === 'keamanan_putri' && act === 'view') {
+              isAllowed = true;
+            } else if (act === 'view') {
+              isAllowed = true;
+            }
+
+            if (isAllowed) {
+              await pool.query(
+                "INSERT IGNORE INTO `role_has_permissions` (`role_id`, `permission_id`) VALUES (?, ?)",
+                [rId, pId]
+              ).catch(() => {});
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn("Could not seed permissions tables in MySQL:", err.message);
+    }
+  }
+
+  if (!memoryStore.has('roles') || (memoryStore.get('roles')?.length || 0) === 0) {
+    const rolesList = DEFAULT_ROLE_NAMES.map((name, i) => ({ id: i + 1, name, guard_name: 'web' }));
+    memoryStore.set('roles', rolesList);
+  }
+
+  if (!memoryStore.has('permissions') || (memoryStore.get('permissions')?.length || 0) === 0) {
+    const permsList = DEFAULT_PERMISSIONS.map((name, i) => ({ id: i + 1, name, guard_name: 'web' }));
+    memoryStore.set('permissions', permsList);
+  }
+
+  if (!memoryStore.has('role_has_permissions') || (memoryStore.get('role_has_permissions')?.length || 0) === 0) {
+    const rhpList: { role_id: number; permission_id: number }[] = [];
+    const rolesList = memoryStore.get('roles') || [];
+    const permsList = memoryStore.get('permissions') || [];
+
+    rolesList.forEach((r: any) => {
+      permsList.forEach((p: any) => {
+        const parts = p.name.split('.');
+        const mod = parts[0];
+        const act = parts[1];
+        let isAllowed = false;
+        if (r.name === 'superadmin') isAllowed = true;
+        else if (r.name === mod) isAllowed = true;
+        else if (r.name === 'kepala_keamanan' && (mod === 'keamanan_putra' || mod === 'keamanan_putri')) isAllowed = true;
+        else if (r.name === 'keamanan_putra' && mod === 'keamanan_putra' && act === 'view') isAllowed = true;
+        else if (r.name === 'keamanan_putri' && mod === 'keamanan_putri' && act === 'view') isAllowed = true;
+        else if (act === 'view') isAllowed = true;
+
+        if (isAllowed) {
+          rhpList.push({ role_id: r.id, permission_id: p.id });
+        }
+      });
+    });
+    memoryStore.set('role_has_permissions', rhpList);
+  }
+}
+
 async function ensureTableExists(table: string, pool: mysql.Pool) {
+  if (table === 'roles' || table === 'permissions' || table === 'role_has_permissions') {
+    await ensurePermissionsTablesAndSeed(pool);
+    return;
+  }
   if (table === 'admin_chat') {
     try {
       await pool.query(`
@@ -1010,26 +1184,75 @@ app.post("/api/sync-role-permissions", async (req, res) => {
   const { roleName, permissions } = req.body;
 
   const pool = getMySQLPool();
+  await ensurePermissionsTablesAndSeed(pool);
+
   if (pool) {
     try {
-      const [rRows]: any = await pool.query("SELECT `id` FROM `roles` WHERE `name` = ? LIMIT 1", [roleName]);
+      let [rRows]: any = await pool.query("SELECT `id` FROM `roles` WHERE `name` = ? LIMIT 1", [roleName]);
+      if (!rRows || rRows.length === 0) {
+        await pool.query("INSERT INTO `roles` (`name`, `guard_name`) VALUES (?, 'web')", [roleName]);
+        [rRows] = await pool.query("SELECT `id` FROM `roles` WHERE `name` = ? LIMIT 1", [roleName]);
+      }
+
       if (rRows && rRows.length > 0) {
         const roleId = rRows[0].id;
 
+        if (Array.isArray(permissions)) {
+          for (const permName of permissions) {
+            await pool.query(
+              "INSERT INTO `permissions` (`name`, `guard_name`) VALUES (?, 'web') ON DUPLICATE KEY UPDATE `name`=`name`",
+              [permName]
+            );
+          }
+        }
+
         const [pRows]: any = await pool.query("SELECT `id`, `name` FROM `permissions`");
         const enabledPermIds = (pRows || [])
-          .filter((p: any) => permissions.includes(p.name))
+          .filter((p: any) => Array.isArray(permissions) && permissions.includes(p.name))
           .map((p: any) => p.id);
 
         await pool.query("DELETE FROM `role_has_permissions` WHERE `role_id` = ?", [roleId]);
 
         for (const pid of enabledPermIds) {
-          await pool.query("INSERT INTO `role_has_permissions` (`role_id`, `permission_id`) VALUES (?, ?)", [roleId, pid]);
+          await pool.query("INSERT IGNORE INTO `role_has_permissions` (`role_id`, `permission_id`) VALUES (?, ?)", [roleId, pid]);
         }
       }
     } catch (err: any) {
       console.warn("Error sync role permissions MySQL:", err.message);
     }
+  }
+
+  try {
+    const memRoles = memoryStore.get('roles') || [];
+    let roleObj = memRoles.find((r: any) => r.name === roleName);
+    if (!roleObj) {
+      roleObj = { id: memRoles.length + 1, name: roleName, guard_name: 'web' };
+      memRoles.push(roleObj);
+      memoryStore.set('roles', memRoles);
+    }
+
+    const memPerms = memoryStore.get('permissions') || [];
+    if (Array.isArray(permissions)) {
+      for (const pName of permissions) {
+        if (!memPerms.some((p: any) => p.name === pName)) {
+          memPerms.push({ id: memPerms.length + 1, name: pName, guard_name: 'web' });
+        }
+      }
+      memoryStore.set('permissions', memPerms);
+    }
+
+    const enabledPermIds = memPerms
+      .filter((p: any) => Array.isArray(permissions) && permissions.includes(p.name))
+      .map((p: any) => p.id);
+
+    let rhpList = memoryStore.get('role_has_permissions') || [];
+    rhpList = rhpList.filter((rp: any) => String(rp.role_id) !== String(roleObj.id));
+    for (const pid of enabledPermIds) {
+      rhpList.push({ role_id: roleObj.id, permission_id: pid });
+    }
+    memoryStore.set('role_has_permissions', rhpList);
+  } catch (e) {
+    console.warn("Error sync role permissions MemoryStore:", e);
   }
 
   broadcastWebSocketMessage({

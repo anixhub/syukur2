@@ -1721,6 +1721,8 @@ export default function PengaturanView({
 
         localStorage.setItem('smartsantri_roles_permissions', JSON.stringify(roles));
         setPersistedRoles(roles);
+        window.dispatchEvent(new Event('storage'));
+        window.dispatchEvent(new Event('smartsantri_profile_updated'));
         setToastData({
           title: 'Berhasil Disimpan!',
           desc: 'Konfigurasi hak akses telah diperbarui di lokal dan disinkronkan ke Database Hostinger MySQL.'
