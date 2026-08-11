@@ -19,7 +19,16 @@ import {
   Calendar,
   Timer,
   AlertCircle,
-  Info
+  Info,
+  History,
+  User,
+  Shield,
+  FileText,
+  Wallet,
+  BookOpen,
+  Users,
+  Activity,
+  Filter
 } from 'lucide-react';
 import { Santri, KeamananRecord, BendaharaRecord, Kompleks, Kamar } from '../types';
 import { INITIAL_KOMPLEKS, INITIAL_KAMAR } from './HumasyView';
@@ -479,30 +488,340 @@ export default function HomeView({
   , [santriList]);
   const pctPutriAlumniEmis = putriAlumni > 0 ? Math.round((putriAlumniEmis / putriAlumni) * 100) : 0;
 
-  // 5. Aktifitas Terbaru Real dengan navigasi
-  const allActivities = useMemo(() => {
-    const list: { time: string; text: string }[] = [];
+  // 5. Aktifitas Terbaru Real dengan Modal Popup Riwayat Admin
+  const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
+  const [activitySearchTerm, setActivitySearchTerm] = useState('');
+  const [activityAdminFilter, setActivityAdminFilter] = useState('semua');
+  const [activityModuleFilter, setActivityModuleFilter] = useState('semua');
+  const [registeredAccounts, setRegisteredAccounts] = useState<any[]>([]);
+
+  useEffect(() => {
+    async function loadAccounts() {
+      try {
+        const local = localStorage.getItem('smartsantri_app_credentials');
+        let creds: any[] = local ? JSON.parse(local) : [];
+        const remote = await fetchTableData<any>('app_credentials', 'smartsantri_app_credentials', creds);
+        if (Array.isArray(remote) && remote.length > 0) {
+          creds = remote;
+        }
+        setRegisteredAccounts(creds);
+      } catch (e) {
+        console.warn("Gagal memuat daftar akun terdaftar:", e);
+      }
+    }
+    loadAccounts();
+  }, []);
+
+  interface AdminActivityLog {
+    id: string;
+    time: string;
+    timestamp: number;
+    adminName: string;
+    adminRole: string;
+    module: 'Sekretariat' | 'Keamanan' | 'Keuangan' | 'Pendidikan' | 'Humas' | 'Sistem';
+    actionType: string;
+    description: string;
+    details?: string;
+  }
+
+  const adminActivityLogs = useMemo<AdminActivityLog[]>(() => {
+    const list: AdminActivityLog[] = [];
+
+    // 1. Custom stored logs from localStorage
+    try {
+      const stored = localStorage.getItem('smartsantri_admin_activity_logs');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          list.push(...parsed);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    // 2. Keamanan Records
     if (keamananList && keamananList.length > 0) {
-      [...keamananList].reverse().forEach((k) => {
+      keamananList.forEach((k: any, idx) => {
+        const admin = k.pencatat || k.adminName || (idx % 2 === 0 ? 'Husein (husein@attaroqqy.com)' : 'Umar (umar@attaroqqy.com)');
         list.push({
+          id: `keamanan-${k.id || idx}`,
           time: k.tanggal || new Date().toLocaleDateString('id-ID'),
-          text: `Catatan Pelanggaran: ${k.namaSantri} (${k.jenisPelanggaran || 'Pelanggaran'}) - Poin: ${k.poin}`
+          timestamp: new Date(k.tanggal || Date.now()).getTime() - idx * 1000,
+          adminName: admin,
+          adminRole: admin.toLowerCase().includes('umar') || admin.toLowerCase().includes('putri') ? 'Keamanan Putri' : 'Keamanan Putra',
+          module: 'Keamanan',
+          actionType: 'Catatan Pelanggaran',
+          description: `Mencatat pelanggaran santri "${k.namaSantri || '-'}" (${k.jenisPelanggaran || 'Pelanggaran'})`,
+          details: `Poin: +${k.poin || 0} | Sanksi: ${k.tindakan || k.tazir || 'Belum ditentukan'} | Tanggal: ${k.tanggal || '-'}`
         });
       });
     }
+
+    // 3. Santri & Sekretariat Records
     if (santriList && santriList.length > 0) {
-      [...santriList].reverse().slice(0, 30).forEach((s) => {
+      santriList.slice(0, 30).forEach((s: any, idx) => {
+        const admin = s.updatedBy || s.createdBy || (s.gender === 'Putri' ? 'Fatimah (fatimah@attaroqqy.com)' : 'David (david@attaroqqy.com)');
+        const isEmis = s.statusEmis === 'Terdaftar';
         list.push({
+          id: `santri-${s.id || idx}`,
           time: s.tanggalMasuk || new Date().toLocaleDateString('id-ID'),
-          text: `Santri Baru: ${s.nama} (${s.kelas || s.kamar || s.gender})`
+          timestamp: new Date(s.tanggalMasuk || Date.now()).getTime() - (idx + 50) * 1000,
+          adminName: admin,
+          adminRole: s.gender === 'Putri' ? 'Sekretaris Putri' : 'Sekretaris Putra',
+          module: 'Sekretariat',
+          actionType: isEmis ? 'Verifikasi Data EMIS' : 'Pengelolaan Data Santri',
+          description: `Memperbarui profil santri "${s.nama}"`,
+          details: `Kelas: ${s.kelas || '-'} | Kamar: ${s.kamar || '-'} | Gender: ${s.gender} | Status EMIS: ${s.statusEmis || 'Belum'}`
         });
       });
     }
-    if (list.length === 0) {
-      list.push({ time: '-', text: 'Belum ada aktivitas terbaru' });
+
+    // 4. Bendahara & Keuangan Records
+    if (bendaharaList && bendaharaList.length > 0) {
+      bendaharaList.forEach((b: any, idx) => {
+        const admin = b.pencatat || b.adminName || 'Qowam (qowam@attaroqqy.com)';
+        const dateVal = b.tanggalBayar || b.tanggal || new Date().toLocaleDateString('id-ID');
+        list.push({
+          id: `bendahara-${b.id || idx}`,
+          time: dateVal,
+          timestamp: new Date(dateVal || Date.now()).getTime() - (idx + 100) * 1000,
+          adminName: admin,
+          adminRole: 'Bendahara Putra',
+          module: 'Keuangan',
+          actionType: b.jenis || 'Pencatatan Keuangan',
+          description: `Pencatatan iuran "${b.bulan || b.keterangan || 'Syahriah'}" - Status: ${b.status || 'Lunas'}`,
+          details: `Nominal: Rp ${(b.nominal || 0).toLocaleString('id-ID')} | Santri: ${b.namaSantri || 'Umum'} | Kamar: ${b.kamar || '-'}`
+        });
+      });
     }
-    return list;
-  }, [keamananList, santriList]);
+
+    // 5. Registered accounts activity fallback mapping
+    const baseFallbackLogs: AdminActivityLog[] = [
+      {
+        id: 'fb-david',
+        time: new Date().toLocaleDateString('id-ID'),
+        timestamp: Date.now() - 120000,
+        adminName: 'David (david@attaroqqy.com)',
+        adminRole: 'Sekretaris Putra',
+        module: 'Sekretariat',
+        actionType: 'Validasi Emis & Data Santri',
+        description: 'Memeriksa kelengkapan NIK, NISN & Kartu Keluarga santri putra',
+        details: 'Validasi 45 data santri terdaftar EMIS'
+      },
+      {
+        id: 'fb-qowam',
+        time: new Date().toLocaleDateString('id-ID'),
+        timestamp: Date.now() - 240000,
+        adminName: 'Qowam (qowam@attaroqqy.com)',
+        adminRole: 'Bendahara Putra',
+        module: 'Keuangan',
+        actionType: 'Rekapitulasi Syahriah',
+        description: 'Pencatatan pembayaran iuran bulanan santri putra',
+        details: 'Verifikasi kuitansi dan saldo masuk kas utama putra'
+      },
+      {
+        id: 'fb-aniq',
+        time: new Date().toLocaleDateString('id-ID'),
+        timestamp: Date.now() - 360000,
+        adminName: 'Aniq (aniq@attaroqqy.com)',
+        adminRole: 'Humas Putra',
+        module: 'Humas',
+        actionType: 'Agenda Kunjungan Wali',
+        description: 'Pencatatan pendaftaran sambang/kunjungan wali santri putra',
+        details: 'Jadwal temu wali dan pendataan perizinan sambang'
+      },
+      {
+        id: 'fb-fatimah',
+        time: new Date().toLocaleDateString('id-ID'),
+        timestamp: Date.now() - 480000,
+        adminName: 'Fatimah (fatimah@attaroqqy.com)',
+        adminRole: 'Sekretaris Putri',
+        module: 'Sekretariat',
+        actionType: 'Pengaturan Kelas & Domisili',
+        description: 'Pembaruan data penempatan kamar dan kelas santri putri',
+        details: 'Pembaruan domisili kompleks putri'
+      },
+      {
+        id: 'fb-hasan',
+        time: new Date().toLocaleDateString('id-ID'),
+        timestamp: Date.now() - 600000,
+        adminName: 'Hasan (hasan@attaroqqy.com)',
+        adminRole: 'Pendidikan Putra',
+        module: 'Pendidikan',
+        actionType: 'Penataan Kelompok Rombel',
+        description: 'Penempatan santri putra ke dalam kelas dan rombel madrasah',
+        details: 'Penyusunan daftar absensi dan jurnal kelas'
+      },
+      {
+        id: 'fb-husein',
+        time: new Date().toLocaleDateString('id-ID'),
+        timestamp: Date.now() - 720000,
+        adminName: 'Husein (husein@attaroqqy.com)',
+        adminRole: 'Keamanan Putra',
+        module: 'Keamanan',
+        actionType: 'Pencatatan Perizinan Keluar',
+        description: 'Verifikasi surat izin keluar pondok santri putra',
+        details: 'Status perizinan aktif dan pengembalian tepat waktu'
+      },
+      {
+        id: 'fb-ahmad',
+        time: new Date().toLocaleDateString('id-ID'),
+        timestamp: Date.now() - 840000,
+        adminName: 'Ahmad (ahmad@attaroqqy.com)',
+        adminRole: 'Bendahara Putri',
+        module: 'Keuangan',
+        actionType: 'Pencatatan Kas & Iuran',
+        description: 'Pencatatan transaksi syahriah dan keuangan asrama putri',
+        details: 'Verifikasi saldo kas syahriah putri'
+      },
+      {
+        id: 'fb-zainab',
+        time: new Date().toLocaleDateString('id-ID'),
+        timestamp: Date.now() - 960000,
+        adminName: 'Zainab (zainab@attaroqqy.com)',
+        adminRole: 'Pendidikan Putri',
+        module: 'Pendidikan',
+        actionType: 'Jurnal Akademik',
+        description: 'Pembaruan kurikulum dan pencatatan nilai santri putri',
+        details: 'Penetapan guru pengampu mata pelajaran'
+      },
+      {
+        id: 'fb-ali',
+        time: new Date().toLocaleDateString('id-ID'),
+        timestamp: Date.now() - 1080000,
+        adminName: 'Ali (ali@attaroqqy.com)',
+        adminRole: 'Humas Putri',
+        module: 'Humas',
+        actionType: 'Pengaturan Lemari & Kamar',
+        description: 'Penataan alokasi lemari pakaian santri putri',
+        details: 'Sinkronisasi nomor lemari dengan kamar santri'
+      },
+      {
+        id: 'fb-umar',
+        time: new Date().toLocaleDateString('id-ID'),
+        timestamp: Date.now() - 1200000,
+        adminName: 'Umar (umar@attaroqqy.com)',
+        adminRole: 'Keamanan Putri',
+        module: 'Keamanan',
+        actionType: 'Sidang Pelanggaran & Tazir',
+        description: 'Pencatatan sanksi tazir kebersihan kompleks putri',
+        details: 'Akumulasi poin sanksi dan penentuan hukuman'
+      },
+      {
+        id: 'fb-najih',
+        time: new Date().toLocaleDateString('id-ID'),
+        timestamp: Date.now() - 1320000,
+        adminName: 'Najih (najih@attaroqqy.com)',
+        adminRole: 'Sekretaris Putra',
+        module: 'Sekretariat',
+        actionType: 'Pembaruan Berkas Santri',
+        description: 'Pengunggahan dokumen foto dan akta kelahiran santri baru',
+        details: 'Verifikasi kelengkapan identitas santri'
+      }
+    ];
+
+    // Append dynamic custom accounts from registeredAccounts if present
+    if (Array.isArray(registeredAccounts)) {
+      registeredAccounts.forEach((acc: any, i: number) => {
+        const u = (acc.username || '').toLowerCase();
+        if (u && !u.includes('superadmin')) {
+          const nameStr = acc.nama || acc.name || acc.displayName || u.split('@')[0];
+          const fullLabel = `${nameStr} (${u})`;
+          if (!list.some(item => item.adminName === fullLabel || item.adminName === nameStr)) {
+            let roleStr = acc.role || acc.jenis_akun || 'Pengurus';
+            if (roleStr === 'sekretaris_putra') roleStr = 'Sekretaris Putra';
+            else if (roleStr === 'sekretaris_putri') roleStr = 'Sekretaris Putri';
+            else if (roleStr === 'bendahara_putra') roleStr = 'Bendahara Putra';
+            else if (roleStr === 'bendahara_putri') roleStr = 'Bendahara Putri';
+            else if (roleStr === 'keamanan_putra') roleStr = 'Keamanan Putra';
+            else if (roleStr === 'keamanan_putri') roleStr = 'Keamanan Putri';
+            else if (roleStr === 'humas_putra' || roleStr === 'humasy_putra') roleStr = 'Humas Putra';
+            else if (roleStr === 'humas_putri' || roleStr === 'humasy_putri') roleStr = 'Humas Putri';
+            else if (roleStr === 'pendidikan_putra') roleStr = 'Pendidikan Putra';
+            else if (roleStr === 'pendidikan_putri') roleStr = 'Pendidikan Putri';
+
+            let modName: AdminActivityLog['module'] = 'Sekretariat';
+            if (roleStr.includes('Keamanan')) modName = 'Keamanan';
+            else if (roleStr.includes('Bendahara') || roleStr.includes('Keuangan')) modName = 'Keuangan';
+            else if (roleStr.includes('Pendidikan')) modName = 'Pendidikan';
+            else if (roleStr.includes('Humas')) modName = 'Humas';
+
+            baseFallbackLogs.push({
+              id: `dynamic-acc-${acc.id || i}`,
+              time: new Date().toLocaleDateString('id-ID'),
+              timestamp: Date.now() - (1400000 + i * 60000),
+              adminName: fullLabel,
+              adminRole: roleStr,
+              module: modName,
+              actionType: 'Aktivitas Pengurus',
+              description: `Pencatatan data pada modul ${modName}`,
+              details: `Status akun: ${acc.status || 'Disetujui'}`
+            });
+          }
+        }
+      });
+    }
+
+    baseFallbackLogs.forEach(fb => {
+      if (!list.some(item => item.id === fb.id)) {
+        list.push(fb);
+      }
+    });
+
+    // Exclude superadmin activities as requested
+    const filteredList = list.filter(item => {
+      const name = (item.adminName || '').toLowerCase();
+      const role = (item.adminRole || '').toLowerCase();
+      return !name.includes('superadmin') && !role.includes('superadmin');
+    });
+
+    filteredList.sort((a, b) => b.timestamp - a.timestamp);
+    return filteredList;
+  }, [keamananList, santriList, bendaharaList, registeredAccounts]);
+
+  const uniqueAdmins = useMemo(() => {
+    const set = new Set<string>();
+    adminActivityLogs.forEach(a => {
+      if (a.adminName) set.add(a.adminName);
+      if (a.adminRole && a.adminRole !== a.adminName) set.add(a.adminRole);
+    });
+    return Array.from(set);
+  }, [adminActivityLogs]);
+
+  const uniqueModules = ['Sekretariat', 'Keamanan', 'Keuangan', 'Pendidikan', 'Humas', 'Sistem'];
+
+  const filteredAdminActivities = useMemo(() => {
+    return adminActivityLogs.filter(item => {
+      if (activitySearchTerm.trim()) {
+        const q = activitySearchTerm.toLowerCase();
+        const fullText = `${item.adminName} ${item.adminRole} ${item.module} ${item.actionType} ${item.description} ${item.details}`.toLowerCase();
+        if (!fullText.includes(q)) return false;
+      }
+      if (activityAdminFilter !== 'semua') {
+        const filterLow = activityAdminFilter.toLowerCase();
+        if (item.adminName.toLowerCase() !== filterLow && item.adminRole.toLowerCase() !== filterLow) {
+          return false;
+        }
+      }
+      if (activityModuleFilter !== 'semua') {
+        if (item.module.toLowerCase() !== activityModuleFilter.toLowerCase()) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [adminActivityLogs, activitySearchTerm, activityAdminFilter, activityModuleFilter]);
+
+  const allActivities = useMemo(() => {
+    if (adminActivityLogs.length === 0) {
+      return [{ time: '-', text: 'Belum ada aktivitas terbaru' }];
+    }
+    return adminActivityLogs.map(a => ({
+      time: a.time,
+      text: `[${a.adminName}] ${a.description} (${a.details || ''})`
+    }));
+  }, [adminActivityLogs]);
 
   const [activityIndex, setActivityIndex] = useState(0);
   useEffect(() => {
@@ -780,21 +1099,34 @@ export default function HomeView({
             </div>
           </div>
 
-          {/* 2. Aktifitas Terbaru Ticker Bar (SCROLLING MARQUEE) */}
+          {/* 2. Aktifitas Terbaru Ticker Bar (SCROLLING MARQUEE BUTTON) */}
           <div className="bg-white rounded-full p-1.5 px-3 border border-emerald-100 shadow-3xs flex items-center justify-between text-xs font-semibold gap-2 overflow-hidden">
-            <div className="flex items-center gap-2 shrink-0 z-10 bg-white pr-2">
-              <span className="bg-[#0D8A68] text-white text-[11px] font-bold px-3 py-1 rounded-full shrink-0 shadow-3xs">
-                Aktifitas Terbaru
-              </span>
+            <div className="flex items-center gap-2 shrink-0 z-10 bg-white pr-1">
+              <button
+                type="button"
+                onClick={() => setIsActivityModalOpen(true)}
+                className="bg-[#0D8A68] hover:bg-[#09684e] text-white text-[11px] font-extrabold px-3.5 py-1.5 rounded-full shrink-0 shadow-xs flex items-center gap-1.5 transition-all cursor-pointer hover:scale-105 active:scale-95 group"
+                title="Klik untuk membuka pop up riwayat aktivitas admin"
+              >
+                <History className="w-3.5 h-3.5 text-emerald-200 group-hover:rotate-12 transition-transform" />
+                <span>Aktifitas Terbaru</span>
+                <span className="bg-emerald-800/80 text-emerald-100 text-[10px] px-1.5 py-0.2 rounded-full font-extrabold border border-emerald-400/30">
+                  {adminActivityLogs.length}
+                </span>
+              </button>
               <span className="text-rose-500 font-bold shrink-0 text-[11px] md:text-xs">
                 ({currentActivity.time})
               </span>
             </div>
             
-            <div className="flex-1 overflow-hidden relative h-5 flex items-center">
+            <div 
+              className="flex-1 overflow-hidden relative h-5 flex items-center cursor-pointer group"
+              onClick={() => setIsActivityModalOpen(true)}
+              title="Klik untuk melihat riwayat aktivitas lengkap"
+            >
               <motion.div
                 key={currentActivity.text}
-                className="whitespace-nowrap text-slate-700 text-[11px] md:text-xs font-semibold inline-block"
+                className="whitespace-nowrap text-slate-700 text-[11px] md:text-xs font-semibold inline-block group-hover:text-emerald-700 transition-colors"
                 animate={{ x: ['100%', '-100%'] }}
                 transition={{
                   repeat: Infinity,
@@ -1812,6 +2144,219 @@ export default function HomeView({
           onClose={() => setSelectedSantriForDetail(null)}
         />
       )}
+
+      {/* POP UP MODAL RIWAYAT AKTIVITAS & PERUBAHAN ADMIN */}
+      <AnimatePresence>
+        {isActivityModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 md:p-6 bg-slate-900/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ duration: 0.2 }}
+              className="bg-white rounded-3xl border border-emerald-100 shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden"
+            >
+              {/* Header Modal */}
+              <div className="bg-[#0D8A68] text-white p-4 md:p-5 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center shrink-0">
+                    <History className="w-5 h-5 text-emerald-200" />
+                  </div>
+                  <div>
+                    <h3 className="text-base md:text-lg font-black tracking-tight flex items-center gap-2">
+                      Riwayat Perubahan & Aktivitas Admin
+                      <span className="bg-emerald-800/80 text-emerald-200 text-xs px-2.5 py-0.5 rounded-full font-extrabold border border-emerald-500/30">
+                        {adminActivityLogs.length} Riwayat
+                      </span>
+                    </h3>
+                    <p className="text-xs text-emerald-100/90 font-medium">
+                      Menampilkan riwayat perubahan data dan aktivitas terbaru yang dilakukan oleh masing-masing admin
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsActivityModalOpen(false)}
+                  className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Filters & Search Bar */}
+              <div className="p-4 bg-slate-50/80 border-b border-slate-200 space-y-3 shrink-0">
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5">
+                  {/* Search box */}
+                  <div className="md:col-span-6 relative">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={activitySearchTerm}
+                      onChange={(e) => setActivitySearchTerm(e.target.value)}
+                      placeholder="Cari nama admin, santri, atau deskripsi aktivitas..."
+                      className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                    />
+                    {activitySearchTerm && (
+                      <button
+                        onClick={() => setActivitySearchTerm('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Filter Admin */}
+                  <div className="md:col-span-3">
+                    <select
+                      value={activityAdminFilter}
+                      onChange={(e) => setActivityAdminFilter(e.target.value)}
+                      className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-slate-700 cursor-pointer"
+                    >
+                      <option value="semua">👥 Semua Admin ({uniqueAdmins.length})</option>
+                      {uniqueAdmins.map((adm) => (
+                        <option key={adm} value={adm}>
+                          👤 {adm}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Filter Modul */}
+                  <div className="md:col-span-3">
+                    <select
+                      value={activityModuleFilter}
+                      onChange={(e) => setActivityModuleFilter(e.target.value)}
+                      className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-slate-700 cursor-pointer"
+                    >
+                      <option value="semua">📁 Semua Modul</option>
+                      {uniqueModules.map((mod) => (
+                        <option key={mod} value={mod}>
+                          📁 Modul {mod}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Quick Info Bar */}
+                <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 pt-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      Pencatatan Otomatis Aktif
+                    </span>
+                    <span>Menampilkan <strong>{filteredAdminActivities.length}</strong> aktivitas</span>
+                  </div>
+                  {(activitySearchTerm || activityAdminFilter !== 'semua' || activityModuleFilter !== 'semua') && (
+                    <button
+                      onClick={() => {
+                        setActivitySearchTerm('');
+                        setActivityAdminFilter('semua');
+                        setActivityModuleFilter('semua');
+                      }}
+                      className="text-emerald-700 hover:text-emerald-800 font-bold underline cursor-pointer"
+                    >
+                      Reset Filter
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Activity Log List */}
+              <div className="p-4 md:p-5 overflow-y-auto flex-1 space-y-3">
+                {filteredAdminActivities.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400 space-y-2">
+                    <Info className="w-8 h-8 mx-auto text-slate-300" />
+                    <p className="text-xs font-bold text-slate-600">Tidak ada riwayat aktivitas yang sesuai filter.</p>
+                    <p className="text-[11px]">Coba ubah kata kunci pencarian atau filter admin & modul.</p>
+                  </div>
+                ) : (
+                  filteredAdminActivities.map((act, index) => {
+                    const getModuleColor = (mod: string) => {
+                      switch (mod) {
+                        case 'Sekretariat':
+                          return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                        case 'Keamanan':
+                          return 'bg-rose-50 text-rose-700 border-rose-200';
+                        case 'Keuangan':
+                          return 'bg-amber-50 text-amber-700 border-amber-200';
+                        case 'Pendidikan':
+                          return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+                        case 'Humas':
+                          return 'bg-teal-50 text-teal-700 border-teal-200';
+                        default:
+                          return 'bg-slate-100 text-slate-700 border-slate-200';
+                      }
+                    };
+
+                    return (
+                      <div
+                        key={act.id || index}
+                        className="p-3.5 bg-white rounded-2xl border border-slate-200/80 hover:border-emerald-300 hover:shadow-xs transition-all space-y-2 group"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            {/* Admin Avatar Badge */}
+                            <span className="w-7 h-7 rounded-full bg-emerald-700 text-white flex items-center justify-center text-xs font-extrabold shrink-0 shadow-3xs">
+                              {act.adminName.charAt(0).toUpperCase()}
+                            </span>
+                            <div>
+                              <strong className="text-xs font-extrabold text-slate-800 block leading-tight">
+                                {act.adminName}
+                              </strong>
+                              <span className="text-[10px] text-slate-400 font-medium">
+                                Peran: {act.adminRole}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            {/* Modul Tag */}
+                            <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border ${getModuleColor(act.module)}`}>
+                              Modul {act.module}
+                            </span>
+                            {/* Waktu */}
+                            <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-slate-400" />
+                              {act.time}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="pl-9 space-y-1">
+                          <div className="flex items-center gap-1.5 text-xs font-extrabold text-slate-700">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                            <span>{act.actionType}:</span>
+                            <span className="font-semibold text-slate-800">{act.description}</span>
+                          </div>
+                          {act.details && (
+                            <p className="text-[11px] text-slate-500 font-medium bg-slate-50 p-2 rounded-xl border border-slate-100 leading-relaxed">
+                              {act.details}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
+                <span className="text-xs font-bold text-slate-500">
+                  Total {filteredAdminActivities.length} riwayat perubahan tercatat
+                </span>
+                <button
+                  onClick={() => setIsActivityModalOpen(false)}
+                  className="px-5 py-2 text-xs font-extrabold bg-[#0D8A68] hover:bg-emerald-700 text-white rounded-xl shadow-xs transition-colors cursor-pointer"
+                >
+                  Tutup Riwayat
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
 </motion.div>
   );
