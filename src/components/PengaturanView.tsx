@@ -432,7 +432,7 @@ export default function PengaturanView({
       const status = await getSupabaseStatus();
       if (status.connected) {
         for (const id of selectedFeedbackIds) {
-          await fetch(`/api/db/feedback/${id}`, {
+          await fetch(getApiUrl(`/api/db/feedback/${id}`), {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ is_starred: true })
@@ -547,7 +547,7 @@ export default function PengaturanView({
       const status = await getSupabaseStatus();
       if (status.connected) {
         try {
-          const resSantri = await fetch('/api/db/santri');
+          const resSantri = await fetch(getApiUrl('/api/db/santri'));
           if (resSantri.ok) {
             const result = await resSantri.json();
             if (result.success && Array.isArray(result.data)) {
@@ -555,7 +555,7 @@ export default function PengaturanView({
             }
           }
 
-          const resKeamanan = await fetch('/api/db/keamanan');
+          const resKeamanan = await fetch(getApiUrl('/api/db/keamanan'));
           if (resKeamanan.ok) {
             const result = await resKeamanan.json();
             if (result.success && Array.isArray(result.data)) {
@@ -1064,7 +1064,7 @@ export default function PengaturanView({
   const executeTruncateAllData = async () => {
     setIsTruncatingAll(true);
     try {
-      const res = await fetch("/api/db-truncate-all", {
+      const res = await fetch(getApiUrl("/api/db-truncate-all"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -1453,7 +1453,7 @@ export default function PengaturanView({
   const fetchCounts = async () => {
     setCheckingDb(true);
     try {
-      const resStatus = await fetch("/api/supabase-status");
+      const resStatus = await fetch(getApiUrl("/api/supabase-status"));
       const contentType = resStatus.headers.get("content-type") || "";
       if (!resStatus.ok || !contentType.includes("application/json")) {
         console.warn("Koneksi API /api/supabase-status belum siap atau mengembalikan format non-JSON.");
@@ -1464,7 +1464,7 @@ export default function PengaturanView({
 
       // Fetch storage statistics from our new API endpoint
       try {
-        const resStats = await fetch("/api/storage-stats");
+        const resStats = await fetch(getApiUrl("/api/storage-stats"));
         const statsContentType = resStats.headers.get("content-type") || "";
         if (resStats.ok && statsContentType.includes("application/json")) {
           const statsData = await resStats.json();
@@ -1506,7 +1506,7 @@ export default function PengaturanView({
           let remoteCount = 0;
           let errorMsg = undefined;
           try {
-            const resRemote = await fetch(`/api/db/${t.name}`);
+            const resRemote = await fetch(getApiUrl(`/api/db/${t.name}`));
             const remoteContentType = resRemote.headers.get("content-type") || "";
             if (resRemote.ok && remoteContentType.includes("application/json")) {
               const remoteData = await resRemote.json();
@@ -1566,7 +1566,7 @@ export default function PengaturanView({
         const localItems = JSON.parse(localStr);
         if (!Array.isArray(localItems) || localItems.length === 0) continue;
 
-        const resRemote = await fetch(`/api/db/${t.name}`);
+        const resRemote = await fetch(getApiUrl(`/api/db/${t.name}`));
         if (!resRemote.ok) {
           throw new Error(`Gagal membaca tabel remote ${t.name}. Pastikan skema tabel sudah dijalankan di Supabase.`);
         }
@@ -1585,7 +1585,7 @@ export default function PengaturanView({
             const item = toInsert[i];
             const snakeCased = camelToSnake(item);
             
-            const resPost = await fetch(`/api/db/${t.name}`, {
+            const resPost = await fetch(getApiUrl(`/api/db/${t.name}`), {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(snakeCased),
@@ -1653,17 +1653,20 @@ export default function PengaturanView({
               .filter(([_, enabled]) => enabled === true)
               .map(([name]) => name);
 
-            const res = await fetch('/api/sync-role-permissions', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                roleName: role.id,
-                permissions: enabledPermissions
-              })
-            });
-            if (!res.ok) {
-              const errBody = await res.json().catch(() => ({}));
-              throw new Error(errBody.error || `HTTP ${res.status}`);
+            try {
+              const res = await fetch(getApiUrl('/api/sync-role-permissions'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  roleName: role.id,
+                  permissions: enabledPermissions
+                })
+              });
+              if (!res.ok) {
+                console.warn(`Role sync returned HTTP ${res.status}, continuing local sync.`);
+              }
+            } catch (syncErr) {
+              console.warn("Failed sync role permission to remote backend, saved locally:", syncErr);
             }
           }
         }
