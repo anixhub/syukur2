@@ -702,18 +702,19 @@ export default function AdminChatDrawer({
         creds = remoteData;
       }
 
-      // Default registered accounts (including screenshot accounts)
+      // Default registered accounts
       const defaultAccounts = [
         { username: 'david@attaroqqy.com', name: 'David', role: 'Sekretaris Putra' },
-        { username: 'aniq@attaroqqy.com', name: 'Aniq', role: 'Humas/Humasy Putra' },
-        { username: 'daud@attaroqqy', name: 'Daud', role: 'Sekretaris Putra' },
-        { username: 'mbahnapex@attaroqqy.com', name: 'Mbah Napex', role: 'Humas/Humasy Putra' },
-        { username: 'qowam@attaroqqy.com', name: 'Qowam', role: 'Pengurus' },
-        { username: 'aniq2@attaroqqy.com', name: 'Aniq 2', role: 'Humas' },
-        { username: 'najih@attaroqqy.com', name: 'Najih', role: 'Pengurus' },
-        { username: 'sekretaris@attaroqqy.com', name: 'Sekretaris Attaroqqy', role: 'Sekretaris' },
-        { username: 'bendahara@attaroqqy.com', name: 'Bendahara Attaroqqy', role: 'Bendahara' },
-        { username: 'admin@attaroqqy.com', name: 'Superadmin Attaroqqy', role: 'Superadmin' }
+        { username: 'qowam@attaroqqy.com', name: 'Qowam', role: 'Bendahara Putra' },
+        { username: 'aniq@attaroqqy.com', name: 'Aniq', role: 'Humas Putra' },
+        { username: 'hasan@attaroqqy.com', name: 'Hasan', role: 'Pendidikan Putra' },
+        { username: 'husein@attaroqqy.com', name: 'Husein', role: 'Keamanan Putra' },
+        { username: 'fatimah@attaroqqy.com', name: 'Fatimah', role: 'Sekretaris Putri' },
+        { username: 'ahmad@attaroqqy.com', name: 'Ahmad', role: 'Bendahara Putri' },
+        { username: 'ali@attaroqqy.com', name: 'Ali', role: 'Humas Putri' },
+        { username: 'zainab@attaroqqy.com', name: 'Zainab', role: 'Pendidikan Putri' },
+        { username: 'umar@attaroqqy.com', name: 'Umar', role: 'Keamanan Putri' },
+        { username: 'najih@attaroqqy.com', name: 'Najih', role: 'Sekretaris Putra' }
       ];
 
       const mentionMap = new Map<string, any>();

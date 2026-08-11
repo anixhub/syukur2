@@ -21,6 +21,7 @@ import SantriDetailModal from './components/sekretaris/SantriDetailModal';
 import PendingRegistrationsModal from './components/PendingRegistrationsModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { formatBigDigit, mergeIdField } from './lib/utils';
+import { logAdminActivity } from './lib/activityLogger';
 
 // Initial Mock Data
 import { 
@@ -518,6 +519,12 @@ export default function App() {
 
       pendingOperations.current.set(finalSantri.id, { data: saved, timestamp: Date.now() });
       setSantriList((prev) => prev.map(s => s.id === finalSantri.id ? saved : s));
+      logAdminActivity(
+        'Sekretariat',
+        'Pendaftaran Santri Baru',
+        `Menambahkan santri baru "${finalSantri.nama}" (Status: ${finalSantri.statusKeanggotaan || 'Aktif'})`,
+        `NIS: ${finalSantri.nis || '-'} | Gender: ${finalSantri.gender}`
+      );
     } catch (dbErr: any) {
       pendingOperations.current.delete(finalSantri.id);
       console.error("Gagal melakukan insert ke database:", dbErr);
@@ -530,6 +537,11 @@ export default function App() {
   const handleBulkAddSantri = async (newSantriList: Santri[]) => {
     setSantriList((prev) => [...newSantriList, ...prev]);
     await insertTableRows('santri', 'smartsantri_santriList', newSantriList);
+    logAdminActivity(
+      'Sekretariat',
+      'Import Massal Santri',
+      `Mengimpor ${newSantriList.length} data santri baru ke sistem sekretariat`
+    );
   };
 
   const handleUpdateSantri = async (updatedSantri: Santri) => {
@@ -542,6 +554,26 @@ export default function App() {
       processed.kelas = '';
       processed.kamar = '';
       processed.nomorLemari = '';
+    }
+
+    const existingSantri = santriList.find((s) => s.id === processed.id);
+    const oldStatus = existingSantri ? (existingSantri.statusKeanggotaan || (existingSantri as any).status || 'Aktif') : undefined;
+    const newStatus = processed.statusKeanggotaan || (processed as any).status || 'Aktif';
+
+    if (existingSantri && oldStatus && oldStatus !== newStatus) {
+      logAdminActivity(
+        'Sekretariat',
+        'Perubahan Status Santri',
+        `Mengubah status santri "${processed.nama}" dari ${oldStatus} menjadi ${newStatus}`,
+        `Status Keanggotaan: ${newStatus} | NIS: ${processed.nis || '-'} | Kamar: ${processed.kamar || '-'}`
+      );
+    } else {
+      logAdminActivity(
+        'Sekretariat',
+        'Update Data Santri',
+        `Memperbarui data santri "${processed.nama}" (Status: ${newStatus})`,
+        `Kamar: ${processed.kamar || '-'} | Kelas: ${processed.kelas || '-'}`
+      );
     }
 
     pendingOperations.current.set(processed.id, { data: processed, timestamp: Date.now() });
@@ -596,6 +628,11 @@ export default function App() {
     }
 
     const { nama: targetNama, id: targetId } = santriToDelete;
+    logAdminActivity(
+      'Sekretariat',
+      'Hapus Data Santri',
+      `Menghapus data santri "${targetNama}"`
+    );
 
     // 1. Cascade delete in Keamanan (Riwayat Pelanggaran)
     const matchingKeamanan = keamananList.filter((k) => k.namaSantri === targetNama);
@@ -652,16 +689,36 @@ export default function App() {
       status: newStatus,
       tanggalBayar: updated.tanggalBayar
     });
+    logAdminActivity(
+      'Keuangan',
+      'Update Status Pembayaran',
+      `Mengubah status iuran "${updated.bulan || (updated as any).keterangan || 'Syahriah'}" santri "${updated.namaSantri || 'Umum'}" menjadi ${newStatus}`,
+      `Nominal: Rp ${(updated.nominal || 0).toLocaleString('id-ID')}`
+    );
   };
 
   const handleAddKeamanan = async (newRec: KeamananRecord) => {
     setKeamananList((prev) => [newRec, ...prev]);
     await insertTableRow('keamanan', 'smartsantri_keamananList', newRec);
+    logAdminActivity(
+      'Keamanan',
+      'Catatan Pelanggaran Santri',
+      `Mencatat pelanggaran santri "${newRec.namaSantri}" (${newRec.jenisPelanggaran || 'Pelanggaran'})`,
+      `Poin: +${newRec.poin || 0} | Sanksi: ${newRec.tindakan || '-'}`
+    );
   };
 
   const handleDeleteKeamanan = async (id: string) => {
+    const targetRec = keamananList.find((item) => item.id === id);
     setKeamananList((prev) => prev.filter((item) => item.id !== id));
     await deleteTableRow('keamanan', 'smartsantri_keamananList', id);
+    if (targetRec) {
+      logAdminActivity(
+        'Keamanan',
+        'Hapus Catatan Pelanggaran',
+        `Menghapus catatan pelanggaran santri "${targetRec.namaSantri}"`
+      );
+    }
   };
 
   // Helper to render current screen

@@ -51,6 +51,7 @@ import { compressImage } from '../lib/utils';
 import ProfilPesantrenSub from './ProfilPesantrenSub';
 import * as XLSX from 'xlsx';
 import { ModulePermission, AccountRole, buildPermissions, DEFAULT_ROLES, fetchAndSyncPermissionsFromSupabase } from '../lib/permissions';
+import { logAdminActivity } from '../lib/activityLogger';
 
 export interface PesantrenProfile {
   namaPesantren: string;
@@ -1168,20 +1169,6 @@ export default function PengaturanView({
             createdAt: '2026-07-12T21:12:00.000Z'
           },
           {
-            id: 'aniq2_creds',
-            username: 'aniq2@attaroqqy.com',
-            role: 'keamanan_putra',
-            status: 'rejected',
-            createdAt: '2026-07-12T21:23:00.000Z'
-          },
-          {
-            id: 'najih_creds',
-            username: 'najih@attaroqqy.com',
-            role: 'sekretaris_putra',
-            status: 'pending',
-            createdAt: '2026-07-12T21:37:00.000Z'
-          },
-          {
             id: 'hasan_creds',
             username: 'hasan@attaroqqy.com',
             role: 'pendidikan_putra',
@@ -1196,25 +1183,18 @@ export default function PengaturanView({
             createdAt: '2026-07-12T11:30:00.000Z'
           },
           {
+            id: 'fatimah_creds',
+            username: 'fatimah@attaroqqy.com',
+            role: 'sekretaris_putri',
+            status: 'approved',
+            createdAt: '2026-07-12T13:15:00.000Z'
+          },
+          {
             id: 'ahmad_creds',
             username: 'ahmad@attaroqqy.com',
             role: 'bendahara_putri',
             status: 'pending',
             createdAt: '2026-07-12T12:00:00.000Z'
-          },
-          {
-            id: 'fatimah_creds',
-            username: 'fatimah@attaroqqy.com',
-            role: 'sekretaris_putri',
-            status: 'pending',
-            createdAt: '2026-07-12T13:15:00.000Z'
-          },
-          {
-            id: 'zainab_creds',
-            username: 'zainab@attaroqqy.com',
-            role: 'pendidikan_putri',
-            status: 'pending',
-            createdAt: '2026-07-12T14:40:00.000Z'
           },
           {
             id: 'ali_creds',
@@ -1224,6 +1204,13 @@ export default function PengaturanView({
             createdAt: '2026-07-12T15:20:00.000Z'
           },
           {
+            id: 'zainab_creds',
+            username: 'zainab@attaroqqy.com',
+            role: 'pendidikan_putri',
+            status: 'pending',
+            createdAt: '2026-07-12T14:40:00.000Z'
+          },
+          {
             id: 'umar_creds',
             username: 'umar@attaroqqy.com',
             role: 'keamanan_putri',
@@ -1231,18 +1218,11 @@ export default function PengaturanView({
             createdAt: '2026-07-12T16:05:00.000Z'
           },
           {
-            id: 'utsman_creds',
-            username: 'utsman@attaroqqy.com',
-            role: 'bendahara_putra',
+            id: 'najih_creds',
+            username: 'najih@attaroqqy.com',
+            role: 'sekretaris_putra',
             status: 'pending',
-            createdAt: '2026-07-12T17:10:00.000Z'
-          },
-          {
-            id: 'khadijah_creds',
-            username: 'khadijah@attaroqqy.com',
-            role: 'sekretaris_putri',
-            status: 'pending',
-            createdAt: '2026-07-12T18:55:00.000Z'
+            createdAt: '2026-07-12T21:37:00.000Z'
           }
         ];
 
@@ -1281,6 +1261,8 @@ export default function PengaturanView({
         { status: 'approved' }
       );
       setCredentials(prev => prev.map(c => c.id === id ? { ...c, status: 'approved' } : c));
+      logAdminActivity('Sistem', 'Persetujuan Akun Pengurus', 'Menyetujui pendaftaran akun pengurus baru');
+      window.dispatchEvent(new Event('smartsantri_activity_updated'));
       setToastData({
         title: "Persetujuan Berhasil",
         desc: "Akun pengurus telah berhasil disetujui."
@@ -1300,6 +1282,8 @@ export default function PengaturanView({
         { status: 'rejected' }
       );
       setCredentials(prev => prev.map(c => c.id === id ? { ...c, status: 'rejected' } : c));
+      logAdminActivity('Sistem', 'Penolakan Akun Pengurus', 'Menolak pendaftaran akun pengurus');
+      window.dispatchEvent(new Event('smartsantri_activity_updated'));
       setToastData({
         title: "Penolakan Berhasil",
         desc: "Akun pengurus telah ditolak."
@@ -1325,6 +1309,8 @@ export default function PengaturanView({
       );
       
       setCredentials(prev => prev.map(c => c.id === id ? { ...c, password: defaultPassword, status: 'approved' } : c));
+      logAdminActivity('Sistem', 'Reset Kata Sandi Pengurus', `Mereset kata sandi pengurus ${username}`);
+      window.dispatchEvent(new Event('smartsantri_activity_updated'));
       
       setToastData({
         title: "Reset Berhasil",
@@ -1342,6 +1328,8 @@ export default function PengaturanView({
     try {
       await deleteTableRow('app_credentials', 'smartsantri_app_credentials', id);
       setCredentials(prev => prev.filter(c => c.id !== id));
+      logAdminActivity('Sistem', 'Hapus Akun Pengurus', 'Menghapus akun pengurus dari sistem');
+      window.dispatchEvent(new Event('smartsantri_activity_updated'));
       setToastData({
         title: "Penghapusan Berhasil",
         desc: "Akun pengurus telah dihapus secara permanen dari sistem."

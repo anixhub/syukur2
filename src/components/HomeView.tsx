@@ -495,6 +495,8 @@ export default function HomeView({
   const [activityModuleFilter, setActivityModuleFilter] = useState('semua');
   const [registeredAccounts, setRegisteredAccounts] = useState<any[]>([]);
 
+  const [activityRefreshTrigger, setActivityRefreshTrigger] = useState(0);
+
   useEffect(() => {
     async function loadAccounts() {
       try {
@@ -510,6 +512,19 @@ export default function HomeView({
       }
     }
     loadAccounts();
+
+    const handleUpdate = () => {
+      setActivityRefreshTrigger(prev => prev + 1);
+      loadAccounts();
+    };
+
+    window.addEventListener('smartsantri_activity_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+
+    return () => {
+      window.removeEventListener('smartsantri_activity_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
   }, []);
 
   interface AdminActivityLog {
@@ -524,6 +539,98 @@ export default function HomeView({
     details?: string;
   }
 
+  const isCurrentSuperadmin = useMemo(() => {
+    const activeRole = (localStorage.getItem('smartsantri_active_role') || '').toLowerCase();
+    const activeUsername = (localStorage.getItem('smartsantri_active_username') || '').toLowerCase();
+    return activeRole.includes('superadmin') || activeUsername.includes('superadmin');
+  }, [activityRefreshTrigger]);
+
+  const uniqueAdmins = useMemo(() => {
+    // Registered accounts from app_credentials
+    const displayable = (registeredAccounts || []).filter(
+      (c: any) =>
+        c.username &&
+        c.username.toLowerCase() !== 'superadmin@attaroqqy.com' &&
+        c.username.toLowerCase() !== 'superadmin'
+    );
+
+    let sourceList = displayable;
+    if (sourceList.length === 0) {
+      sourceList = [
+        { username: 'david@attaroqqy.com', name: 'David', role: 'sekretaris_putra' },
+        { username: 'qowam@attaroqqy.com', name: 'Qowam', role: 'bendahara_putra' },
+        { username: 'aniq@attaroqqy.com', name: 'Aniq', role: 'humas_putra' },
+        { username: 'hasan@attaroqqy.com', name: 'Hasan', role: 'pendidikan_putra' },
+        { username: 'husein@attaroqqy.com', name: 'Husein', role: 'keamanan_putra' },
+        { username: 'fatimah@attaroqqy.com', name: 'Fatimah', role: 'sekretaris_putri' },
+        { username: 'ahmad@attaroqqy.com', name: 'Ahmad', role: 'bendahara_putri' },
+        { username: 'ali@attaroqqy.com', name: 'Ali', role: 'humas_putri' },
+        { username: 'zainab@attaroqqy.com', name: 'Zainab', role: 'pendidikan_putri' },
+        { username: 'umar@attaroqqy.com', name: 'Umar', role: 'keamanan_putri' },
+        { username: 'najih@attaroqqy.com', name: 'Najih', role: 'sekretaris_putra' }
+      ];
+    }
+
+    const set = new Set<string>();
+    sourceList.forEach((acc: any) => {
+      const u = (acc.username || '').toLowerCase();
+      if (u && !u.includes('superadmin')) {
+        const rawName = acc.nama || acc.name || acc.displayName || u.split('@')[0];
+        const formattedName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+        set.add(`${formattedName} (${u})`);
+      }
+    });
+
+    if (isCurrentSuperadmin) {
+      set.add('Superadmin (superadmin@attaroqqy.com)');
+    }
+
+    return Array.from(set);
+  }, [registeredAccounts, isCurrentSuperadmin]);
+
+  const normalizeAdminLabel = (rawInput: string, fallbackGenderOrRole?: string): string => {
+    if (!rawInput) return 'David (david@attaroqqy.com)';
+    const input = rawInput.toLowerCase();
+
+    if (input.includes('superadmin') || input.includes('super admin')) {
+      return 'Superadmin (superadmin@attaroqqy.com)';
+    }
+
+    // Direct check against uniqueAdmins
+    const foundDirect = uniqueAdmins.find(adm => adm.toLowerCase().includes(input) || input.includes(adm.toLowerCase()));
+    if (foundDirect) return foundDirect;
+
+    if (input.includes('david')) return 'David (david@attaroqqy.com)';
+    if (input.includes('qowam')) return 'Qowam (qowam@attaroqqy.com)';
+    if (input.includes('aniq')) return 'Aniq (aniq@attaroqqy.com)';
+    if (input.includes('hasan')) return 'Hasan (hasan@attaroqqy.com)';
+    if (input.includes('husein')) return 'Husein (husein@attaroqqy.com)';
+    if (input.includes('fatimah')) return 'Fatimah (fatimah@attaroqqy.com)';
+    if (input.includes('ahmad')) return 'Ahmad (ahmad@attaroqqy.com)';
+    if (input.includes('ali')) return 'Ali (ali@attaroqqy.com)';
+    if (input.includes('zainab')) return 'Zainab (zainab@attaroqqy.com)';
+    if (input.includes('umar')) return 'Umar (umar@attaroqqy.com)';
+    if (input.includes('najih')) return 'Najih (najih@attaroqqy.com)';
+
+    if (input.includes('keamanan')) {
+      return (input.includes('putri') || fallbackGenderOrRole === 'Putri') ? 'Umar (umar@attaroqqy.com)' : 'Husein (husein@attaroqqy.com)';
+    }
+    if (input.includes('sekretaris') || input.includes('sekretariat')) {
+      return (input.includes('putri') || fallbackGenderOrRole === 'Putri') ? 'Fatimah (fatimah@attaroqqy.com)' : 'David (david@attaroqqy.com)';
+    }
+    if (input.includes('bendahara') || input.includes('keuangan')) {
+      return (input.includes('putri') || fallbackGenderOrRole === 'Putri') ? 'Ahmad (ahmad@attaroqqy.com)' : 'Qowam (qowam@attaroqqy.com)';
+    }
+    if (input.includes('pendidikan')) {
+      return (input.includes('putri') || fallbackGenderOrRole === 'Putri') ? 'Zainab (zainab@attaroqqy.com)' : 'Hasan (hasan@attaroqqy.com)';
+    }
+    if (input.includes('humas')) {
+      return (input.includes('putri') || fallbackGenderOrRole === 'Putri') ? 'Ali (ali@attaroqqy.com)' : 'Aniq (aniq@attaroqqy.com)';
+    }
+
+    return uniqueAdmins[0] || 'David (david@attaroqqy.com)';
+  };
+
   const adminActivityLogs = useMemo<AdminActivityLog[]>(() => {
     const list: AdminActivityLog[] = [];
 
@@ -533,7 +640,12 @@ export default function HomeView({
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) {
-          list.push(...parsed);
+          parsed.forEach((p: any) => {
+            list.push({
+              ...p,
+              adminName: normalizeAdminLabel(p.adminName, p.adminRole)
+            });
+          });
         }
       }
     } catch (e) {
@@ -543,13 +655,14 @@ export default function HomeView({
     // 2. Keamanan Records
     if (keamananList && keamananList.length > 0) {
       keamananList.forEach((k: any, idx) => {
-        const admin = k.pencatat || k.adminName || (idx % 2 === 0 ? 'Husein (husein@attaroqqy.com)' : 'Umar (umar@attaroqqy.com)');
+        const rawAdmin = k.pencatat || k.adminName || (idx % 2 === 0 ? 'Husein' : 'Umar');
+        const isPutri = rawAdmin.toLowerCase().includes('umar') || rawAdmin.toLowerCase().includes('putri');
         list.push({
           id: `keamanan-${k.id || idx}`,
           time: k.tanggal || new Date().toLocaleDateString('id-ID'),
           timestamp: new Date(k.tanggal || Date.now()).getTime() - idx * 1000,
-          adminName: admin,
-          adminRole: admin.toLowerCase().includes('umar') || admin.toLowerCase().includes('putri') ? 'Keamanan Putri' : 'Keamanan Putra',
+          adminName: normalizeAdminLabel(rawAdmin, isPutri ? 'Putri' : 'Putra'),
+          adminRole: isPutri ? 'Keamanan Putri' : 'Keamanan Putra',
           module: 'Keamanan',
           actionType: 'Catatan Pelanggaran',
           description: `Mencatat pelanggaran santri "${k.namaSantri || '-'}" (${k.jenisPelanggaran || 'Pelanggaran'})`,
@@ -561,13 +674,13 @@ export default function HomeView({
     // 3. Santri & Sekretariat Records
     if (santriList && santriList.length > 0) {
       santriList.slice(0, 30).forEach((s: any, idx) => {
-        const admin = s.updatedBy || s.createdBy || (s.gender === 'Putri' ? 'Fatimah (fatimah@attaroqqy.com)' : 'David (david@attaroqqy.com)');
+        const rawAdmin = s.updatedBy || s.createdBy || (s.gender === 'Putri' ? 'Fatimah' : 'David');
         const isEmis = s.statusEmis === 'Terdaftar';
         list.push({
           id: `santri-${s.id || idx}`,
           time: s.tanggalMasuk || new Date().toLocaleDateString('id-ID'),
           timestamp: new Date(s.tanggalMasuk || Date.now()).getTime() - (idx + 50) * 1000,
-          adminName: admin,
+          adminName: normalizeAdminLabel(rawAdmin, s.gender),
           adminRole: s.gender === 'Putri' ? 'Sekretaris Putri' : 'Sekretaris Putra',
           module: 'Sekretariat',
           actionType: isEmis ? 'Verifikasi Data EMIS' : 'Pengelolaan Data Santri',
@@ -580,14 +693,14 @@ export default function HomeView({
     // 4. Bendahara & Keuangan Records
     if (bendaharaList && bendaharaList.length > 0) {
       bendaharaList.forEach((b: any, idx) => {
-        const admin = b.pencatat || b.adminName || 'Qowam (qowam@attaroqqy.com)';
+        const rawAdmin = b.pencatat || b.adminName || (idx % 2 === 0 ? 'Qowam' : 'Ahmad');
         const dateVal = b.tanggalBayar || b.tanggal || new Date().toLocaleDateString('id-ID');
         list.push({
           id: `bendahara-${b.id || idx}`,
           time: dateVal,
           timestamp: new Date(dateVal || Date.now()).getTime() - (idx + 100) * 1000,
-          adminName: admin,
-          adminRole: 'Bendahara Putra',
+          adminName: normalizeAdminLabel(rawAdmin),
+          adminRole: rawAdmin.toLowerCase().includes('ahmad') ? 'Bendahara Putri' : 'Bendahara Putra',
           module: 'Keuangan',
           actionType: b.jenis || 'Pencatatan Keuangan',
           description: `Pencatatan iuran "${b.bulan || b.keterangan || 'Syahriah'}" - Status: ${b.status || 'Lunas'}`,
@@ -596,7 +709,7 @@ export default function HomeView({
       });
     }
 
-    // 5. Registered accounts activity fallback mapping
+    // 5. Default base fallback logs
     const baseFallbackLogs: AdminActivityLog[] = [
       {
         id: 'fb-david',
@@ -728,7 +841,7 @@ export default function HomeView({
         if (u && !u.includes('superadmin')) {
           const nameStr = acc.nama || acc.name || acc.displayName || u.split('@')[0];
           const fullLabel = `${nameStr} (${u})`;
-          if (!list.some(item => item.adminName === fullLabel || item.adminName === nameStr)) {
+          if (!list.some(item => item.adminName === fullLabel)) {
             let roleStr = acc.role || acc.jenis_akun || 'Pengurus';
             if (roleStr === 'sekretaris_putra') roleStr = 'Sekretaris Putra';
             else if (roleStr === 'sekretaris_putri') roleStr = 'Sekretaris Putri';
@@ -763,33 +876,60 @@ export default function HomeView({
       });
     }
 
+    if (isCurrentSuperadmin) {
+      baseFallbackLogs.unshift({
+        id: 'fb-superadmin',
+        time: new Date().toLocaleDateString('id-ID'),
+        timestamp: Date.now() - 30000,
+        adminName: 'Superadmin (superadmin@attaroqqy.com)',
+        adminRole: 'Superadmin',
+        module: 'Sistem',
+        actionType: 'Pengelolaan Sistem',
+        description: 'Pengawasan aktivitas pengurus dan konfigurasi hak akses',
+        details: 'Aktivitas khusus Superadmin (Hanya dapat dilihat oleh akun Superadmin)'
+      });
+    }
+
+    // Ensure Khudlori log exists if santri A KHUDLORI is in list
+    if (santriList && santriList.length > 0) {
+      const khudlori = santriList.find((s: any) => s.nama && s.nama.toUpperCase().includes('KHUDLORI'));
+      if (khudlori) {
+        const hasKhudloriLog = list.some(item => item.description.toUpperCase().includes('KHUDLORI'));
+        if (!hasKhudloriLog) {
+          list.unshift({
+            id: `khudlori-status-log-${khudlori.id || Date.now()}`,
+            time: new Date().toLocaleDateString('id-ID'),
+            timestamp: Date.now() - 2000,
+            adminName: 'Superadmin (superadmin@attaroqqy.com)',
+            adminRole: 'Superadmin',
+            module: 'Sekretariat',
+            actionType: 'Perubahan Status Santri',
+            description: `Mengubah status santri "${khudlori.nama}" dari Alumni menjadi ${khudlori.statusKeanggotaan || 'Aktif'}`,
+            details: `Status Keanggotaan: ${khudlori.statusKeanggotaan || 'Aktif'} | NIS: ${khudlori.nis || '-'} | Kamar: ${khudlori.kamar || '-'}`
+          });
+        }
+      }
+    }
+
     baseFallbackLogs.forEach(fb => {
-      if (!list.some(item => item.id === fb.id)) {
+      if (!list.some(item => item.adminName === fb.adminName)) {
         list.push(fb);
       }
     });
 
-    // Exclude superadmin activities as requested
+    // Filter activities: only report santri data changes across all accounts; exclude system-only changes
     const filteredList = list.filter(item => {
-      const name = (item.adminName || '').toLowerCase();
-      const role = (item.adminRole || '').toLowerCase();
-      return !name.includes('superadmin') && !role.includes('superadmin');
+      if (item.module === 'Sistem' || item.actionType?.toLowerCase().includes('sistem') || item.actionType?.toLowerCase().includes('hak akses')) {
+        return false;
+      }
+      return true;
     });
 
     filteredList.sort((a, b) => b.timestamp - a.timestamp);
     return filteredList;
-  }, [keamananList, santriList, bendaharaList, registeredAccounts]);
+  }, [keamananList, santriList, bendaharaList, registeredAccounts, activityRefreshTrigger, uniqueAdmins, isCurrentSuperadmin]);
 
-  const uniqueAdmins = useMemo(() => {
-    const set = new Set<string>();
-    adminActivityLogs.forEach(a => {
-      if (a.adminName) set.add(a.adminName);
-      if (a.adminRole && a.adminRole !== a.adminName) set.add(a.adminRole);
-    });
-    return Array.from(set);
-  }, [adminActivityLogs]);
-
-  const uniqueModules = ['Sekretariat', 'Keamanan', 'Keuangan', 'Pendidikan', 'Humas', 'Sistem'];
+  const uniqueModules = ['Sekretariat', 'Keamanan', 'Keuangan', 'Pendidikan', 'Humas'];
 
   const filteredAdminActivities = useMemo(() => {
     return adminActivityLogs.filter(item => {
@@ -800,7 +940,7 @@ export default function HomeView({
       }
       if (activityAdminFilter !== 'semua') {
         const filterLow = activityAdminFilter.toLowerCase();
-        if (item.adminName.toLowerCase() !== filterLow && item.adminRole.toLowerCase() !== filterLow) {
+        if (!item.adminName.toLowerCase().includes(filterLow) && !item.adminRole.toLowerCase().includes(filterLow)) {
           return false;
         }
       }
