@@ -246,22 +246,18 @@ export default function PengaturanView({
     setLoadingFeedbacks(true);
     setSelectedFeedbackIds([]);
     try {
-      const res = await fetch('/api/db/feedback');
-      if (res.ok) {
-        const result = await res.json();
-        if (result.success && Array.isArray(result.data)) {
-          const sorted = result.data.sort((a: any, b: any) => {
-            const timeA = new Date(a.created_at || a.id || 0).getTime();
-            const timeB = new Date(b.created_at || b.id || 0).getTime();
-            return timeB - timeA;
-          });
-          setFeedbacks(sorted);
-          setLoadingFeedbacks(false);
-          return;
-        }
+      const remoteData = await fetchTableData<any>('feedback', 'smartsantri_local_feedback');
+      if (Array.isArray(remoteData)) {
+        const sorted = [...remoteData].sort((a: any, b: any) => {
+          const timeA = new Date(a.created_at || a.createdAt || a.id || 0).getTime();
+          const timeB = new Date(b.created_at || b.createdAt || b.id || 0).getTime();
+          return timeB - timeA;
+        });
+        setFeedbacks(sorted);
+      } else {
+        const local = localStorage.getItem('smartsantri_local_feedback');
+        setFeedbacks(local ? JSON.parse(local) : []);
       }
-      const local = localStorage.getItem('smartsantri_local_feedback');
-      setFeedbacks(local ? JSON.parse(local) : []);
     } catch (e) {
       console.error("Gagal memuat masukan:", e);
       const local = localStorage.getItem('smartsantri_local_feedback');
@@ -348,7 +344,7 @@ export default function PengaturanView({
     try {
       const updatedStarredStatus = !currentStarred;
       
-      // Update local state first for instant reaction
+      // Update local state first for instant UI response
       setFeedbacks(prev => prev.map(item => {
         if (String(item.id) === String(id)) {
           return { ...item, is_starred: updatedStarredStatus, isStarred: updatedStarredStatus };
@@ -360,28 +356,10 @@ export default function PengaturanView({
         setActiveFeedbackDetail((prev: any) => ({ ...prev, is_starred: updatedStarredStatus, isStarred: updatedStarredStatus }));
       }
 
-      // Update in localStorage cache
-      const local = localStorage.getItem('smartsantri_local_feedback');
-      if (local) {
-        const parsed = JSON.parse(local);
-        const mapped = parsed.map((item: any) => {
-          if (String(item.id) === String(id)) {
-            return { ...item, is_starred: updatedStarredStatus, isStarred: updatedStarredStatus };
-          }
-          return item;
-        });
-        localStorage.setItem('smartsantri_local_feedback', JSON.stringify(mapped));
-      }
-
-      // Check if Supabase is connected to execute real backend update
-      const status = await getSupabaseStatus();
-      if (status.connected) {
-        await fetch(`/api/db/feedback/${id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ is_starred: updatedStarredStatus })
-        });
-      }
+      await updateTableRow<any>('feedback', 'smartsantri_local_feedback', id, {
+        is_starred: updatedStarredStatus,
+        isStarred: updatedStarredStatus
+      });
     } catch (e) {
       console.error("Gagal mengubah status bintang:", e);
     }
@@ -389,6 +367,7 @@ export default function PengaturanView({
 
   const handleUpdateFeedbackStatus = async (id: string, newStatus: string) => {
     try {
+      // Update local state immediately for fast feedback
       setFeedbacks(prev => prev.map(item => {
         if (String(item.id) === String(id)) {
           return { ...item, status: newStatus };
@@ -400,26 +379,8 @@ export default function PengaturanView({
         setActiveFeedbackDetail((prev: any) => ({ ...prev, status: newStatus }));
       }
 
-      const local = localStorage.getItem('smartsantri_local_feedback');
-      if (local) {
-        const parsed = JSON.parse(local);
-        const mapped = parsed.map((item: any) => {
-          if (String(item.id) === String(id)) {
-            return { ...item, status: newStatus };
-          }
-          return item;
-        });
-        localStorage.setItem('smartsantri_local_feedback', JSON.stringify(mapped));
-      }
-
-      const status = await getSupabaseStatus();
-      if (status.connected) {
-        await fetch(`/api/db/feedback/${id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: newStatus })
-        });
-      }
+      // Persist to server (and local cache fallback)
+      await updateTableRow<any>('feedback', 'smartsantri_local_feedback', id, { status: newStatus });
     } catch (e) {
       console.error("Gagal mengubah status pengerjaan feedback:", e);
     }
