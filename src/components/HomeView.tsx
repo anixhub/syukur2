@@ -648,17 +648,19 @@ export default function HomeView({
   const adminActivityLogs = useMemo<AdminActivityLog[]>(() => {
     const list: AdminActivityLog[] = [];
 
-    // 1. Custom stored logs from localStorage
+    // Custom stored logs from localStorage (real admin actions)
     try {
       const stored = localStorage.getItem('smartsantri_admin_activity_logs');
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) {
           parsed.forEach((p: any) => {
-            list.push({
-              ...p,
-              adminName: normalizeAdminLabel(p.adminName, p.adminRole)
-            });
+            if (p && p.timestamp) {
+              list.push({
+                ...p,
+                adminName: normalizeAdminLabel(p.adminName, p.adminRole)
+              });
+            }
           });
         }
       }
@@ -666,275 +668,11 @@ export default function HomeView({
       console.error(e);
     }
 
-    // 2. Keamanan Records
-    if (keamananList && keamananList.length > 0) {
-      keamananList.forEach((k: any, idx) => {
-        const rawAdmin = k.pencatat || k.adminName || (idx % 2 === 0 ? 'Husein' : 'Umar');
-        const isPutri = rawAdmin.toLowerCase().includes('umar') || rawAdmin.toLowerCase().includes('putri');
-        list.push({
-          id: `keamanan-${k.id || idx}`,
-          time: k.tanggal || new Date().toLocaleDateString('id-ID'),
-          timestamp: new Date(k.tanggal || Date.now()).getTime() - idx * 1000,
-          adminName: normalizeAdminLabel(rawAdmin, isPutri ? 'Putri' : 'Putra'),
-          adminRole: isPutri ? 'Keamanan Putri' : 'Keamanan Putra',
-          module: 'Keamanan',
-          actionType: 'Catatan Pelanggaran',
-          description: `Mencatat pelanggaran santri "${k.namaSantri || '-'}" (${k.jenisPelanggaran || 'Pelanggaran'})`,
-          details: `Poin: +${k.poin || 0} | Sanksi: ${k.tindakan || k.tazir || 'Belum ditentukan'} | Tanggal: ${k.tanggal || '-'}`
-        });
-      });
-    }
-
-    // 3. Santri & Sekretariat Records
-    if (santriList && santriList.length > 0) {
-      santriList.slice(0, 30).forEach((s: any, idx) => {
-        const rawAdmin = s.updatedBy || s.createdBy || (s.gender === 'Putri' ? 'Fatimah' : 'David');
-        const isEmis = s.statusEmis === 'Terdaftar';
-        list.push({
-          id: `santri-${s.id || idx}`,
-          time: s.tanggalMasuk || new Date().toLocaleDateString('id-ID'),
-          timestamp: new Date(s.tanggalMasuk || Date.now()).getTime() - (idx + 50) * 1000,
-          adminName: normalizeAdminLabel(rawAdmin, s.gender),
-          adminRole: s.gender === 'Putri' ? 'Sekretaris Putri' : 'Sekretaris Putra',
-          module: 'Sekretariat',
-          actionType: isEmis ? 'Verifikasi Data EMIS' : 'Pengelolaan Data Santri',
-          description: `Memperbarui profil santri "${s.nama}"`,
-          details: `Kelas: ${s.kelas || '-'} | Kamar: ${s.kamar || '-'} | Gender: ${s.gender} | Status EMIS: ${s.statusEmis || 'Belum'}`
-        });
-      });
-    }
-
-    // 4. Bendahara & Keuangan Records
-    if (bendaharaList && bendaharaList.length > 0) {
-      bendaharaList.forEach((b: any, idx) => {
-        const rawAdmin = b.pencatat || b.adminName || (idx % 2 === 0 ? 'Qowam' : 'Ahmad');
-        const dateVal = b.tanggalBayar || b.tanggal || new Date().toLocaleDateString('id-ID');
-        list.push({
-          id: `bendahara-${b.id || idx}`,
-          time: dateVal,
-          timestamp: new Date(dateVal || Date.now()).getTime() - (idx + 100) * 1000,
-          adminName: normalizeAdminLabel(rawAdmin),
-          adminRole: rawAdmin.toLowerCase().includes('ahmad') ? 'Bendahara Putri' : 'Bendahara Putra',
-          module: 'Keuangan',
-          actionType: b.jenis || 'Pencatatan Keuangan',
-          description: `Pencatatan iuran "${b.bulan || b.keterangan || 'Syahriah'}" - Status: ${b.status || 'Lunas'}`,
-          details: `Nominal: Rp ${(b.nominal || 0).toLocaleString('id-ID')} | Santri: ${b.namaSantri || 'Umum'} | Kamar: ${b.kamar || '-'}`
-        });
-      });
-    }
-
-    // 5. Default base fallback logs
-    const baseFallbackLogs: AdminActivityLog[] = [
-      {
-        id: 'fb-david',
-        time: new Date().toLocaleDateString('id-ID'),
-        timestamp: Date.now() - 120000,
-        adminName: 'David (david@attaroqqy.com)',
-        adminRole: 'Sekretaris Putra',
-        module: 'Sekretariat',
-        actionType: 'Validasi Emis & Data Santri',
-        description: 'Memeriksa kelengkapan NIK, NISN & Kartu Keluarga santri putra',
-        details: 'Validasi 45 data santri terdaftar EMIS'
-      },
-      {
-        id: 'fb-qowam',
-        time: new Date().toLocaleDateString('id-ID'),
-        timestamp: Date.now() - 240000,
-        adminName: 'Qowam (qowam@attaroqqy.com)',
-        adminRole: 'Bendahara Putra',
-        module: 'Keuangan',
-        actionType: 'Rekapitulasi Syahriah',
-        description: 'Pencatatan pembayaran iuran bulanan santri putra',
-        details: 'Verifikasi kuitansi dan saldo masuk kas utama putra'
-      },
-      {
-        id: 'fb-aniq',
-        time: new Date().toLocaleDateString('id-ID'),
-        timestamp: Date.now() - 360000,
-        adminName: 'Aniq (aniq@attaroqqy.com)',
-        adminRole: 'Humas Putra',
-        module: 'Humas',
-        actionType: 'Agenda Kunjungan Wali',
-        description: 'Pencatatan pendaftaran sambang/kunjungan wali santri putra',
-        details: 'Jadwal temu wali dan pendataan perizinan sambang'
-      },
-      {
-        id: 'fb-fatimah',
-        time: new Date().toLocaleDateString('id-ID'),
-        timestamp: Date.now() - 480000,
-        adminName: 'Fatimah (fatimah@attaroqqy.com)',
-        adminRole: 'Sekretaris Putri',
-        module: 'Sekretariat',
-        actionType: 'Pengaturan Kelas & Domisili',
-        description: 'Pembaruan data penempatan kamar dan kelas santri putri',
-        details: 'Pembaruan domisili kompleks putri'
-      },
-      {
-        id: 'fb-hasan',
-        time: new Date().toLocaleDateString('id-ID'),
-        timestamp: Date.now() - 600000,
-        adminName: 'Hasan (hasan@attaroqqy.com)',
-        adminRole: 'Pendidikan Putra',
-        module: 'Pendidikan',
-        actionType: 'Penataan Kelompok Rombel',
-        description: 'Penempatan santri putra ke dalam kelas dan rombel madrasah',
-        details: 'Penyusunan daftar absensi dan jurnal kelas'
-      },
-      {
-        id: 'fb-husein',
-        time: new Date().toLocaleDateString('id-ID'),
-        timestamp: Date.now() - 720000,
-        adminName: 'Husein (husein@attaroqqy.com)',
-        adminRole: 'Keamanan Putra',
-        module: 'Keamanan',
-        actionType: 'Pencatatan Perizinan Keluar',
-        description: 'Verifikasi surat izin keluar pondok santri putra',
-        details: 'Status perizinan aktif dan pengembalian tepat waktu'
-      },
-      {
-        id: 'fb-ahmad',
-        time: new Date().toLocaleDateString('id-ID'),
-        timestamp: Date.now() - 840000,
-        adminName: 'Ahmad (ahmad@attaroqqy.com)',
-        adminRole: 'Bendahara Putri',
-        module: 'Keuangan',
-        actionType: 'Pencatatan Kas & Iuran',
-        description: 'Pencatatan transaksi syahriah dan keuangan asrama putri',
-        details: 'Verifikasi saldo kas syahriah putri'
-      },
-      {
-        id: 'fb-zainab',
-        time: new Date().toLocaleDateString('id-ID'),
-        timestamp: Date.now() - 960000,
-        adminName: 'Zainab (zainab@attaroqqy.com)',
-        adminRole: 'Pendidikan Putri',
-        module: 'Pendidikan',
-        actionType: 'Jurnal Akademik',
-        description: 'Pembaruan kurikulum dan pencatatan nilai santri putri',
-        details: 'Penetapan guru pengampu mata pelajaran'
-      },
-      {
-        id: 'fb-ali',
-        time: new Date().toLocaleDateString('id-ID'),
-        timestamp: Date.now() - 1080000,
-        adminName: 'Ali (ali@attaroqqy.com)',
-        adminRole: 'Humas Putri',
-        module: 'Humas',
-        actionType: 'Pengaturan Lemari & Kamar',
-        description: 'Penataan alokasi lemari pakaian santri putri',
-        details: 'Sinkronisasi nomor lemari dengan kamar santri'
-      },
-      {
-        id: 'fb-umar',
-        time: new Date().toLocaleDateString('id-ID'),
-        timestamp: Date.now() - 1200000,
-        adminName: 'Umar (umar@attaroqqy.com)',
-        adminRole: 'Keamanan Putri',
-        module: 'Keamanan',
-        actionType: 'Sidang Pelanggaran & Tazir',
-        description: 'Pencatatan sanksi tazir kebersihan kompleks putri',
-        details: 'Akumulasi poin sanksi dan penentuan hukuman'
-      },
-      {
-        id: 'fb-najih',
-        time: new Date().toLocaleDateString('id-ID'),
-        timestamp: Date.now() - 1320000,
-        adminName: 'Najih (najih@attaroqqy.com)',
-        adminRole: 'Sekretaris Putra',
-        module: 'Sekretariat',
-        actionType: 'Pembaruan Berkas Santri',
-        description: 'Pengunggahan dokumen foto dan akta kelahiran santri baru',
-        details: 'Verifikasi kelengkapan identitas santri'
-      }
-    ];
-
-    // Append dynamic custom accounts from registeredAccounts if present
-    if (Array.isArray(registeredAccounts)) {
-      registeredAccounts.forEach((acc: any, i: number) => {
-        const u = (acc.username || '').toLowerCase();
-        if (u && !u.includes('superadmin')) {
-          const nameStr = acc.nama || acc.name || acc.displayName || u.split('@')[0];
-          const fullLabel = `${nameStr} (${u})`;
-          if (!list.some(item => item.adminName === fullLabel)) {
-            let roleStr = acc.role || acc.jenis_akun || 'Pengurus';
-            if (roleStr === 'sekretaris_putra') roleStr = 'Sekretaris Putra';
-            else if (roleStr === 'sekretaris_putri') roleStr = 'Sekretaris Putri';
-            else if (roleStr === 'bendahara_putra') roleStr = 'Bendahara Putra';
-            else if (roleStr === 'bendahara_putri') roleStr = 'Bendahara Putri';
-            else if (roleStr === 'keamanan_putra') roleStr = 'Keamanan Putra';
-            else if (roleStr === 'keamanan_putri') roleStr = 'Keamanan Putri';
-            else if (roleStr === 'humas_putra' || roleStr === 'humasy_putra') roleStr = 'Humas Putra';
-            else if (roleStr === 'humas_putri' || roleStr === 'humasy_putri') roleStr = 'Humas Putri';
-            else if (roleStr === 'pendidikan_putra') roleStr = 'Pendidikan Putra';
-            else if (roleStr === 'pendidikan_putri') roleStr = 'Pendidikan Putri';
-
-            let modName: AdminActivityLog['module'] = 'Sekretariat';
-            if (roleStr.includes('Keamanan')) modName = 'Keamanan';
-            else if (roleStr.includes('Bendahara') || roleStr.includes('Keuangan')) modName = 'Keuangan';
-            else if (roleStr.includes('Pendidikan')) modName = 'Pendidikan';
-            else if (roleStr.includes('Humas')) modName = 'Humas';
-
-            baseFallbackLogs.push({
-              id: `dynamic-acc-${acc.id || i}`,
-              time: new Date().toLocaleDateString('id-ID'),
-              timestamp: Date.now() - (1400000 + i * 60000),
-              adminName: fullLabel,
-              adminRole: roleStr,
-              module: modName,
-              actionType: 'Aktivitas Pengurus',
-              description: `Pencatatan data pada modul ${modName}`,
-              details: `Status akun: ${acc.status || 'Disetujui'}`
-            });
-          }
-        }
-      });
-    }
-
-    if (isCurrentSuperadmin) {
-      baseFallbackLogs.unshift({
-        id: 'fb-superadmin',
-        time: new Date().toLocaleDateString('id-ID'),
-        timestamp: Date.now() - 30000,
-        adminName: 'Superadmin (superadmin@attaroqqy.com)',
-        adminRole: 'Superadmin',
-        module: 'Sistem',
-        actionType: 'Pengelolaan Sistem',
-        description: 'Pengawasan aktivitas pengurus dan konfigurasi hak akses',
-        details: 'Aktivitas khusus Superadmin (Hanya dapat dilihat oleh akun Superadmin)'
-      });
-    }
-
-    // Ensure Khudlori log exists if santri A KHUDLORI is in list
-    if (santriList && santriList.length > 0) {
-      const khudlori = santriList.find((s: any) => s.nama && s.nama.toUpperCase().includes('KHUDLORI'));
-      if (khudlori) {
-        const hasKhudloriLog = list.some(item => item.description.toUpperCase().includes('KHUDLORI'));
-        if (!hasKhudloriLog) {
-          list.unshift({
-            id: `khudlori-status-log-${khudlori.id || Date.now()}`,
-            time: new Date().toLocaleDateString('id-ID'),
-            timestamp: Date.now() - 2000,
-            adminName: 'Superadmin (superadmin@attaroqqy.com)',
-            adminRole: 'Superadmin',
-            module: 'Sekretariat',
-            actionType: 'Perubahan Status Santri',
-            description: `Mengubah status santri "${khudlori.nama}" dari Alumni menjadi ${khudlori.statusKeanggotaan || 'Aktif'}`,
-            details: `Status Keanggotaan: ${khudlori.statusKeanggotaan || 'Aktif'} | NIS: ${khudlori.nis || '-'} | Kamar: ${khudlori.kamar || '-'}`
-          });
-        }
-      }
-    }
-
-    baseFallbackLogs.forEach(fb => {
-      if (!list.some(item => item.adminName === fb.adminName)) {
-        list.push(fb);
-      }
-    });
-
-    // Filter activities: only report santri data changes; exclude system-only changes AND delete logs older than 14 days
+    // Filter activities: exclude system-only changes AND delete logs older than 14 days
     const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
     const now = Date.now();
     const filteredList = list.filter(item => {
+      if (!item || !item.timestamp) return false;
       if (item.module === 'Sistem' || item.actionType?.toLowerCase().includes('sistem') || item.actionType?.toLowerCase().includes('hak akses')) {
         return false;
       }
@@ -947,7 +685,7 @@ export default function HomeView({
 
     filteredList.sort((a, b) => b.timestamp - a.timestamp);
     return filteredList;
-  }, [keamananList, santriList, bendaharaList, registeredAccounts, activityRefreshTrigger, uniqueAdmins, isCurrentSuperadmin]);
+  }, [activityRefreshTrigger]);
 
   const uniqueModules = ['Sekretariat', 'Keamanan', 'Keuangan', 'Pendidikan', 'Humas'];
 
@@ -1297,9 +1035,11 @@ export default function HomeView({
                   {adminActivityLogs.length}
                 </span>
               </button>
-              <span className="text-rose-500 font-bold shrink-0 text-[11px] md:text-xs">
-                ({currentActivity.time})
-              </span>
+              {currentActivity.time !== '-' && (
+                <span className="text-rose-500 font-bold shrink-0 text-[11px] md:text-xs">
+                  ({currentActivity.time})
+                </span>
+              )}
             </div>
             
             <div 
@@ -2488,8 +2228,8 @@ export default function HomeView({
                 {filteredAdminActivities.length === 0 ? (
                   <div className="py-12 text-center text-slate-400 space-y-2">
                     <Info className="w-8 h-8 mx-auto text-slate-300" />
-                    <p className="text-xs font-bold text-slate-600">Tidak ada riwayat aktivitas yang sesuai filter.</p>
-                    <p className="text-[11px]">Coba ubah kata kunci pencarian atau filter admin & modul.</p>
+                    <p className="text-xs font-bold text-slate-600">Belum ada aktivitas</p>
+                    <p className="text-[11px]">Belum ada riwayat perubahan atau aktivitas yang tercatat pada periode ini.</p>
                   </div>
                 ) : (
                   filteredAdminActivities.map((act, index) => {
