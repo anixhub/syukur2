@@ -133,7 +133,7 @@ app.use("/api/uploads", express.static(path.join(process.cwd(), "dist", "uploads
 let mysqlPool: mysql.Pool | null = null;
 const memoryStore = new Map<string, any[]>();
 
-function getMySQLPool(): mysql.Pool | null {
+export function getMySQLPool(): mysql.Pool | null {
   const host = process.env.MYSQL_HOST || process.env.DB_HOST || "localhost";
   const user = process.env.MYSQL_USER || process.env.DB_USER;
   const password = process.env.MYSQL_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS || "";
@@ -165,6 +165,96 @@ function getMySQLPool(): mysql.Pool | null {
   return mysqlPool;
 }
 
+export interface LogActivityOptions {
+  userId?: number | string | null;
+  namaUser: string;
+  peran?: string;
+  aksi: string;
+  deskripsi: string;
+  modul?: string;
+  req?: express.Request;
+  ipAddress?: string;
+  userAgent?: string;
+}
+
+export async function catatAktivitas(options: LogActivityOptions): Promise<boolean> {
+  const {
+    userId = null,
+    namaUser,
+    peran = "Pengurus",
+    aksi,
+    deskripsi,
+    modul = "Umum",
+    req,
+    ipAddress: customIp,
+    userAgent: customUA
+  } = options;
+
+  let ipAddress = customIp;
+  let userAgent = customUA;
+
+  if (req) {
+    const cfIp = req.headers["cf-connecting-ip"];
+    const forwarded = req.headers["x-forwarded-for"];
+    ipAddress = ipAddress || (
+      typeof cfIp === "string" 
+        ? cfIp 
+        : Array.isArray(forwarded) 
+          ? forwarded[0] 
+          : (typeof forwarded === "string" ? forwarded.split(",")[0].trim() : req.socket?.remoteAddress || "127.0.0.1")
+    );
+    userAgent = userAgent || req.headers["user-agent"] || "Unknown";
+  }
+
+  ipAddress = ipAddress || "127.0.0.1";
+  userAgent = userAgent || "Unknown";
+
+  const pool = getMySQLPool();
+  if (pool) {
+    try {
+      const sql = `
+        INSERT INTO \`riwayat_aktivitas\`
+        (\`user_id\`, \`nama_user\`, \`peran\`, \`aksi\`, \`deskripsi\`, \`modul\`, \`ip_address\`, \`user_agent\`)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+      await pool.query(sql, [
+        userId ? Number(userId) || null : null,
+        namaUser,
+        peran,
+        aksi,
+        deskripsi,
+        modul,
+        ipAddress,
+        userAgent
+      ]);
+      return true;
+    } catch (err: any) {
+      console.error("Gagal mencatat riwayat_aktivitas ke MySQL:", err.message);
+      return false;
+    }
+  }
+
+  try {
+    const list = memoryStore.get("riwayat_aktivitas") || [];
+    list.push({
+      id: Date.now(),
+      user_id: userId,
+      nama_user: namaUser,
+      peran,
+      aksi,
+      deskripsi,
+      modul,
+      ip_address: ipAddress,
+      user_agent: userAgent,
+      created_at: new Date().toISOString()
+    });
+    memoryStore.set("riwayat_aktivitas", list);
+    return true;
+  } catch (err: any) {
+    return false;
+  }
+}
+
 // Whitelist of valid table names to prevent SQL injection
 const VALID_TABLES = new Set([
   "santri",
@@ -191,7 +281,8 @@ const VALID_TABLES = new Set([
   "document_templates",
   "admin_chat",
   "tasks",
-  "tugas"
+  "tugas",
+  "riwayat_aktivitas"
 ]);
 
 // -------------------------------------------------------------
