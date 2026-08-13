@@ -7,7 +7,8 @@ import {
   ChevronDown, Printer, Sparkles, UserCheck, ShieldAlert, UserMinus, ArrowLeftRight,
   Download, Eye, Sliders, Hash, FileSpreadsheet, ListOrdered, Shuffle, Crown, DoorClosed, CheckSquare
 } from 'lucide-react';
-import { Kompleks, Kamar, Santri } from '../../types';
+import { Kompleks, Kamar, Santri, isGenderMatch } from '../../types';
+import { hasValidRoom } from '../../lib/utils';
 import SantriDetailModal from '../sekretaris/SantriDetailModal';
 import { renderSantriAvatar, calculateRealtimeAge, getPesantrenProfile } from '../SekretarisHelper';
 
@@ -329,8 +330,9 @@ export default function KamarSub({
   // Helper to get students belonging to a room
   const getMembersOfRoom = (roomName: string) => {
     return santriList.filter(s => {
-      if (s.gender !== selectedGender) return false;
-      if (s.statusKeanggotaan && s.statusKeanggotaan !== 'Aktif') return false;
+      if (!isGenderMatch(selectedGender, s.gender)) return false;
+      const statusKg = (s.statusKeanggotaan || 'Aktif').trim().toLowerCase();
+      if (statusKg === 'alumni' || statusKg === 'meninggal') return false;
       return (s.kamar || '').trim().toLowerCase() === roomName.trim().toLowerCase();
     });
   };
@@ -339,10 +341,11 @@ export default function KamarSub({
   const getMembersOfKompleks = (kompleksId: string) => {
     const roomsInKompleks = kamarList.filter(r => r.kompleksId === kompleksId).map(r => r.nama.trim().toLowerCase());
     return santriList.filter(s => {
-      if (s.gender !== selectedGender) return false;
-      if (s.statusKeanggotaan && s.statusKeanggotaan !== 'Aktif') return false;
+      if (!isGenderMatch(selectedGender, s.gender)) return false;
+      const statusKg = (s.statusKeanggotaan || 'Aktif').trim().toLowerCase();
+      if (statusKg === 'alumni' || statusKg === 'meninggal') return false;
       const kName = (s.kamar || '').trim().toLowerCase();
-      return kName && kName !== 'tanpa kamar' && roomsInKompleks.includes(kName);
+      return hasValidRoom(kName) && roomsInKompleks.includes(kName);
     });
   };
 
@@ -365,14 +368,17 @@ export default function KamarSub({
   });
 
   // Calculate Overall Gender Statistics
-  const activeGenderSantri = santriList.filter(s => s.gender === selectedGender && (!s.statusKeanggotaan || s.statusKeanggotaan === 'Aktif'));
+  const activeGenderSantri = santriList.filter(s => {
+    const statusKg = (s.statusKeanggotaan || 'Aktif').trim().toLowerCase();
+    return isGenderMatch(selectedGender, s.gender) && statusKg !== 'alumni' && statusKg !== 'meninggal';
+  });
   const activeGenderKompleksIds = currentGenderKompleks.map(k => k.id);
   const activeGenderKamar = kamarList.filter(r => activeGenderKompleksIds.includes(r.kompleksId));
   const activeGenderRoomNames = activeGenderKamar.map(r => r.nama.toLowerCase());
 
   const placedSantriCount = activeGenderSantri.filter(s => {
     const kName = (s.kamar || '').trim().toLowerCase();
-    return kName && kName !== 'tanpa kamar' && activeGenderRoomNames.includes(kName);
+    return hasValidRoom(kName) && activeGenderRoomNames.includes(kName);
   }).length;
 
   const totalGenderCapacity = activeGenderKamar.reduce((sum, r) => sum + (r.kapasitas || 15), 0);
@@ -775,9 +781,9 @@ export default function KamarSub({
 
   // Students eligible to be added to room / lemari
   const eligibleStudentsForAdd = santriList.filter(s => {
-    if (s.gender !== selectedGender) return false;
+    if (!isGenderMatch(selectedGender, s.gender)) return false;
     const statusKg = (s.statusKeanggotaan || (s as any).status || 'Aktif').trim().toLowerCase();
-    if (statusKg !== 'aktif') return false;
+    if (statusKg === 'alumni' || statusKg === 'meninggal') return false;
 
     // If targetSlotForAdd is set, exclude students who are ALREADY in targetSlotForAdd in this active room
     if (activeRoomForDetail && targetSlotForAdd) {
@@ -788,8 +794,7 @@ export default function KamarSub({
       }
     }
 
-    const kamarNorm = (s.kamar || '').trim().toLowerCase();
-    const isBelumKamar = !kamarNorm || kamarNorm === 'tanpa kamar' || kamarNorm === 'belum kamar';
+    const isBelumKamar = !hasValidRoom(s.kamar);
     const slotNum = parseInt(s.nomorLemari || '0', 10);
     const isBelumLemari = !s.nomorLemari || isNaN(slotNum) || slotNum <= 0;
 
@@ -2407,15 +2412,14 @@ export default function KamarSub({
                 );
                 const extraRooms = Array.from(new Set(
                   santriList
-                    .filter(s => s.gender === selectedGender && s.kamar && s.kamar.trim() && s.kamar.trim().toLowerCase() !== 'tanpa kamar' && s.kamar.trim().toLowerCase() !== 'belum kamar')
-                    .map(s => s.kamar.trim())
+                    .filter(s => isGenderMatch(selectedGender, s.gender) && hasValidRoom(s.kamar))
+                    .map(s => s.kamar!.trim())
                     .filter(kName => !coveredRoomNames.has(kName.toLowerCase()))
                 )).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
 
                 // Group unselected eligible students by room
                 const groupedByRoom = unselectedEligibleStudents.reduce((acc, s) => {
-                  const kamarNorm = (s.kamar || '').trim().toLowerCase();
-                  const isBelumKamar = !kamarNorm || kamarNorm === 'tanpa kamar' || kamarNorm === 'belum kamar';
+                  const isBelumKamar = !hasValidRoom(s.kamar);
                   const rawKamar = (s.kamar || '').trim();
                   const roomKey = isBelumKamar
                     ? 'Belum Memiliki Kamar'
@@ -2555,8 +2559,7 @@ export default function KamarSub({
                                 {!isCollapsed && (
                                   <div className="space-y-1.5 pt-0.5">
                                     {groupedByRoom[roomKey].map(s => {
-                                      const kamarNorm = (s.kamar || '').trim().toLowerCase();
-                                      const isBelumKamar = !kamarNorm || kamarNorm === 'tanpa kamar' || kamarNorm === 'belum kamar';
+                                      const isBelumKamar = !hasValidRoom(s.kamar);
                                       const slotNum = parseInt(s.nomorLemari || '0', 10);
                                       const isBelumLemari = !s.nomorLemari || isNaN(slotNum) || slotNum <= 0;
 
@@ -2631,8 +2634,7 @@ export default function KamarSub({
                           </div>
                         ) : (
                           selectedStudentsForModal.map(s => {
-                            const kamarNorm = (s.kamar || '').trim().toLowerCase();
-                            const isBelumKamar = !kamarNorm || kamarNorm === 'tanpa kamar' || kamarNorm === 'belum kamar';
+                            const isBelumKamar = !hasValidRoom(s.kamar);
                             const slotNum = parseInt(s.nomorLemari || '0', 10);
                             const isBelumLemari = !s.nomorLemari || isNaN(slotNum) || slotNum <= 0;
 

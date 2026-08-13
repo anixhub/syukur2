@@ -399,15 +399,26 @@ export function hasValidRoom(kamarStr?: string | null): boolean {
   if (
     clean === '' ||
     clean === '-' ||
+    clean === '--' ||
     clean === 'tanpa kamar' ||
+    clean === 'belum kamar' ||
     clean === 'belum ada' ||
     clean === 'belum ada kamar' ||
     clean === 'belum dapat' ||
     clean === 'belum dapat kamar' ||
     clean === 'belum diatur' ||
     clean === 'belum diatur kamar' ||
+    clean === 'belum ditempatkan' ||
+    clean === 'belum ditentukan' ||
+    clean === 'belum diisi' ||
     clean === 'tidak ada' ||
-    clean === 'non-asrama'
+    clean === 'tidak ada kamar' ||
+    clean === 'non-asrama' ||
+    clean === 'tanpa asrama' ||
+    clean === 'belum' ||
+    clean === '0' ||
+    clean === 'null' ||
+    clean === 'undefined'
   ) {
     return false;
   }

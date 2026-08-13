@@ -28,7 +28,7 @@ import {
   ArrowUpDown,
   Building2,
 } from "lucide-react";
-import { Santri, Kompleks, Kamar, Lembaga, Kelas } from "../../types";
+import { Santri, Kompleks, Kamar, Lembaga, Kelas, isGenderMatch } from "../../types";
 import { hasValidRoom } from "../../lib/utils";
 import { renderSantriAvatar, getPesantrenProfile } from "../SekretarisHelper";
 import SantriDetailModal from "../sekretaris/SantriDetailModal";
@@ -362,12 +362,13 @@ export default function DataKamarSantriSub({
   // Filter students based on search and selected filters
   const filteredSantri = santriList.filter((s) => {
     // 0. Filter out Alumni and Meninggal
-    if (s.statusKeanggotaan === "Alumni" || s.statusKeanggotaan === "Meninggal") {
+    const statusKg = (s.statusKeanggotaan || "Aktif").trim().toLowerCase();
+    if (statusKg === "alumni" || statusKg === "meninggal") {
       return false;
     }
 
     // 1. Gender Filter (Switch as filter)
-    if (s.gender !== genderFilter) {
+    if (!isGenderMatch(genderFilter, s.gender)) {
       return false;
     }
 
@@ -532,13 +533,16 @@ export default function DataKamarSantriSub({
     paginatedSantri,
   ]);
 
-  // Count unassigned students for the current gender Filter (excluding Alumni)
-  const unassignedSantriCount = santriList.filter(
-    (s) =>
-      s.gender === genderFilter &&
-      s.statusKeanggotaan !== "Alumni" &&
-      !hasValidRoom(s.kamar),
-  ).length;
+  // Count unassigned students for the current gender Filter (excluding Alumni & Meninggal)
+  const unassignedSantriCount = santriList.filter((s) => {
+    const statusKg = (s.statusKeanggotaan || "Aktif").trim().toLowerCase();
+    return (
+      isGenderMatch(genderFilter, s.gender) &&
+      statusKg !== "alumni" &&
+      statusKg !== "meninggal" &&
+      !hasValidRoom(s.kamar)
+    );
+  }).length;
 
   // Excel Export Handler (XML Format compatible with Excel)
   const handleExportExcel = (customFileName?: string) => {
@@ -1237,6 +1241,7 @@ export default function DataKamarSantriSub({
           <button
             type="button"
             onClick={() => {
+              setSearchQuery("");
               setKamarStatusFilter("belum");
               setKompleksFilter("semua");
               setKamarFilter("semua");
