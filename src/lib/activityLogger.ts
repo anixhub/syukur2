@@ -53,6 +53,21 @@ export function logAdminActivity(
     const trimmed = logs.filter(l => (now - l.timestamp) <= FOURTEEN_DAYS_MS).slice(0, 100);
     localStorage.setItem('smartsantri_admin_activity_logs', JSON.stringify(trimmed));
     window.dispatchEvent(new Event('smartsantri_activity_updated'));
+
+    // Kirim juga ke server backend untuk disimpan ke MySQL riwayat_aktivitas
+    fetch('/api/db/riwayat_aktivitas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        nama_user: formattedAdminName,
+        peran: isAdminSuper ? 'Superadmin' : getRoleLabel(role),
+        aksi: actionType,
+        deskripsi: description,
+        modul: module
+      })
+    }).catch(err => {
+      console.warn("Gagal mengirim riwayat_aktivitas ke server backend:", err);
+    });
   } catch (e) {
     console.warn("Gagal menyimpan log aktivitas admin:", e);
   }
