@@ -241,8 +241,9 @@ export async function fetchTableData<T>(table: string, localKey?: string, defaul
         const camelCasedData = snakeToCamel(result.data) as T[];
         const uniqueMap = new Map<any, T>();
         camelCasedData.forEach((item: any) => {
-          if (item && item.id) {
-            uniqueMap.set(item.id, item);
+          if (item && item.id !== undefined && item.id !== null) {
+            const key = String(item.id);
+            uniqueMap.set(key, { ...item, id: key });
           } else if (item) {
             uniqueMap.set(Math.random().toString(), item);
           }

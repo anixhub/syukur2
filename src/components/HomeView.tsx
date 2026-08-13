@@ -588,11 +588,17 @@ export default function HomeView({
     loadAccounts();
     loadActivityLogs();
 
-    const unsubscribeWs = subscribeRealtimeChanges((payload: any) => {
-      if (!payload.table || payload.table === 'riwayat_aktivitas' || payload.table === 'app_credentials' || payload.action === 'truncate_all') {
-        loadActivityLogs();
+    // Auto-polling every 8 seconds to continuously fetch updates entering the database
+    const pollInterval = setInterval(() => {
+      if (isMounted) {
         loadAccounts();
+        loadActivityLogs();
       }
+    }, 8000);
+
+    const unsubscribeWs = subscribeRealtimeChanges((payload: any) => {
+      loadActivityLogs();
+      loadAccounts();
     });
 
     const handleUpdate = () => {
@@ -607,6 +613,7 @@ export default function HomeView({
 
     return () => {
       isMounted = false;
+      clearInterval(pollInterval);
       unsubscribeWs();
       window.removeEventListener('smartsantri_activity_updated', handleUpdate);
       window.removeEventListener('smartsantri_profile_updated', handleUpdate);

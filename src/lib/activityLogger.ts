@@ -1,3 +1,5 @@
+import { getApiUrl } from './api';
+
 export interface AdminActivityLog {
   id: string;
   time: string;
@@ -65,7 +67,7 @@ export function logAdminActivity(
     };
 
     // Kirim juga ke server backend untuk disimpan ke MySQL riwayat_aktivitas
-    fetch('/api/db/riwayat_aktivitas', {
+    fetch(getApiUrl('/api/db/riwayat_aktivitas'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

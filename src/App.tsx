@@ -353,9 +353,14 @@ export default function App() {
 
     loadAllData();
 
+    // Auto-polling every 10 seconds to ensure database changes (e.g. from MySQL / direct queries / other devices) are always displayed
+    const appPollInterval = setInterval(() => {
+      loadAllData();
+    }, 10000);
+
     // Subscribe to WebSocket realtime changes from server
     const unsubscribeWs = subscribeRealtimeChanges((payload: any) => {
-      if (payload.event === 'db_change') {
+      if (payload.event === 'db_change' || payload.type === 'db_change' || payload.action === 'db_change') {
         if (payload.table === 'santri') {
           if (payload.action === 'delete' && payload.id) {
             setSantriList(prev => prev.filter(s => s.id !== payload.id));
@@ -405,9 +410,11 @@ export default function App() {
               return [camelData, ...prev];
             });
           }
-        } else if (payload.action === 'truncate_all' || !payload.data) {
+        } else {
           loadAllData();
         }
+      } else if (payload.action === 'truncate_all' || !payload.data) {
+        loadAllData();
       }
     });
 
@@ -421,6 +428,7 @@ export default function App() {
     document.addEventListener('visibilitychange', handleFocusOrVisibility);
 
     return () => {
+      clearInterval(appPollInterval);
       unsubscribeWs();
       window.removeEventListener('focus', handleFocusOrVisibility);
       document.removeEventListener('visibilitychange', handleFocusOrVisibility);
