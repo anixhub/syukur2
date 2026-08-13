@@ -508,10 +508,13 @@ export default function HomeView({
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
   const [registeredAccounts, setRegisteredAccounts] = useState<any[]>([]);
+  const [dbActivityLogs, setDbActivityLogs] = useState<any[]>([]);
 
   const [activityRefreshTrigger, setActivityRefreshTrigger] = useState(0);
 
   useEffect(() => {
+    let isMounted = true;
+
     async function loadAccounts() {
       try {
         const local = localStorage.getItem('smartsantri_app_credentials');
@@ -520,22 +523,45 @@ export default function HomeView({
         if (Array.isArray(remote) && remote.length > 0) {
           creds = remote;
         }
-        setRegisteredAccounts(creds);
+        if (isMounted) setRegisteredAccounts(creds);
       } catch (e) {
         console.warn("Gagal memuat daftar akun terdaftar:", e);
       }
     }
+
+    async function loadActivityLogs() {
+      try {
+        const remoteLogs = await fetchTableData<any>('riwayat_aktivitas', 'smartsantri_admin_activity_logs', []);
+        if (isMounted && Array.isArray(remoteLogs)) {
+          setDbActivityLogs(remoteLogs);
+        }
+      } catch (e) {
+        console.warn("Gagal memuat log riwayat_aktivitas dari database:", e);
+      }
+    }
+
     loadAccounts();
+    loadActivityLogs();
+
+    const unsubscribeWs = subscribeRealtimeChanges((payload: any) => {
+      if (!payload.table || payload.table === 'riwayat_aktivitas' || payload.table === 'app_credentials' || payload.action === 'truncate_all') {
+        loadActivityLogs();
+        loadAccounts();
+      }
+    });
 
     const handleUpdate = () => {
       setActivityRefreshTrigger(prev => prev + 1);
       loadAccounts();
+      loadActivityLogs();
     };
 
     window.addEventListener('smartsantri_activity_updated', handleUpdate);
     window.addEventListener('storage', handleUpdate);
 
     return () => {
+      isMounted = false;
+      unsubscribeWs();
       window.removeEventListener('smartsantri_activity_updated', handleUpdate);
       window.removeEventListener('storage', handleUpdate);
     };
@@ -647,8 +673,45 @@ export default function HomeView({
 
   const adminActivityLogs = useMemo<AdminActivityLog[]>(() => {
     const list: AdminActivityLog[] = [];
+    const seenIds = new Set<string>();
 
-    // Custom stored logs from localStorage (real admin actions)
+    // 1. Process logs fetched from database table riwayat_aktivitas
+    if (Array.isArray(dbActivityLogs)) {
+      dbActivityLogs.forEach((item: any) => {
+        if (!item) return;
+        let ts = Date.now();
+        if (item.timestamp && !isNaN(Number(item.timestamp))) {
+          ts = Number(item.timestamp);
+        } else if (item.created_at) {
+          const parsed = new Date(item.created_at).getTime();
+          if (!isNaN(parsed)) ts = parsed;
+        }
+
+        const dateObj = new Date(ts);
+        const timeStr = dateObj.toLocaleDateString('id-ID', {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric'
+        }) + ', ' + String(dateObj.getHours()).padStart(2, '0') + '.' + String(dateObj.getMinutes()).padStart(2, '0');
+
+        const logId = String(item.id || `db-${ts}-${item.nama_user || ''}-${item.aksi || ''}`);
+        seenIds.add(logId);
+
+        list.push({
+          id: logId,
+          time: timeStr,
+          timestamp: ts,
+          adminName: normalizeAdminLabel(item.nama_user || item.adminName || item.user_id, item.peran || item.adminRole),
+          adminRole: item.peran || item.adminRole || 'Pengurus',
+          module: (item.modul || item.module || 'Sekretariat') as any,
+          actionType: item.aksi || item.actionType || 'AKTIVITAS',
+          description: item.deskripsi || item.description || '',
+          details: item.details || ''
+        });
+      });
+    }
+
+    // 2. Custom stored logs from localStorage (instant buffer)
     try {
       const stored = localStorage.getItem('smartsantri_admin_activity_logs');
       if (stored) {
@@ -656,10 +719,14 @@ export default function HomeView({
         if (Array.isArray(parsed)) {
           parsed.forEach((p: any) => {
             if (p && p.timestamp) {
-              list.push({
-                ...p,
-                adminName: normalizeAdminLabel(p.adminName, p.adminRole)
-              });
+              const logId = String(p.id || `local-${p.timestamp}`);
+              if (!seenIds.has(logId)) {
+                seenIds.add(logId);
+                list.push({
+                  ...p,
+                  adminName: normalizeAdminLabel(p.adminName, p.adminRole)
+                });
+              }
             }
           });
         }
@@ -685,7 +752,7 @@ export default function HomeView({
 
     filteredList.sort((a, b) => b.timestamp - a.timestamp);
     return filteredList;
-  }, [activityRefreshTrigger]);
+  }, [dbActivityLogs, activityRefreshTrigger, uniqueAdmins]);
 
   const uniqueModules = ['Sekretariat', 'Keamanan', 'Keuangan', 'Pendidikan', 'Humas'];
 
