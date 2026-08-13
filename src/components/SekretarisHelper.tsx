@@ -433,8 +433,16 @@ export function PrintTemplate({ printableSantri, renderSantriAvatar: customRende
                   <span className="font-medium text-slate-800 ml-1 font-mono">{printableSantri.nisn || '-'}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 font-semibold">NISM:</span>
-                  <span className="font-medium text-slate-800 ml-1 font-mono">{printableSantri.nism || '-'}</span>
+                  <span className="text-slate-400 font-semibold">Induk MHD:</span>
+                  <span className="font-medium text-slate-800 ml-1 font-mono">{printableSantri.indukMhd || '-'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold">Induk Wustho:</span>
+                  <span className="font-medium text-slate-800 ml-1 font-mono">{printableSantri.indukWustho || '-'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-semibold">Induk Ulya:</span>
+                  <span className="font-medium text-slate-800 ml-1 font-mono">{printableSantri.indukUlya || '-'}</span>
                 </div>
                 <div>
                   <span className="text-slate-400 font-semibold">Domisili Pesantren:</span>

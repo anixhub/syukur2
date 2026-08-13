@@ -132,7 +132,7 @@ export default function LembagaKelasSub({
   const [currentPage, setCurrentPage] = useState(1);
   
   // Sorting states
-  const [sortField, setSortField] = useState<'nama' | 'nik' | 'nis' | 'nisn' | 'nism' | 'statusKeanggotaan' | 'statusEmis' | 'statusVerval' | 'kamar' | null>(null);
+  const [sortField, setSortField] = useState<'nama' | 'nik' | 'nis' | 'nisn' | 'indukMhd' | 'indukWustho' | 'indukUlya' | 'statusKeanggotaan' | 'statusEmis' | 'statusVerval' | 'kamar' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   // Scroll & Table navigation states
@@ -324,7 +324,7 @@ export default function LembagaKelasSub({
     }
   };
 
-  const handleSort = (field: 'nama' | 'nik' | 'nis' | 'nisn' | 'nism' | 'statusKeanggotaan' | 'statusEmis' | 'statusVerval' | 'kamar') => {
+  const handleSort = (field: 'nama' | 'nik' | 'nis' | 'nisn' | 'indukMhd' | 'indukWustho' | 'indukUlya' | 'statusKeanggotaan' | 'statusEmis' | 'statusVerval' | 'kamar') => {
     if (sortField === field) {
       setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
@@ -333,7 +333,7 @@ export default function LembagaKelasSub({
     }
   };
 
-  const renderSortableHeader = (label: string, field: 'nama' | 'nik' | 'nis' | 'nisn' | 'nism' | 'statusKeanggotaan' | 'statusEmis' | 'statusVerval' | 'kamar', extraClass: string, justify: string = 'justify-start', styleOverride?: React.CSSProperties) => {
+  const renderSortableHeader = (label: string, field: 'nama' | 'nik' | 'nis' | 'nisn' | 'indukMhd' | 'indukWustho' | 'indukUlya' | 'statusKeanggotaan' | 'statusEmis' | 'statusVerval' | 'kamar', extraClass: string, justify: string = 'justify-start', styleOverride?: React.CSSProperties) => {
     const isSorted = sortField === field;
     return (
       <th 
@@ -418,7 +418,9 @@ export default function LembagaKelasSub({
         {renderSortableHeader('Profil Santri', 'nama', 'sticky left-[42px] z-20 w-[200px] min-w-[200px] max-w-[200px] pl-2 py-4 bg-slate-100 border-r border-slate-200 relative', 'justify-start', getStyle())}
         {activeTab === 'Formal' && renderSortableHeader('NIK', 'nik', 'w-[130px] min-w-[130px] pl-1 py-4 bg-slate-100', 'justify-start', getStyle())}
         {renderSortableHeader('NISN', 'nisn', 'w-[110px] min-w-[110px] pl-1 py-4 bg-slate-100', 'justify-start', getStyle())}
-        {renderSortableHeader('NISM', 'nism', 'w-[110px] min-w-[110px] pl-1 py-4 bg-slate-100', 'justify-start', getStyle())}
+        {renderSortableHeader('Induk MHD', 'indukMhd', 'w-[110px] min-w-[110px] pl-1 py-4 bg-slate-100', 'justify-start', getStyle())}
+        {renderSortableHeader('Induk Wustho', 'indukWustho', 'w-[110px] min-w-[110px] pl-1 py-4 bg-slate-100', 'justify-start', getStyle())}
+        {renderSortableHeader('Induk Ulya', 'indukUlya', 'w-[110px] min-w-[110px] pl-1 py-4 bg-slate-100', 'justify-start', getStyle())}
         {activeTab !== 'Formal' && renderSortableHeader('Status', 'statusKeanggotaan', 'w-[100px] min-w-[100px] pl-1 py-4 bg-slate-100', 'justify-start', getStyle())}
         {activeTab === 'Formal' ? (
           <>
@@ -1031,7 +1033,9 @@ export default function LembagaKelasSub({
         (s.nik && s.nik.toLowerCase().includes(q)) ||
         (s.nis && s.nis.toLowerCase().includes(q)) ||
         (s.nisn && s.nisn.toLowerCase().includes(q)) ||
-        (s.nism && s.nism.toLowerCase().includes(q))
+        (s.indukMhd && s.indukMhd.toLowerCase().includes(q)) ||
+        (s.indukWustho && s.indukWustho.toLowerCase().includes(q)) ||
+        (s.indukUlya && s.indukUlya.toLowerCase().includes(q))
       );
 
       if (!matchesSearch) return false;
@@ -3233,9 +3237,19 @@ export default function LembagaKelasSub({
                                       {s.nisn || <span className="text-slate-300">-</span>}
                                     </td>
 
-                                    {/* NISM */}
+                                    {/* Induk MHD */}
                                     <td className="w-[110px] min-w-[110px] font-mono font-bold text-slate-400 truncate pl-1 py-4.5">
-                                      {s.nism || <span className="text-slate-300">-</span>}
+                                      {s.indukMhd || <span className="text-slate-300">-</span>}
+                                    </td>
+
+                                    {/* Induk Wustho */}
+                                    <td className="w-[110px] min-w-[110px] font-mono font-bold text-slate-400 truncate pl-1 py-4.5">
+                                      {s.indukWustho || <span className="text-slate-300">-</span>}
+                                    </td>
+
+                                    {/* Induk Ulya */}
+                                    <td className="w-[110px] min-w-[110px] font-mono font-bold text-slate-400 truncate pl-1 py-4.5">
+                                      {s.indukUlya || <span className="text-slate-300">-</span>}
                                     </td>
 
                                     {/* Status (Non-Formal) */}

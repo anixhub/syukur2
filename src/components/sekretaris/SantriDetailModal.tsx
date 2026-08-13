@@ -994,7 +994,9 @@ export default function SantriDetailModal({ selectedSantri, onClose, onUpdateSan
                   <div className="space-y-2">
                     {[
                       { label: 'NISN', val: localSantri.nisn || '-' },
-                      { label: 'NISM', val: localSantri.nism || '-' },
+                      { label: 'INDUK MHD', val: localSantri.indukMhd || '-' },
+                      { label: 'INDUK WUSTHO', val: localSantri.indukWustho || '-' },
+                      { label: 'INDUK ULYA', val: localSantri.indukUlya || '-' },
                       { label: 'Pendidikan Terakhir', val: localSantri.pendidikanTerakhir || '-' },
                     ].map((item, idx) => (
                       <div 

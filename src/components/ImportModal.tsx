@@ -150,7 +150,9 @@ const REPLACE_FIELDS = [
   { value: 'nis', label: 'NIS' },
   { value: 'nama', label: 'Nama Lengkap' },
   { value: 'nisn', label: 'NISN' },
-  { value: 'nism', label: 'NISM' },
+  { value: 'indukMhd', label: 'Induk MHD' },
+  { value: 'indukWustho', label: 'Induk Wustho' },
+  { value: 'indukUlya', label: 'Induk Ulya' },
   { value: 'nik', label: 'NIK' },
   { value: 'noKk', label: 'No KK' },
   { value: 'tempatLahir', label: 'Tempat Lahir' },
@@ -679,7 +681,9 @@ export function ImportModal({
           const idxNis = headers.indexOf('NIS');
           const idxNama = headers.indexOf('Nama Lengkap');
           const idxNisn = headers.indexOf('NISN');
-          const idxNism = headers.indexOf('NISM');
+          const idxIndukMhd = headers.indexOf('INDUK MHD') !== -1 ? headers.indexOf('INDUK MHD') : (headers.indexOf('Induk MHD') !== -1 ? headers.indexOf('Induk MHD') : headers.indexOf('Induk Mhd'));
+          const idxIndukWustho = headers.indexOf('INDUK WUSTHO') !== -1 ? headers.indexOf('INDUK WUSTHO') : (headers.indexOf('Induk Wustho') !== -1 ? headers.indexOf('Induk Wustho') : headers.indexOf('Induk Wustho'));
+          const idxIndukUlya = headers.indexOf('INDUK ULYA') !== -1 ? headers.indexOf('INDUK ULYA') : (headers.indexOf('Induk Ulya') !== -1 ? headers.indexOf('Induk Ulya') : headers.indexOf('Induk Ulya'));
           const idxNik = headers.indexOf('NIK');
           const idxNoKk = headers.indexOf('No KK') !== -1 ? headers.indexOf('No KK') : headers.indexOf('No. KK');
           const idxTempatLahir = headers.indexOf('Tempat Lahir');
@@ -745,7 +749,9 @@ export function ImportModal({
             }
 
             const nisn = getVal(idxNisn);
-            const nism = getVal(idxNism);
+            const indukMhd = getVal(idxIndukMhd);
+            const indukWustho = getVal(idxIndukWustho);
+            const indukUlya = getVal(idxIndukUlya);
             const nik = getVal(idxNik);
             const noKk = getVal(idxNoKk);
             const tempatLahir = getVal(idxTempatLahir);
@@ -831,7 +837,9 @@ export function ImportModal({
               tanggalMasuk,
               pendidikanTerakhir,
               nisn,
-              nism,
+              indukMhd,
+              indukWustho,
+              indukUlya,
               nik,
               noKk,
               tempatLahir,
@@ -977,10 +985,6 @@ export function ImportModal({
 
       if (row.nisn && row.nisn.trim() !== "") {
         if (!/^\d+$/.test(row.nisn) || row.nisn.length !== 10) hasCriticalError = true;
-      }
-
-      if (row.nism && row.nism.trim() !== "") {
-        if (!/^\d+$/.test(row.nism) || row.nism.length !== 18) hasCriticalError = true;
       }
 
       if (row.nikAyah && row.nikAyah.trim() !== "") {
@@ -1144,14 +1148,6 @@ export function ImportModal({
         }
       }
 
-      if (row.nism && row.nism.trim() !== "") {
-        if (!/^\d+$/.test(row.nism)) {
-          criticalErrors.nism = "NISM harus berupa angka (tidak boleh ada huruf)";
-        } else if (row.nism.length !== 18) {
-          criticalErrors.nism = `NISM harus tepat 18 digit (terdeteksi ${row.nism.length} digit)`;
-        }
-      }
-
       if (row.nikAyah && row.nikAyah.trim() !== "") {
         if (!/^\d+$/.test(row.nikAyah)) {
           criticalErrors.nikAyah = "NIK Ayah harus berupa angka (tidak boleh ada huruf)";
@@ -1271,8 +1267,6 @@ export function ImportModal({
       { id: 'noKk_invalid_length', label: 'No KK Bukan 16 Digit', matcher: (errors: Record<string, string>) => !!errors.noKk && errors.noKk.includes('16 digit') },
       { id: 'nisn_not_number', label: 'NISN Bukan Angka', matcher: (errors: Record<string, string>) => !!errors.nisn && errors.nisn.includes('angka') },
       { id: 'nisn_invalid_length', label: 'NISN Bukan 10 Digit', matcher: (errors: Record<string, string>) => !!errors.nisn && errors.nisn.includes('10 digit') },
-      { id: 'nism_not_number', label: 'NISM Bukan Angka', matcher: (errors: Record<string, string>) => !!errors.nism && errors.nism.includes('angka') },
-      { id: 'nism_invalid_length', label: 'NISM Bukan 18 Digit', matcher: (errors: Record<string, string>) => !!errors.nism && errors.nism.includes('18 digit') },
       { id: 'tanggalLahir_invalid', label: 'Format Tanggal Lahir Salah', matcher: (errors: Record<string, string>) => !!errors.tanggalLahir },
       { id: 'tanggalMasuk_invalid', label: 'Format Tanggal Masuk Salah', matcher: (errors: Record<string, string>) => !!errors.tanggalMasuk },
       { id: 'tanggalKeluar_invalid', label: 'Format Tanggal Keluar Salah', matcher: (errors: Record<string, string>) => !!errors.tanggalKeluar },
@@ -1405,7 +1399,7 @@ export function ImportModal({
 
   const handleExportInvalidData = () => {
     const headers = [
-      'NIS', 'Nama Lengkap', 'NISN', 'NISM', 'NIK', 'No KK', 'Tempat Lahir', 'Tanggal Lahir', 'Gender',
+      'NIS', 'Nama Lengkap', 'NISN', 'Induk MHD', 'Induk Wustho', 'Induk Ulya', 'NIK', 'No KK', 'Tempat Lahir', 'Tanggal Lahir', 'Gender',
       'Pendidikan Terakhir', 'Anak Ke', 'Jumlah Saudara', 'Nama Ayah', 'NIK Ayah', 'Pekerjaan Ayah', 'Pendidikan Ayah',
       'Nama Ibu', 'NIK Ibu', 'Pekerjaan Ibu', 'Pendidikan Ibu', 'Alamat', 'RT', 'RW', 'Desa',
       'Kecamatan', 'Kabupaten', 'Provinsi', 'Jarak Rumah (km)', 'No HP Wali', 'Status Keanggotaan',
@@ -1413,7 +1407,7 @@ export function ImportModal({
     ];
 
     const fieldsToExport: (keyof Santri)[] = [
-      'nis', 'nama', 'nisn', 'nism', 'nik', 'noKk', 'tempatLahir', 'tanggalLahir', 'gender',
+      'nis', 'nama', 'nisn', 'indukMhd', 'indukWustho', 'indukUlya', 'nik', 'noKk', 'tempatLahir', 'tanggalLahir', 'gender',
       'pendidikanTerakhir', 'anakKe', 'dariBersaudara', 'namaAyah', 'nikAyah', 'pekerjaanAyah', 'pendidikanAyah',
       'namaIbu', 'nikIbu', 'pekerjaanIbu', 'pendidikanIbu', 'alamat', 'rt', 'rw', 'desa',
       'kecamatan', 'kabupaten', 'provinsi', 'jarakRumah', 'noHp', 'statusKeanggotaan',
@@ -1478,7 +1472,7 @@ export function ImportModal({
 
   const handleExportEditedData = () => {
     const headers = [
-      'NIS', 'Nama Lengkap', 'NISN', 'NISM', 'NIK', 'No KK', 'Tempat Lahir', 'Tanggal Lahir', 'Gender',
+      'NIS', 'Nama Lengkap', 'NISN', 'Induk MHD', 'Induk Wustho', 'Induk Ulya', 'NIK', 'No KK', 'Tempat Lahir', 'Tanggal Lahir', 'Gender',
       'Pendidikan Terakhir', 'Anak Ke', 'Jumlah Saudara', 'Nama Ayah', 'NIK Ayah', 'Pekerjaan Ayah', 'Pendidikan Ayah',
       'Nama Ibu', 'NIK Ibu', 'Pekerjaan Ibu', 'Pendidikan Ibu', 'Alamat', 'RT', 'RW', 'Desa',
       'Kecamatan', 'Kabupaten', 'Provinsi', 'Jarak Rumah (km)', 'No HP Wali', 'Status Keanggotaan',
@@ -1486,7 +1480,7 @@ export function ImportModal({
     ];
 
     const fieldsToExport: (keyof Santri)[] = [
-      'nis', 'nama', 'nisn', 'nism', 'nik', 'noKk', 'tempatLahir', 'tanggalLahir', 'gender',
+      'nis', 'nama', 'nisn', 'indukMhd', 'indukWustho', 'indukUlya', 'nik', 'noKk', 'tempatLahir', 'tanggalLahir', 'gender',
       'pendidikanTerakhir', 'anakKe', 'dariBersaudara', 'namaAyah', 'nikAyah', 'pekerjaanAyah', 'pendidikanAyah',
       'namaIbu', 'nikIbu', 'pekerjaanIbu', 'pendidikanIbu', 'alamat', 'rt', 'rw', 'desa',
       'kecamatan', 'kabupaten', 'provinsi', 'jarakRumah', 'noHp', 'statusKeanggotaan',
@@ -1757,7 +1751,9 @@ export function ImportModal({
         nik: s.nik && s.nik.trim() !== "" ? s.nik.trim() : null,
         noKk: s.noKk && s.noKk.trim() !== "" ? s.noKk.trim() : null,
         nisn: s.nisn && s.nisn.trim() !== "" ? s.nisn.trim() : null,
-        nism: s.nism && s.nism.trim() !== "" ? s.nism.trim() : null,
+        indukMhd: s.indukMhd && s.indukMhd.trim() !== "" ? s.indukMhd.trim() : null,
+        indukWustho: s.indukWustho && s.indukWustho.trim() !== "" ? s.indukWustho.trim() : null,
+        indukUlya: s.indukUlya && s.indukUlya.trim() !== "" ? s.indukUlya.trim() : null,
         nikAyah: s.nikAyah && s.nikAyah.trim() !== "" ? s.nikAyah.trim() : null,
         nikIbu: s.nikIbu && s.nikIbu.trim() !== "" ? s.nikIbu.trim() : null,
         anakKe: s.anakKe !== undefined && s.anakKe !== null && String(s.anakKe).trim() !== "" ? Number(s.anakKe) : null,
@@ -2448,7 +2444,9 @@ export function ImportModal({
                             {renderImportCell('nis', 'NIS')}
                             {renderImportCell('nama', 'Nama Lengkap')}
                             {renderImportCell('nisn', 'NISN')}
-                            {renderImportCell('nism', 'NISM')}
+                            {renderImportCell('indukMhd', 'Induk MHD')}
+                            {renderImportCell('indukWustho', 'Induk Wustho')}
+                            {renderImportCell('indukUlya', 'Induk Ulya')}
                             {renderImportCell('nik', 'NIK')}
                             {renderImportCell('noKk', 'No KK')}
                             {renderImportCell('tempatLahir', 'Tempat Lahir')}

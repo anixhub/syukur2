@@ -679,7 +679,7 @@ export default function PengaturanView({
       };
 
       // Calculate exact colspans dynamically
-      const totalBiodataCols = 31;
+      const totalBiodataCols = 33;
       const totalAkademikCols = listLembaga.length + listRombelCategories.length + 1; // +1 is Kamar/Asrama
       const totalDisiplinCols = 2; // Poin Pelanggaran & Jumlah Pelanggaran
       const totalColsCount = totalBiodataCols + totalAkademikCols + totalDisiplinCols;
@@ -762,7 +762,9 @@ export default function PengaturanView({
               <th class="table-th" style="background-color: #f1f5f9; border: 1px solid #cbd5e1; font-weight: bold; text-align: center;">No</th>
               <th class="table-th" style="background-color: #f1f5f9; border: 1px solid #cbd5e1; font-weight: bold; text-align: center;">NIS</th>
               <th class="table-th" style="background-color: #f1f5f9; border: 1px solid #cbd5e1; font-weight: bold; text-align: center;">NISN</th>
-              <th class="table-th" style="background-color: #f1f5f9; border: 1px solid #cbd5e1; font-weight: bold; text-align: center;">NISM</th>
+              <th class="table-th" style="background-color: #f1f5f9; border: 1px solid #cbd5e1; font-weight: bold; text-align: center;">Induk MHD</th>
+              <th class="table-th" style="background-color: #f1f5f9; border: 1px solid #cbd5e1; font-weight: bold; text-align: center;">Induk Wustho</th>
+              <th class="table-th" style="background-color: #f1f5f9; border: 1px solid #cbd5e1; font-weight: bold; text-align: center;">Induk Ulya</th>
               <th class="table-th" style="background-color: #f1f5f9; border: 1px solid #cbd5e1; font-weight: bold; text-align: center;">NIK</th>
               <th class="table-th" style="background-color: #f1f5f9; border: 1px solid #cbd5e1; font-weight: bold; text-align: center;">No KK</th>
               <th class="table-th" style="background-color: #f1f5f9; border: 1px solid #cbd5e1; font-weight: bold; text-align: center; min-width: 150px;">Nama Santri</th>
@@ -841,7 +843,9 @@ export default function PengaturanView({
               <td style="text-align: center; border: 1px solid #cbd5e1;">${idx + 1}</td>
               <td style="font-family: monospace; border: 1px solid #cbd5e1; text-align: center; mso-number-format:'\\@';">${s.nis || '-'}</td>
               <td style="font-family: monospace; border: 1px solid #cbd5e1; text-align: center; mso-number-format:'\\@';">${s.nisn || '-'}</td>
-              <td style="font-family: monospace; border: 1px solid #cbd5e1; text-align: center; mso-number-format:'\\@';">${s.nism || '-'}</td>
+              <td style="font-family: monospace; border: 1px solid #cbd5e1; text-align: center; mso-number-format:'\\@';">${s.indukMhd || '-'}</td>
+              <td style="font-family: monospace; border: 1px solid #cbd5e1; text-align: center; mso-number-format:'\\@';">${s.indukWustho || '-'}</td>
+              <td style="font-family: monospace; border: 1px solid #cbd5e1; text-align: center; mso-number-format:'\\@';">${s.indukUlya || '-'}</td>
               <td style="font-family: monospace; border: 1px solid #cbd5e1; text-align: center; mso-number-format:'\\@';">${s.nik || '-'}</td>
               <td style="font-family: monospace; border: 1px solid #cbd5e1; text-align: center; mso-number-format:'\\@';">${s.noKk || '-'}</td>
               <td style="font-weight: bold; color: #1e293b; border: 1px solid #cbd5e1; white-space: nowrap;">${s.nama || '-'}</td>

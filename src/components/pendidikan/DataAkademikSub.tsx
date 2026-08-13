@@ -243,6 +243,37 @@ export default function DataAkademikSub({
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
   const [isGroupDropdownOpen, setIsGroupDropdownOpen] = useState(false);
 
+  // Excel-Style Header Column Filters
+  const [excelColumnFilters, setExcelColumnFilters] = useState<Record<string, string[]>>({});
+  const [openExcelFilterCol, setOpenExcelFilterCol] = useState<{ key: string; label: string } | null>(null);
+  const [excelFilterAnchorRect, setExcelFilterAnchorRect] = useState<{ top: number; left: number; bottom: number; right: number } | null>(null);
+  const [excelFilterSearch, setExcelFilterSearch] = useState<string>('');
+  const [tempExcelSelected, setTempExcelSelected] = useState<string[]>([]);
+  const filterPopoverRef = React.useRef<HTMLDivElement>(null);
+
+  // Close Excel Filter popover on click outside or Escape
+  useEffect(() => {
+    if (!openExcelFilterCol) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpenExcelFilterCol(null);
+        setExcelFilterAnchorRect(null);
+      }
+    };
+    const handleClickOutside = (e: MouseEvent) => {
+      if (filterPopoverRef.current && !filterPopoverRef.current.contains(e.target as Node)) {
+        setOpenExcelFilterCol(null);
+        setExcelFilterAnchorRect(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('mousedown', handleClickOutside, true);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('mousedown', handleClickOutside, true);
+    };
+  }, [openExcelFilterCol]);
+
   // Lock background body scroll when modal is open
   useEffect(() => {
     const isModalOpen = isEditModalOpen || isExportModalOpen || !!selectedSantri || !!transferStudent;
@@ -586,11 +617,50 @@ export default function DataAkademikSub({
     return parts.join(', ');
   };
 
-  // Filter students based on academic query, gender and academic filters
+  // Helper to resolve cell display value for Excel column filtering
+  const getStudentColumnValue = (s: Santri, colKey: string): string => {
+    if (colKey === 'nama') return s.nama || '-';
+    if (colKey === 'nis') return (s.nis && s.nis.trim() !== '' && s.nis !== '-') ? s.nis : 'Kosong / Belum Ada';
+    if (colKey === 'statusEmis') return s.statusEmis || 'Belum';
+    if (colKey.startsWith('lembaga_')) {
+      const lemId = colKey.replace('lembaga_', '');
+      const lem = activeLembagas.find(l => String(l.id) === lemId);
+      if (!lem) return 'Tanpa Kelas';
+      return getStudentClassInLembaga(s, lem) || 'Tanpa Kelas';
+    }
+    if (colKey.startsWith('rombel_')) {
+      const catId = colKey.replace('rombel_', '');
+      const asg = assignmentsList.find(a => a.santriId === s.id && a.kategoriId === catId);
+      if (!asg) return 'Tanpa Kelompok';
+      const grp = groupsList.find(g => g.id === asg.kelompokId);
+      return grp ? grp.nama : 'Tanpa Kelompok';
+    }
+    return '-';
+  };
+
+  // Compute distinct list of values for a specific column key
+  const getDistinctValuesForColumn = (colKey: string): string[] => {
+    const baseList = santriList.filter(s => {
+      if (academicType === 'formal') {
+        if (s.statusKeanggotaan === 'Meninggal') return false;
+      } else {
+        if (s.statusKeanggotaan === 'Alumni' || s.statusKeanggotaan === 'Meninggal') return false;
+      }
+      return isGenderMatch(s.gender, genderFilter);
+    });
+
+    const valuesSet = new Set<string>();
+    baseList.forEach(s => {
+      const val = getStudentColumnValue(s, colKey);
+      if (val) valuesSet.add(val);
+    });
+
+    return Array.from(valuesSet).sort((a, b) => a.localeCompare(b, 'id', { numeric: true, sensitivity: 'base' }));
+  };
+
+  // Filter students based on academic query, gender, academic filters, and Excel column filters
   const filteredSantri = santriList.filter(s => {
     // 0. Filter statusKeanggotaan:
-    // Khusus Pendidikan Formal: dapat memasukkan santri aktif dan alumni, TETAPI BUKAN yang meninggal.
-    // Untuk non-formal / internal / rombel: hanya santri aktif.
     if (academicType === 'formal') {
       if (s.statusKeanggotaan === 'Meninggal') {
         return false;
@@ -661,6 +731,16 @@ export default function DataAkademikSub({
       if (selectedGroupFilter !== 'semua' && hasRombel) {
         const matchesGroup = assignmentsList.some(a => a.santriId === s.id && a.kelompokId === selectedGroupFilter);
         if (!matchesGroup) return false;
+      }
+    }
+
+    // 4. Excel Column Filters Check
+    for (const [colKey, selectedVals] of Object.entries(excelColumnFilters)) {
+      if (selectedVals && selectedVals.length > 0) {
+        const cellValue = getStudentColumnValue(s, colKey);
+        if (!selectedVals.includes(cellValue)) {
+          return false;
+        }
       }
     }
 
@@ -1373,37 +1453,104 @@ export default function DataAkademikSub({
     }
   };
 
+  // Distinct statistics for the active column filter popover
+  const distinctStats = useMemo(() => {
+    if (!openExcelFilterCol) return [];
+    const key = openExcelFilterCol.key;
+    const baseList = santriList.filter(s => {
+      if (academicType === 'formal') {
+        if (s.statusKeanggotaan === 'Meninggal') return false;
+      } else {
+        if (s.statusKeanggotaan === 'Alumni' || s.statusKeanggotaan === 'Meninggal') return false;
+      }
+      return isGenderMatch(s.gender, genderFilter);
+    });
+
+    const countMap = new Map<string, number>();
+    baseList.forEach(s => {
+      const val = getStudentColumnValue(s, key);
+      countMap.set(val, (countMap.get(val) || 0) + 1);
+    });
+
+    return Array.from(countMap.entries()).map(([value, count]) => ({
+      value,
+      count
+    })).sort((a, b) => a.value.localeCompare(b.value, 'id', { numeric: true, sensitivity: 'base' }));
+  }, [openExcelFilterCol, santriList, academicType, genderFilter, activeLembagas, assignmentsList, groupsList, categoriesList]);
+
   const renderSortHeader = (key: string, label: string, isSticky: boolean = false, extraClasses: string = '', styleOverride?: React.CSSProperties) => {
     const isSorted = sortKey === key;
+    const hasActiveFilter = excelColumnFilters[key] && excelColumnFilters[key].length > 0;
+    const isOpen = openExcelFilterCol?.key === key;
+
     return (
       <th 
         key={key}
-        onClick={() => {
-          if (sortKey === key) {
-            setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-          } else {
-            setSortKey(key);
-            setSortDirection('asc');
-          }
-        }}
         style={styleOverride}
-        className={`px-6 py-4 cursor-pointer transition-all select-none font-display text-xs font-bold uppercase tracking-wider hover:bg-indigo-100/50 relative ${
+        className={`px-4 py-3.5 transition-all select-none font-display text-xs font-bold uppercase tracking-wider relative ${
+          hasActiveFilter ? 'bg-indigo-100/90 text-indigo-900 border-b-2 border-indigo-600' : ''
+        } ${
           isSticky 
             ? `static sm:sticky bg-slate-50 hover:bg-slate-100 z-20 ${extraClasses}` 
-            : 'bg-slate-50 hover:bg-slate-100 text-slate-400'
+            : 'bg-slate-50 hover:bg-slate-100 text-slate-500'
         }`}
       >
-        <div className="flex items-center gap-1.5 justify-start">
-          <span className="text-current">{label}</span>
-          {isSorted ? (
-            sortDirection === 'asc' ? (
-              <ArrowUp className="h-3 w-3 text-indigo-700 shrink-0 font-bold font-sans" />
+        <div className="flex items-center justify-between gap-1.5 min-w-0">
+          {/* Clickable Title area for Sorting */}
+          <div 
+            className="flex items-center gap-1 flex-1 min-w-0 cursor-pointer"
+            onClick={() => {
+              if (sortKey === key) {
+                setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+              } else {
+                setSortKey(key);
+                setSortDirection('asc');
+              }
+            }}
+          >
+            <span className="text-current truncate">{label}</span>
+            {isSorted ? (
+              sortDirection === 'asc' ? (
+                <ArrowUp className="h-3 w-3 text-indigo-700 shrink-0 font-bold font-sans" />
+              ) : (
+                <ArrowDown className="h-3 w-3 text-indigo-700 shrink-0 font-bold font-sans" />
+              )
             ) : (
-              <ArrowDown className="h-3 w-3 text-indigo-700 shrink-0 font-bold font-sans" />
-            )
-          ) : (
-            <ArrowUpDown className="h-3 w-3 text-slate-300 hover:text-slate-500 shrink-0" />
-          )}
+              <ArrowUpDown className="h-3 w-3 text-slate-300 hover:text-slate-500 shrink-0" />
+            )}
+          </div>
+
+          {/* Excel Filter Button (Funnel Icon) */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (isOpen) {
+                setOpenExcelFilterCol(null);
+                setExcelFilterAnchorRect(null);
+              } else {
+                const rect = e.currentTarget.getBoundingClientRect();
+                setExcelFilterAnchorRect({
+                  top: rect.top,
+                  left: rect.left,
+                  bottom: rect.bottom,
+                  right: rect.right
+                });
+                setOpenExcelFilterCol({ key, label });
+                setExcelFilterSearch('');
+                const distinctVals = getDistinctValuesForColumn(key);
+                setTempExcelSelected(excelColumnFilters[key] ? [...excelColumnFilters[key]] : [...distinctVals]);
+              }
+            }}
+            className={`p-1 rounded-md transition-all shrink-0 cursor-pointer ${
+              hasActiveFilter 
+                ? 'bg-indigo-600 text-white shadow-2xs ring-2 ring-indigo-300' 
+                : 'text-slate-400 hover:text-slate-700 hover:bg-slate-200/70'
+            }`}
+            title={`Filter Excel kolom ${label}`}
+          >
+            <Filter className="h-3.5 w-3.5 stroke-[2.5]" />
+          </button>
         </div>
 
         {/* Scroll Left Button placed on right side of 'nama' header column */}
@@ -2115,6 +2262,8 @@ export default function DataAkademikSub({
                     setSelectedCategoryFilter('semua');
                     setSelectedGroupFilter('semua');
                     setSearchQuery('');
+                    setExcelColumnFilters({});
+                    setOpenExcelFilterCol(null);
                   }}
                   className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-all cursor-pointer"
                 >
@@ -2127,6 +2276,58 @@ export default function DataAkademikSub({
         </AnimatePresence>
 
       </div>
+
+      {/* Active Excel Column Filters Bar */}
+      {Object.keys(excelColumnFilters).length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 bg-indigo-50/80 border border-indigo-200/80 p-3 rounded-2xl text-xs text-indigo-950 shadow-2xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5 font-bold text-indigo-900 shrink-0">
+              <Filter className="h-4 w-4 text-indigo-600 stroke-[2.5]" />
+              <span>Filter Kolom Excel Aktif ({Object.keys(excelColumnFilters).length}):</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {Object.entries(excelColumnFilters).map(([colKey, vals]) => {
+                let label = colKey;
+                if (colKey === 'nama') label = 'Nama';
+                else if (colKey === 'nis') label = 'NIS';
+                else if (colKey === 'statusEmis') label = 'Status EMIS';
+                else if (colKey.startsWith('lembaga_')) {
+                  const l = activeLembagas.find(lem => String(lem.id) === colKey.replace('lembaga_', ''));
+                  label = l ? l.nama : 'Lembaga';
+                } else if (colKey.startsWith('rombel_')) {
+                  const c = filteredCategories.find(cat => cat.id === colKey.replace('rombel_', ''));
+                  label = c ? c.nama : 'Rombel';
+                }
+                return (
+                  <span key={colKey} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white border border-indigo-200 text-indigo-900 font-semibold text-xs shadow-2xs">
+                    <span className="font-bold text-indigo-700">{label}:</span>
+                    <span className="truncate max-w-[200px]">{vals.join(', ')}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = { ...excelColumnFilters };
+                        delete next[colKey];
+                        setExcelColumnFilters(next);
+                      }}
+                      className="ml-0.5 text-slate-400 hover:text-rose-600 p-0.5 rounded-md hover:bg-rose-50 transition-colors cursor-pointer"
+                      title="Hapus filter kolom ini"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setExcelColumnFilters({})}
+            className="text-xs font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2.5 py-1 rounded-xl transition-all cursor-pointer border border-rose-200/60 bg-white"
+          >
+            Hapus Semua Filter Kolom
+          </button>
+        </div>
+      )}
 
       {/* Main Table View with sticky header */}
       <div id="academic-table-section" className="relative group/table overflow-visible">
@@ -2178,6 +2379,204 @@ export default function DataAkademikSub({
               </table>
             </div>
             {renderScrollButtons(true)}
+          </div>,
+          document.body
+        )}
+
+        {/* Portal-rendered Excel Column Filter Popover */}
+        {typeof document !== 'undefined' && openExcelFilterCol && excelFilterAnchorRect && createPortal(
+          <div
+            ref={filterPopoverRef}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'fixed',
+              top: (() => {
+                const popoverHeight = 360;
+                let t = excelFilterAnchorRect.bottom + 6;
+                if (typeof window !== 'undefined' && t + popoverHeight > window.innerHeight - 16 && excelFilterAnchorRect.top > popoverHeight) {
+                  t = excelFilterAnchorRect.top - popoverHeight - 6;
+                }
+                return `${Math.max(16, t)}px`;
+              })(),
+              left: (() => {
+                const popoverWidth = 280;
+                let l = excelFilterAnchorRect.left;
+                if (typeof window !== 'undefined') {
+                  if (l + popoverWidth > window.innerWidth - 16) {
+                    l = window.innerWidth - popoverWidth - 16;
+                  }
+                  if (l < 16) l = 16;
+                }
+                return `${l}px`;
+              })(),
+              width: '280px',
+              zIndex: 99999,
+            }}
+            className="rounded-2xl bg-white border border-slate-200 shadow-2xl p-3 text-left font-sans normal-case font-normal text-slate-800 animate-in fade-in zoom-in-95 duration-100"
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100 mb-2">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 min-w-0">
+                <Filter className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                <span className="truncate">Filter: {openExcelFilterCol.label}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setOpenExcelFilterCol(null);
+                  setExcelFilterAnchorRect(null);
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-100 cursor-pointer shrink-0"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            {/* Quick Sort Actions */}
+            <div className="flex gap-1.5 mb-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setSortKey(openExcelFilterCol.key);
+                  setSortDirection('asc');
+                }}
+                className={`flex-1 py-1 px-2 rounded-lg border text-[11px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                  sortKey === openExcelFilterCol.key && sortDirection === 'asc'
+                    ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                <ArrowUp className="h-3 w-3" /> Urut A - Z
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSortKey(openExcelFilterCol.key);
+                  setSortDirection('desc');
+                }}
+                className={`flex-1 py-1 px-2 rounded-lg border text-[11px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                  sortKey === openExcelFilterCol.key && sortDirection === 'desc'
+                    ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                <ArrowDown className="h-3 w-3" /> Urut Z - A
+              </button>
+            </div>
+
+            {/* Search Input for Column Values */}
+            <div className="relative mb-2">
+              <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={excelFilterSearch}
+                onChange={(e) => setExcelFilterSearch(e.target.value)}
+                placeholder="Cari nilai di kolom..."
+                className="w-full pl-8 pr-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:border-indigo-500 focus:bg-white text-slate-700"
+              />
+            </div>
+
+            {/* Select All / Deselect All Toggle */}
+            <div className="flex items-center justify-between py-1 px-1 border-b border-slate-100 text-xs mb-1">
+              <label className="flex items-center gap-2 cursor-pointer text-slate-600 font-semibold text-[11px]">
+                <input
+                  type="checkbox"
+                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5"
+                  checked={distinctStats.length > 0 && distinctStats.every(s => tempExcelSelected.includes(s.value))}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setTempExcelSelected(distinctStats.map(s => s.value));
+                    } else {
+                      setTempExcelSelected([]);
+                    }
+                  }}
+                />
+                <span>(Pilih Semua)</span>
+              </label>
+              <span className="text-[10px] text-slate-400 font-medium">
+                {tempExcelSelected.length}/{distinctStats.length}
+              </span>
+            </div>
+
+            {/* Value Checklist with count badge */}
+            <div className="max-h-44 overflow-y-auto space-y-1 py-1 px-1 custom-scrollbar">
+              {distinctStats.filter(s => s.value.toLowerCase().includes(excelFilterSearch.toLowerCase())).length === 0 ? (
+                <p className="text-[11px] text-slate-400 text-center py-2">Tidak ada nilai cocok</p>
+              ) : (
+                distinctStats
+                  .filter(s => s.value.toLowerCase().includes(excelFilterSearch.toLowerCase()))
+                  .map((item) => {
+                    const isChecked = tempExcelSelected.includes(item.value);
+                    return (
+                      <label key={item.value} className="flex items-center justify-between gap-2 px-1.5 py-1 rounded-lg hover:bg-slate-50 cursor-pointer text-xs text-slate-700">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <input
+                            type="checkbox"
+                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5 shrink-0"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setTempExcelSelected([...tempExcelSelected, item.value]);
+                              } else {
+                                setTempExcelSelected(tempExcelSelected.filter(v => v !== item.value));
+                              }
+                            }}
+                          />
+                          <span className="truncate">{item.value}</span>
+                        </div>
+                        <span className="text-[10px] font-mono font-medium px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 shrink-0">
+                          {item.count}
+                        </span>
+                      </label>
+                    );
+                  })
+              )}
+            </div>
+
+            {/* Popover Action Footer */}
+            <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-slate-100 mt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const updated = { ...excelColumnFilters };
+                  delete updated[openExcelFilterCol.key];
+                  setExcelColumnFilters(updated);
+                  setOpenExcelFilterCol(null);
+                  setExcelFilterAnchorRect(null);
+                }}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 text-[11px] font-bold cursor-pointer"
+              >
+                Hapus Filter
+              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenExcelFilterCol(null);
+                    setExcelFilterAnchorRect(null);
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 text-[11px] font-bold cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const updated = { ...excelColumnFilters };
+                    if (tempExcelSelected.length === 0 || tempExcelSelected.length === distinctStats.length) {
+                      delete updated[openExcelFilterCol.key];
+                    } else {
+                      updated[openExcelFilterCol.key] = tempExcelSelected;
+                    }
+                    setExcelColumnFilters(updated);
+                    setOpenExcelFilterCol(null);
+                    setExcelFilterAnchorRect(null);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold shadow-2xs cursor-pointer"
+                >
+                  Terapkan
+                </button>
+              </div>
+            </div>
           </div>,
           document.body
         )}

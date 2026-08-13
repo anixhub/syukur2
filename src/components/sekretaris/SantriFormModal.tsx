@@ -420,7 +420,9 @@ const initialFormState = {
   nama: '',
   nis: '',
   nisn: '',
-  nism: '',
+  indukMhd: '',
+  indukWustho: '',
+  indukUlya: '',
   nik: '',
   noKk: '',
   tempatLahir: '',
@@ -918,7 +920,9 @@ export default function SantriFormModal({
           nama: editingSantri.nama || '',
           nis: editingSantri.nis || '',
           nisn: formatBigDigit(editingSantri.nisn),
-          nism: formatBigDigit(editingSantri.nism),
+          indukMhd: editingSantri.indukMhd || '',
+          indukWustho: editingSantri.indukWustho || '',
+          indukUlya: editingSantri.indukUlya || '',
           nik: formatBigDigit(editingSantri.nik),
           noKk: formatBigDigit(editingSantri.noKk),
           tempatLahir: editingSantri.tempatLahir || '',
@@ -1145,9 +1149,6 @@ export default function SantriFormModal({
     if (form.nisn && form.nisn.length !== 10) {
       errors.nisn = "NISN harus terdiri dari 10 digit angka";
     }
-    if (form.nism && form.nism.length !== 18) {
-      errors.nism = "NISM harus terdiri dari 18 digit angka";
-    }
     if (form.nikAyah && form.nikAyah.length !== 16) {
       errors.nikAyah = "NIK Ayah harus terdiri dari 16 digit angka";
     }
@@ -1206,7 +1207,9 @@ export default function SantriFormModal({
       return !!(
         form.nis.trim() || 
         form.nisn || 
-        form.nism || 
+        form.indukMhd || 
+        form.indukWustho || 
+        form.indukUlya || 
         form.tanggalKeluar || 
         form.catatan.trim()
       );
@@ -1246,7 +1249,9 @@ export default function SantriFormModal({
       form.noHp ||
       form.nis.trim() || 
       form.nisn || 
-      form.nism || 
+      form.indukMhd || 
+      form.indukWustho || 
+      form.indukUlya || 
       form.tanggalKeluar || 
       form.catatan.trim() ||
       form.fileKk || 
@@ -1271,7 +1276,6 @@ export default function SantriFormModal({
       if (validationErrors.nikIbu) errors.push(validationErrors.nikIbu);
     } else if (currentStep === 4) {
       if (validationErrors.nisn) errors.push(validationErrors.nisn);
-      if (validationErrors.nism) errors.push(validationErrors.nism);
       if (validationErrors.nis) errors.push(validationErrors.nis);
     }
 
@@ -1326,7 +1330,7 @@ export default function SantriFormModal({
         targetStep = 1;
       } else if (['nikAyah', 'nikIbu'].includes(firstField)) {
         targetStep = 2;
-      } else if (['nisn', 'nism', 'nis'].includes(firstField)) {
+      } else if (['nisn', 'indukMhd', 'indukWustho', 'indukUlya', 'nis'].includes(firstField)) {
         targetStep = 4;
       }
       
@@ -1449,7 +1453,9 @@ export default function SantriFormModal({
       tanggalMasuk: form.tanggalMasuk,
       
       nisn: form.nisn,
-      nism: form.nism,
+      indukMhd: form.indukMhd,
+      indukWustho: form.indukWustho,
+      indukUlya: form.indukUlya,
       nik: form.nik,
       noKk: form.noKk,
       tempatLahir: form.tempatLahir,
@@ -2190,23 +2196,42 @@ export default function SantriFormModal({
                           )}
                         </div>
 
-                        <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">NISM</label>
-                          <input
-                            type="text"
-                            id="nism-input"
-                            value={form.nism}
-                            onChange={(e) => handleNumericOnlyChange('nism', e.target.value, 18)}
-                            placeholder="18 digit NISM"
-                            className={`select-text w-full rounded-xl border bg-white p-3 text-sm outline-none font-mono ${
-                              validationErrors.nism 
-                                ? 'border-rose-400 focus:border-rose-500 text-rose-900 placeholder-rose-300' 
-                                : 'border-slate-200 focus:border-emerald-500'
-                            }`}
-                          />
-                          {validationErrors.nism && (
-                            <p className="mt-1 text-[10px] text-rose-600 font-semibold">{validationErrors.nism}</p>
-                          )}
+                        <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4 border-t border-slate-100 pt-3">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">INDUK MHD</label>
+                            <input
+                              type="text"
+                              id="indukMhd-input"
+                              value={form.indukMhd}
+                              onChange={(e) => setForm(prev => ({ ...prev, indukMhd: e.target.value }))}
+                              placeholder="No. Induk MHD"
+                              className="select-text w-full rounded-xl border border-slate-200 bg-white p-3 text-sm outline-none focus:border-emerald-500 font-mono"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">INDUK WUSTHO</label>
+                            <input
+                              type="text"
+                              id="indukWustho-input"
+                              value={form.indukWustho}
+                              onChange={(e) => setForm(prev => ({ ...prev, indukWustho: e.target.value }))}
+                              placeholder="No. Induk Wustho"
+                              className="select-text w-full rounded-xl border border-slate-200 bg-white p-3 text-sm outline-none focus:border-emerald-500 font-mono"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">INDUK ULYA</label>
+                            <input
+                              type="text"
+                              id="indukUlya-input"
+                              value={form.indukUlya}
+                              onChange={(e) => setForm(prev => ({ ...prev, indukUlya: e.target.value }))}
+                              placeholder="No. Induk Ulya"
+                              className="select-text w-full rounded-xl border border-slate-200 bg-white p-3 text-sm outline-none focus:border-emerald-500 font-mono"
+                            />
+                          </div>
                         </div>
                       </div>
                     </div>

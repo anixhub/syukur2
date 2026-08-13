@@ -66,7 +66,7 @@ interface SantriTableViewProps {
 
 const isSantriDataComplete = (s: Santri): boolean => {
   const requiredFields: (keyof Santri)[] = [
-    'nis', 'nama', 'nisn', 'nism', 'nik', 'noKk', 'tempatLahir', 'tanggalLahir',
+    'nis', 'nama', 'nisn', 'indukMhd', 'indukWustho', 'indukUlya', 'nik', 'noKk', 'tempatLahir', 'tanggalLahir',
     'gender', 'pendidikanTerakhir', 'namaAyah', 'nikAyah', 'pekerjaanAyah', 'pendidikanAyah',
     'namaIbu', 'nikIbu', 'pekerjaanIbu', 'pendidikanIbu', 'alamat', 'rt', 'rw', 'desa',
     'kecamatan', 'kabupaten', 'provinsi', 'noHp', 'statusKeanggotaan', 'statusEmis'
@@ -100,8 +100,12 @@ const isCellEmpty = (s: Santri, key: string): boolean => {
       return !s.nik || !s.nik.trim() || s.nik === '-';
     case 'umur':
       return !s.tanggalLahir;
-    case 'nism':
-      return !s.nism || !s.nism.trim() || s.nism === '-';
+    case 'indukMhd':
+      return !s.indukMhd || !s.indukMhd.trim() || s.indukMhd === '-';
+    case 'indukWustho':
+      return !s.indukWustho || !s.indukWustho.trim() || s.indukWustho === '-';
+    case 'indukUlya':
+      return !s.indukUlya || !s.indukUlya.trim() || s.indukUlya === '-';
     case 'noKk':
       return !s.noKk || !s.noKk.trim() || s.noKk === '-';
     case 'tempatLahir':
@@ -1204,7 +1208,9 @@ export default function SantriTableView({
         {ageFilterConfig?.enabled && renderSortHeader('umur', 'Umur', false, 'w-[125px] min-w-[125px]', getAgeHeaderSubtext(ageFilterConfig), getStyle())}
 
         {/* Toggable & Monitoring columns */}
-        {shouldShowColumn('nism') && renderSortHeader('nism', 'NISM', false, 'w-[110px] min-w-[110px]', undefined, getStyle())}
+        {shouldShowColumn('indukMhd') && renderSortHeader('indukMhd', 'INDUK MHD', false, 'w-[120px] min-w-[120px]', undefined, getStyle())}
+        {shouldShowColumn('indukWustho') && renderSortHeader('indukWustho', 'INDUK WUSTHO', false, 'w-[135px] min-w-[135px]', undefined, getStyle())}
+        {shouldShowColumn('indukUlya') && renderSortHeader('indukUlya', 'INDUK ULYA', false, 'w-[120px] min-w-[120px]', undefined, getStyle())}
         {shouldShowColumn('noKk') && renderSortHeader('noKk', 'No. KK', false, 'w-[155px] min-w-[155px]', undefined, getStyle())}
         {shouldShowColumn('tempatLahir') && renderSortHeader('tempatLahir', 'Tempat Lahir', false, 'w-[125px] min-w-[125px]', undefined, getStyle())}
         {shouldShowColumn('tanggalLahir') && renderSortHeader('tanggalLahir', 'Tanggal Lahir', false, 'w-[115px] min-w-[115px]', undefined, getStyle())}
@@ -1422,11 +1428,25 @@ export default function SantriTableView({
                 )}
 
                 {/* Toggable / Monitoring */}
-                {shouldShowColumn('nism') && (
+                {shouldShowColumn('indukMhd') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-500 w-[120px] min-w-[120px] ${
-                    isMonitoringMode && isCellEmpty(s, 'nism') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
+                    isMonitoringMode && isCellEmpty(s, 'indukMhd') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
-                    {renderEditableCell(s, 'nism', s.nism || '-', { className: 'font-mono' })}
+                    {renderEditableCell(s, 'indukMhd', s.indukMhd || '-', { className: 'font-mono' })}
+                  </td>
+                )}
+                {shouldShowColumn('indukWustho') && (
+                  <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-500 w-[135px] min-w-[135px] ${
+                    isMonitoringMode && isCellEmpty(s, 'indukWustho') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
+                  }`}>
+                    {renderEditableCell(s, 'indukWustho', s.indukWustho || '-', { className: 'font-mono' })}
+                  </td>
+                )}
+                {shouldShowColumn('indukUlya') && (
+                  <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-500 w-[120px] min-w-[120px] ${
+                    isMonitoringMode && isCellEmpty(s, 'indukUlya') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
+                  }`}>
+                    {renderEditableCell(s, 'indukUlya', s.indukUlya || '-', { className: 'font-mono' })}
                   </td>
                 )}
                 {shouldShowColumn('noKk') && (

@@ -10,7 +10,9 @@ export interface Santri {
 
   // Identitas Santri tambahan
   nisn?: string;
-  nism?: string;
+  indukMhd?: string;
+  indukWustho?: string;
+  indukUlya?: string;
   nik?: string;
   noKk?: string;
   tempatLahir?: string;

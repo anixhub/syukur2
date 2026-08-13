@@ -291,7 +291,7 @@ export async function insertTableRow<T extends { id?: any }>(table: string, loca
         const remoteObj = Array.isArray(camelRemote) ? camelRemote[0] : camelRemote;
         if (remoteObj && typeof remoteObj === 'object') {
           const merged: any = { id: row.id, ...row };
-          const strFields = ['nik', 'nisn', 'noKk', 'nikAyah', 'nikIbu', 'noHp', 'nism', 'rt', 'rw'];
+          const strFields = ['nik', 'nisn', 'noKk', 'nikAyah', 'nikIbu', 'noHp', 'indukMhd', 'indukWustho', 'indukUlya', 'rt', 'rw'];
           for (const k of Object.keys(remoteObj)) {
             if (remoteObj[k] !== undefined) {
               if (strFields.includes(k)) {
@@ -385,7 +385,7 @@ export async function updateTableRow<T extends { id?: any }>(
         const camelRemote = snakeToCamel(result.data);
         const cleanedRemote: any = {};
         if (camelRemote && typeof camelRemote === 'object') {
-          const strFields = ['nik', 'nisn', 'noKk', 'nikAyah', 'nikIbu', 'noHp', 'nism', 'rt', 'rw'];
+          const strFields = ['nik', 'nisn', 'noKk', 'nikAyah', 'nikIbu', 'noHp', 'indukMhd', 'indukWustho', 'indukUlya', 'rt', 'rw'];
           for (const k of Object.keys(camelRemote)) {
             if (camelRemote[k] !== undefined) {
               if (strFields.includes(k)) {

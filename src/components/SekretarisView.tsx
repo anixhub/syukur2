@@ -412,7 +412,9 @@ export default function SekretarisView({
       { id: 'nis', label: 'NIS', isAlwaysVisible: true, getValue: (s: Santri) => s.nis || '' },
       { id: 'nama', label: 'Nama Lengkap', isAlwaysVisible: true, getValue: (s: Santri) => s.nama || '' },
       { id: 'nisn', label: 'NISN', isAlwaysVisible: false, colKey: 'nisn', getValue: (s: Santri) => s.nisn || '' },
-      { id: 'nism', label: 'NISM', isAlwaysVisible: false, colKey: 'nism', getValue: (s: Santri) => s.nism || '' },
+      { id: 'indukMhd', label: 'INDUK MHD', isAlwaysVisible: false, colKey: 'indukMhd', getValue: (s: Santri) => s.indukMhd || '' },
+      { id: 'indukWustho', label: 'INDUK WUSTHO', isAlwaysVisible: false, colKey: 'indukWustho', getValue: (s: Santri) => s.indukWustho || '' },
+      { id: 'indukUlya', label: 'INDUK ULYA', isAlwaysVisible: false, colKey: 'indukUlya', getValue: (s: Santri) => s.indukUlya || '' },
       { id: 'nik', label: 'NIK', isAlwaysVisible: false, colKey: 'nik', getValue: (s: Santri) => s.nik || '' },
       ...(ageFilterConfig.enabled ? [{
         id: 'umur',
@@ -811,8 +813,16 @@ export default function SekretarisView({
                   <td class="value" style="font-family: monospace;">: ${s.nisn || '-'}</td>
                 </tr>
                 <tr>
-                  <td class="label">NISM</td>
-                  <td class="value" style="font-family: monospace;">: ${s.nism || '-'}</td>
+                  <td class="label">Induk MHD</td>
+                  <td class="value" style="font-family: monospace;">: ${s.indukMhd || '-'}</td>
+                </tr>
+                <tr>
+                  <td class="label">Induk Wustho</td>
+                  <td class="value" style="font-family: monospace;">: ${s.indukWustho || '-'}</td>
+                </tr>
+                <tr>
+                  <td class="label">Induk Ulya</td>
+                  <td class="value" style="font-family: monospace;">: ${s.indukUlya || '-'}</td>
                 </tr>
               </table>
             </td>
@@ -899,7 +909,9 @@ export default function SekretarisView({
       { id: 'nis', label: 'NIS', isAlwaysVisible: true, getValue: (s: Santri) => s.nis || '' },
       { id: 'nama', label: 'Nama Lengkap', isAlwaysVisible: true, getValue: (s: Santri) => s.nama || '' },
       { id: 'nisn', label: 'NISN', isAlwaysVisible: false, colKey: 'nisn', getValue: (s: Santri) => s.nisn || '' },
-      { id: 'nism', label: 'NISM', isAlwaysVisible: false, colKey: 'nism', getValue: (s: Santri) => s.nism || '' },
+      { id: 'indukMhd', label: 'INDUK MHD', isAlwaysVisible: false, colKey: 'indukMhd', getValue: (s: Santri) => s.indukMhd || '' },
+      { id: 'indukWustho', label: 'INDUK WUSTHO', isAlwaysVisible: false, colKey: 'indukWustho', getValue: (s: Santri) => s.indukWustho || '' },
+      { id: 'indukUlya', label: 'INDUK ULYA', isAlwaysVisible: false, colKey: 'indukUlya', getValue: (s: Santri) => s.indukUlya || '' },
       { id: 'nik', label: 'NIK', isAlwaysVisible: false, colKey: 'nik', getValue: (s: Santri) => s.nik || '' },
       { id: 'noKk', label: 'No. KK', isAlwaysVisible: false, colKey: 'noKk', getValue: (s: Santri) => s.noKk || '' },
       { id: 'tempatLahir', label: 'Tempat Lahir', isAlwaysVisible: true, getValue: (s: Santri) => s.tempatLahir || '' },
@@ -983,7 +995,7 @@ export default function SekretarisView({
           <td style="text-align: center;">${idx + 1}</td>
           ${activeColumns.map(col => {
             const val = col.getValue(s);
-            const style = col.id === 'nis' || col.id === 'nisn' || col.id === 'nism' || col.id === 'nik' || col.id === 'noKk' || col.id === 'noHp'
+            const style = col.id === 'nis' || col.id === 'nisn' || col.id === 'indukMhd' || col.id === 'indukWustho' || col.id === 'indukUlya' || col.id === 'nik' || col.id === 'noKk' || col.id === 'noHp'
               ? 'style="font-family: monospace; text-align: center;"'
               : '';
             return `<td ${style}>${val !== undefined && val !== null && String(val).trim() !== '' ? val : '-'}</td>`;
@@ -1145,7 +1157,9 @@ export default function SekretarisView({
       (s.nis || '').toLowerCase().includes(qLower) ||
       (s.nisn || '').toLowerCase().includes(qLower) ||
       (s.nik || '').toLowerCase().includes(qLower) ||
-      (s.nism || '').toLowerCase().includes(qLower) ||
+      (s.indukMhd || '').toLowerCase().includes(qLower) ||
+      (s.indukWustho || '').toLowerCase().includes(qLower) ||
+      (s.indukUlya || '').toLowerCase().includes(qLower) ||
       (s.asal && s.asal.toLowerCase().includes(qLower)) ||
       (s.kamar && s.kamar.toLowerCase().includes(qLower));
     
@@ -2143,7 +2157,9 @@ export default function SekretarisView({
                           <div className="max-h-60 overflow-y-auto space-y-2 pr-1 scrollbar-thin">
                             {Object.keys(visibleColumns).map((colKey) => {
                               const labels: Record<string, string> = {
-                                nism: 'NISM',
+                                indukMhd: 'Induk MHD',
+                                indukWustho: 'Induk Wustho',
+                                indukUlya: 'Induk Ulya',
                                 noKk: 'No. KK',
                                 tempatLahir: 'Tempat Lahir',
                                 tanggalLahir: 'Tanggal Lahir',

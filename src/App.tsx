@@ -520,7 +520,7 @@ export default function App() {
       saved.statusKeanggotaan = savedUnifiedStatus;
 
       // Preserve identification fields from finalSantri if missing/invalid/truncated in saved response
-      const idFields: (keyof Santri)[] = ['nik', 'nisn', 'noKk', 'nikAyah', 'nikIbu', 'noHp', 'nism', 'nis', 'rt', 'rw'];
+      const idFields: (keyof Santri)[] = ['nik', 'nisn', 'noKk', 'nikAyah', 'nikIbu', 'noHp', 'indukMhd', 'indukWustho', 'indukUlya', 'nis', 'rt', 'rw'];
       for (const field of idFields) {
         (saved as any)[field] = mergeIdField(finalSantri[field], saved[field]);
       }
@@ -660,7 +660,7 @@ export default function App() {
           }
         }
       }
-      const idFields: (keyof Santri)[] = ['nik', 'nisn', 'noKk', 'nikAyah', 'nikIbu', 'noHp', 'nism', 'nis', 'rt', 'rw'];
+      const idFields: (keyof Santri)[] = ['nik', 'nisn', 'noKk', 'nikAyah', 'nikIbu', 'noHp', 'indukMhd', 'indukWustho', 'indukUlya', 'nis', 'rt', 'rw'];
       for (const field of idFields) {
         (mergedSaved as any)[field] = mergeIdField(processed[field], mergedSaved[field]);
       }
