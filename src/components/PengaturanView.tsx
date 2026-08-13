@@ -995,7 +995,8 @@ export default function PengaturanView({
             setSecUserId(activeUserObj.id);
             
             // Set displayName
-            let displayNameValue = activeUserObj.displayName || activeUserObj.display_name;
+            const savedLocal = localStorage.getItem('smartsantri_active_display_name');
+            let displayNameValue = savedLocal && savedLocal.trim() ? savedLocal.trim() : (activeUserObj.displayName || activeUserObj.display_name || activeUserObj.nama || activeUserObj.name);
             if (!displayNameValue) {
               displayNameValue = activeUserObj.role ? activeUserObj.role.split('_').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : 'Pengguna';
             }
@@ -1397,7 +1398,10 @@ export default function PengaturanView({
           username: secNewUsername,
           password: updatedPassword,
           displayName: secDisplayName,
-          avatarUrl: finalAvatarUrl
+          display_name: secDisplayName,
+          nama: secDisplayName,
+          avatarUrl: finalAvatarUrl,
+          avatar_url: finalAvatarUrl
         }
       );
 
@@ -1408,7 +1412,7 @@ export default function PengaturanView({
       localStorage.setItem('smartsantri_profile_avatar', finalAvatarUrl);
       
       if (targetId === 'superadmin') {
-        localStorage.setItem('smartsantri_app_credentials', JSON.stringify([{ id: 'superadmin', username: secNewUsername, password: updatedPassword }]));
+        localStorage.setItem('smartsantri_app_credentials', JSON.stringify([{ id: 'superadmin', username: secNewUsername, password: updatedPassword, displayName: secDisplayName, display_name: secDisplayName, nama: secDisplayName, role: 'superadmin' }]));
       }
       
       setSecUsername(secNewUsername);
@@ -1433,7 +1437,7 @@ export default function PengaturanView({
       localStorage.setItem('smartsantri_profile_avatar', secAvatar);
       
       if (targetId === 'superadmin') {
-        localStorage.setItem('smartsantri_app_credentials', JSON.stringify([{ id: 'superadmin', username: secNewUsername, password: updatedPassword }]));
+        localStorage.setItem('smartsantri_app_credentials', JSON.stringify([{ id: 'superadmin', username: secNewUsername, password: updatedPassword, displayName: secDisplayName, display_name: secDisplayName, nama: secDisplayName, role: 'superadmin' }]));
       }
       
       setSecUsername(secNewUsername);

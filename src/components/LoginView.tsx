@@ -203,7 +203,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
         id: found.id,
         username: found.username,
         role: found.role || 'superadmin',
-        displayName: found.displayName || found.username,
+        displayName: found.displayName || found.display_name || found.nama || found.name || found.username,
         avatarUrl: found.avatarUrl || found.fotoUrl || null
       };
     }

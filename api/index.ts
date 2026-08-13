@@ -1041,6 +1041,56 @@ async function ensureTableExists(table: string, pool: mysql.Pool) {
         } catch (e) {}
       }
     } catch (e) {}
+  } else if (table === 'riwayat_aktivitas') {
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS \`riwayat_aktivitas\` (
+          \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+          \`user_id\` INT NULL,
+          \`nama_user\` VARCHAR(255) NULL,
+          \`peran\` VARCHAR(100) NULL,
+          \`aksi\` VARCHAR(255) NULL,
+          \`deskripsi\` LONGTEXT NULL,
+          \`modul\` VARCHAR(100) NULL,
+          \`ip_address\` VARCHAR(100) NULL,
+          \`user_agent\` LONGTEXT NULL,
+          \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `);
+      const cols = ['user_id', 'nama_user', 'peran', 'aksi', 'deskripsi', 'modul', 'ip_address', 'user_agent', 'created_at'];
+      for (const col of cols) {
+        try {
+          if (col === 'created_at') {
+            await pool.query(`ALTER TABLE \`riwayat_aktivitas\` ADD COLUMN \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP`);
+          } else {
+            await pool.query(`ALTER TABLE \`riwayat_aktivitas\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
+          }
+        } catch (e) {}
+      }
+    } catch (e) {}
+  } else if (table === 'app_credentials') {
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS \`app_credentials\` (
+          \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
+          \`username\` VARCHAR(255) NULL,
+          \`password\` LONGTEXT NULL,
+          \`role\` VARCHAR(100) NULL,
+          \`status\` VARCHAR(100) DEFAULT 'approved',
+          \`displayName\` LONGTEXT NULL,
+          \`display_name\` LONGTEXT NULL,
+          \`nama\` LONGTEXT NULL,
+          \`avatarUrl\` LONGTEXT NULL,
+          \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `);
+      const cols = ['username', 'password', 'role', 'status', 'displayName', 'display_name', 'nama', 'avatarUrl', 'avatar_url', 'created_at'];
+      for (const col of cols) {
+        try {
+          await pool.query(`ALTER TABLE \`app_credentials\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
+        } catch (e) {}
+      }
+    } catch (e) {}
   }
 }
 
@@ -1209,6 +1259,18 @@ app.put("/api/db/:table/:id", async (req, res) => {
     delete sanitizedBody.kapasitas_kelas;
   } else if (table === "santri") {
     sanitizedBody = packPendidikanFormal(sanitizedBody);
+  } else if (table === "app_credentials") {
+    const dName = sanitizedBody.displayName || sanitizedBody.display_name || sanitizedBody.nama;
+    if (dName) {
+      sanitizedBody.displayName = dName;
+      sanitizedBody.display_name = dName;
+      sanitizedBody.nama = dName;
+    }
+    const aUrl = sanitizedBody.avatarUrl || sanitizedBody.avatar_url;
+    if (aUrl) {
+      sanitizedBody.avatarUrl = aUrl;
+      sanitizedBody.avatar_url = aUrl;
+    }
   }
 
   let updatedResult: any = { id, ...sanitizedBody };
@@ -1217,6 +1279,7 @@ app.put("/api/db/:table/:id", async (req, res) => {
   let existingOldRecord: any = null;
   if (pool) {
     try {
+      await ensureTableExists(table, pool);
       const [rows]: any = await pool.query(`SELECT * FROM \`${table}\` WHERE \`id\` = ? LIMIT 1`, [id]);
       if (rows?.[0]) existingOldRecord = rows[0];
     } catch (e) {}

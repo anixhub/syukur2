@@ -241,21 +241,55 @@ export default function HomeView({
     setShowPwaBanner(false);
   };
 
+  // State for registered accounts and logs
+  const [registeredAccounts, setRegisteredAccounts] = useState<any[]>([]);
+  const [dbActivityLogs, setDbActivityLogs] = useState<any[]>([]);
+
   // Active Admin Name
+  const [adminDisplayName, setAdminDisplayName] = useState(() => {
+    return localStorage.getItem('smartsantri_active_display_name') ||
+           localStorage.getItem('smartsantri_admin_name') ||
+           localStorage.getItem('smartsantri_user_name') ||
+           '';
+  });
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      setAdminDisplayName(
+        localStorage.getItem('smartsantri_active_display_name') ||
+        localStorage.getItem('smartsantri_admin_name') ||
+        localStorage.getItem('smartsantri_user_name') ||
+        ''
+      );
+    };
+    window.addEventListener('smartsantri_profile_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      window.removeEventListener('smartsantri_profile_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
+  }, []);
+
   const currentAdminName = useMemo(() => {
+    if (adminDisplayName && adminDisplayName.trim()) return adminDisplayName.trim();
     try {
-      const directName = localStorage.getItem('smartsantri_admin_name') || localStorage.getItem('smartsantri_user_name');
-      if (directName) return directName;
       const activeUser = localStorage.getItem('smartsantri_active_username');
       if (activeUser) {
+        if (Array.isArray(registeredAccounts)) {
+          const match = registeredAccounts.find((a: any) => (a.username || a.email || '').toLowerCase() === activeUser.toLowerCase());
+          if (match) {
+            const nameFromMatch = match.displayName || match.display_name || match.nama || match.name;
+            if (nameFromMatch && nameFromMatch.trim()) return nameFromMatch.trim();
+          }
+        }
         const clean = activeUser.split('@')[0];
         return clean.charAt(0).toUpperCase() + clean.slice(1);
       }
     } catch (e) {
       console.error(e);
     }
-    return 'David Mustofa';
-  }, []);
+    return 'Pengguna';
+  }, [adminDisplayName, registeredAccounts]);
 
   // Quotes typewriter animation state
   const quotesList = useMemo(() => [
@@ -507,8 +541,6 @@ export default function HomeView({
     const d = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
-  const [registeredAccounts, setRegisteredAccounts] = useState<any[]>([]);
-  const [dbActivityLogs, setDbActivityLogs] = useState<any[]>([]);
 
   const [activityRefreshTrigger, setActivityRefreshTrigger] = useState(0);
 
@@ -522,6 +554,19 @@ export default function HomeView({
         const remote = await fetchTableData<any>('app_credentials', 'smartsantri_app_credentials', creds);
         if (Array.isArray(remote) && remote.length > 0) {
           creds = remote;
+        }
+        const activeU = localStorage.getItem('smartsantri_active_username');
+        const activeDN = localStorage.getItem('smartsantri_active_display_name');
+        const activeR = localStorage.getItem('smartsantri_active_role');
+        if (activeDN && Array.isArray(creds)) {
+          creds = creds.map((c: any) => {
+            const isMatchU = activeU && c.username && c.username.toLowerCase() === activeU.toLowerCase();
+            const isMatchSuper = activeR === 'superadmin' && (c.id === 'superadmin' || (c.role && c.role.toLowerCase() === 'superadmin'));
+            if (isMatchU || isMatchSuper) {
+              return { ...c, displayName: activeDN, display_name: activeDN, nama: activeDN };
+            }
+            return c;
+          });
         }
         if (isMounted) setRegisteredAccounts(creds);
       } catch (e) {
@@ -557,12 +602,14 @@ export default function HomeView({
     };
 
     window.addEventListener('smartsantri_activity_updated', handleUpdate);
+    window.addEventListener('smartsantri_profile_updated', handleUpdate);
     window.addEventListener('storage', handleUpdate);
 
     return () => {
       isMounted = false;
       unsubscribeWs();
       window.removeEventListener('smartsantri_activity_updated', handleUpdate);
+      window.removeEventListener('smartsantri_profile_updated', handleUpdate);
       window.removeEventListener('storage', handleUpdate);
     };
   }, []);
@@ -585,22 +632,115 @@ export default function HomeView({
     return activeRole.includes('superadmin') || activeUsername.includes('superadmin');
   }, [activityRefreshTrigger]);
 
+  const normalizeAdminLabel = (rawInput: string, fallbackGenderOrRole?: string): string => {
+    if (!rawInput || typeof rawInput !== 'string' || !rawInput.trim()) {
+      return fallbackGenderOrRole || 'Pengurus';
+    }
+
+    const trimmed = rawInput.trim();
+    const lower = trimmed.toLowerCase();
+
+    let extractedUser = '';
+    let extractedName = '';
+
+    if (trimmed.includes('(') && trimmed.includes(')')) {
+      extractedName = trimmed.substring(0, trimmed.indexOf('(')).trim();
+      extractedUser = trimmed.substring(trimmed.indexOf('(') + 1, trimmed.indexOf(')')).trim();
+    } else if (trimmed.includes('@')) {
+      extractedUser = trimmed;
+    } else {
+      extractedName = trimmed;
+    }
+
+    const userLow = extractedUser.toLowerCase();
+    const nameLow = extractedName.toLowerCase();
+    const roleLow = (fallbackGenderOrRole || '').toLowerCase();
+
+    // 1. Check Active User session first
+    const activeUsername = (localStorage.getItem('smartsantri_active_username') || '').toLowerCase();
+    const activeRole = (localStorage.getItem('smartsantri_active_role') || '').toLowerCase();
+    const activeDisplayName = (localStorage.getItem('smartsantri_active_display_name') || '').trim();
+
+    if (activeDisplayName) {
+      const isSuper = lower.includes('superadmin') || (activeRole.includes('superadmin') && (roleLow.includes('superadmin') || lower.includes('super')));
+      const isUserMatch = activeUsername && (lower.includes(activeUsername) || (userLow && (userLow.includes(activeUsername) || activeUsername.includes(userLow))));
+      const isRoleMatch = activeRole && roleLow && (roleLow.includes(activeRole.replace('_', '')) || activeRole.includes(roleLow.replace('_', '')));
+
+      if (isSuper || isUserMatch || isRoleMatch) {
+        return activeDisplayName;
+      }
+    }
+
+    // 2. Match registered accounts from app_credentials DB table
+    if (Array.isArray(registeredAccounts) && registeredAccounts.length > 0) {
+      const match = registeredAccounts.find((acc: any) => {
+        const accU = (acc.username || acc.email || '').toLowerCase();
+        const accN = (acc.displayName || acc.display_name || acc.nama || acc.name || '').toLowerCase();
+        const accR = (acc.role || acc.peran || '').toLowerCase();
+
+        const matchU = accU && (
+          (userLow && (accU === userLow || accU.includes(userLow) || userLow.includes(accU))) ||
+          lower.includes(accU)
+        );
+
+        const matchN = accN && (
+          (nameLow && accN === nameLow) ||
+          lower === accN
+        );
+
+        const matchR = accR && roleLow && (
+          accR === roleLow ||
+          accR.includes(roleLow.replace('_', '')) ||
+          roleLow.includes(accR.replace('_', ''))
+        );
+
+        return matchU || matchN || matchR;
+      });
+
+      if (match) {
+        const realDisplayName = (match.displayName || match.display_name || match.nama || match.name || '').trim();
+        if (realDisplayName) {
+          return realDisplayName.charAt(0).toUpperCase() + realDisplayName.slice(1);
+        }
+        const u = match.username || match.email || extractedUser;
+        if (u) {
+          const uname = u.split('@')[0];
+          return uname.charAt(0).toUpperCase() + uname.slice(1);
+        }
+      }
+    }
+
+    // 3. Fallbacks
+    if (extractedName && extractedName.toLowerCase() !== 'superadmin' && extractedName.toLowerCase() !== 'pengurus') {
+      return extractedName;
+    }
+
+    if (extractedUser && extractedUser.includes('@')) {
+      const uname = extractedUser.split('@')[0];
+      return uname.charAt(0).toUpperCase() + uname.slice(1);
+    }
+
+    return trimmed;
+  };
+
   const uniqueAdmins = useMemo(() => {
     const set = new Set<string>();
+
+    // Active user's display name
+    const activeDisplayName = (localStorage.getItem('smartsantri_active_display_name') || '').trim();
+    if (activeDisplayName) {
+      set.add(activeDisplayName);
+    }
 
     // 1. Registered accounts from app_credentials
     if (Array.isArray(registeredAccounts)) {
       registeredAccounts.forEach((acc: any) => {
         if (!acc) return;
         const u = (acc.username || acc.email || '').toLowerCase();
-        if (u) {
-          const rawName = acc.nama || acc.name || acc.displayName || u.split('@')[0];
-          const formattedName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
-          if (u.includes('superadmin')) {
-            set.add('Superadmin (superadmin@attaroqqy.com)');
-          } else {
-            set.add(`${formattedName} (${u})`);
-          }
+        const rawName = acc.displayName || acc.display_name || acc.nama || acc.name || acc.nama_lengkap || (u ? u.split('@')[0] : '');
+        if (rawName && rawName.trim()) {
+          const formattedName = rawName.trim().charAt(0).toUpperCase() + rawName.trim().slice(1);
+          set.add(formattedName);
         }
       });
     }
@@ -610,59 +750,156 @@ export default function HomeView({
       dbActivityLogs.forEach((log: any) => {
         const name = log.nama_user || log.namaUser || log.adminName;
         if (name && typeof name === 'string' && name.trim()) {
-          set.add(name.trim());
+          set.add(normalizeAdminLabel(name.trim(), log.peran || log.adminRole));
         }
       });
     }
 
-    if (isCurrentSuperadmin) {
-      set.add('Superadmin (superadmin@attaroqqy.com)');
-    }
-
     return Array.from(set).filter(Boolean);
-  }, [registeredAccounts, dbActivityLogs, isCurrentSuperadmin]);
+  }, [registeredAccounts, dbActivityLogs, activityRefreshTrigger]);
 
-  const normalizeAdminLabel = (rawInput: string, fallbackGenderOrRole?: string): string => {
-    if (!rawInput || typeof rawInput !== 'string' || !rawInput.trim()) {
-      return fallbackGenderOrRole || 'Pengurus';
+  const normalizeModuleLabel = (
+    rawModule?: string,
+    rawRole?: string,
+    rawAction?: string,
+    rawDesc?: string
+  ): 'Sekretariat' | 'Keamanan' | 'Keuangan' | 'Pendidikan' | 'Humas' | 'Sistem' => {
+    const modLower = (rawModule || '').toLowerCase().trim();
+    const roleLower = (rawRole || '').toLowerCase().trim();
+    const actionLower = (rawAction || '').toLowerCase().trim();
+    const descLower = (rawDesc || '').toLowerCase().trim();
+
+    // Priority 1: Check role-based department override
+    if (roleLower.includes('humas') || roleLower.includes('humasy')) {
+      if (!modLower.includes('keuangan') && !modLower.includes('keamanan') && !modLower.includes('pendidikan') && !modLower.includes('sistem')) {
+        return 'Humas';
+      }
     }
-
-    const trimmed = rawInput.trim();
-    const lower = trimmed.toLowerCase();
-
-    if (lower.includes('superadmin') || lower === 'super admin') {
-      return 'Superadmin (superadmin@attaroqqy.com)';
+    if (roleLower.includes('bendahara') || roleLower.includes('keuangan')) {
+      if (!modLower.includes('keamanan') && !modLower.includes('pendidikan') && !modLower.includes('sistem')) {
+        return 'Keuangan';
+      }
     }
-
-    // If already contains brackets e.g. "Name (email)", return as is
-    if (trimmed.includes('(') && trimmed.includes(')')) {
-      return trimmed;
+    if (roleLower.includes('keamanan')) {
+      if (!modLower.includes('keuangan') && !modLower.includes('pendidikan') && !modLower.includes('sistem')) {
+        return 'Keamanan';
+      }
     }
-
-    // If it's an email format
-    if (trimmed.includes('@')) {
-      const username = trimmed.split('@')[0];
-      const capitalized = username.charAt(0).toUpperCase() + username.slice(1);
-      return `${capitalized} (${trimmed})`;
-    }
-
-    // Match registered accounts
-    if (Array.isArray(registeredAccounts)) {
-      const match = registeredAccounts.find((acc: any) => {
-        const accU = (acc.username || acc.email || '').toLowerCase();
-        const accN = (acc.nama || acc.name || '').toLowerCase();
-        return (accU && accU === lower) || (accN && accN === lower);
-      });
-
-      if (match) {
-        const u = match.username || match.email || '';
-        const rawName = match.nama || match.name || match.displayName || u.split('@')[0];
-        const formattedName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
-        return u ? `${formattedName} (${u})` : formattedName;
+    if (roleLower.includes('pendidikan')) {
+      if (!modLower.includes('keuangan') && !modLower.includes('keamanan') && !modLower.includes('sistem')) {
+        return 'Pendidikan';
       }
     }
 
-    return trimmed;
+    // Direct match on module
+    if (modLower === 'humas' || modLower === 'humasy' || modLower.includes('humas')) {
+      return 'Humas';
+    }
+    if (modLower === 'keuangan' || modLower.includes('bendahara') || modLower.includes('kas') || modLower.includes('syahriah')) {
+      return 'Keuangan';
+    }
+    if (modLower === 'keamanan' || modLower.includes('pelanggaran') || modLower.includes('sanksi') || modLower.includes('poin')) {
+      return 'Keamanan';
+    }
+    if (modLower === 'pendidikan' || modLower.includes('kelas') || modLower.includes('pelajaran') || modLower.includes('kurikulum')) {
+      return 'Pendidikan';
+    }
+    if (modLower === 'sistem' || modLower === 'system' || modLower.includes('pengaturan') || modLower.includes('login') || modLower.includes('auth')) {
+      return 'Sistem';
+    }
+    if (modLower === 'sekretariat' || modLower.includes('sekretaris')) {
+      return 'Sekretariat';
+    }
+
+    // Infer from action & description
+    if (actionLower.includes('humas') || descLower.includes('humas') || actionLower.includes('alumni') || descLower.includes('alumni')) {
+      return 'Humas';
+    }
+    if (actionLower.includes('keuangan') || descLower.includes('keuangan') || actionLower.includes('syahriah') || descLower.includes('syahriah') || actionLower.includes('bayar')) {
+      return 'Keuangan';
+    }
+    if (actionLower.includes('pelanggaran') || descLower.includes('pelanggaran') || actionLower.includes('sanksi') || descLower.includes('sanksi')) {
+      return 'Keamanan';
+    }
+    if (actionLower.includes('kelas') || descLower.includes('kelas') || actionLower.includes('pelajaran') || descLower.includes('pelajaran')) {
+      return 'Pendidikan';
+    }
+    if (actionLower.includes('sistem') || descLower.includes('sistem') || actionLower.includes('login') || actionLower.includes('logout')) {
+      return 'Sistem';
+    }
+
+    if (rawModule && rawModule.trim()) {
+      const cap = rawModule.trim().charAt(0).toUpperCase() + rawModule.trim().slice(1);
+      if (['Sekretariat', 'Keamanan', 'Keuangan', 'Pendidikan', 'Humas', 'Sistem'].includes(cap)) {
+        return cap as any;
+      }
+    }
+
+    return 'Sekretariat';
+  };
+
+  const MONTH_NAMES_IND = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+  const parseLogTime = (item: any): { ts: number; timeStr: string } => {
+    if (!item) return { ts: Date.now(), timeStr: '' };
+
+    const rawDate = item.created_at || item.createdAt || item.waktu || item.created;
+
+    // Direct string match for YYYY-MM-DD HH:mm:ss to reflect exact database created_at column value
+    if (rawDate && typeof rawDate === 'string') {
+      const match = rawDate.trim().match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})/);
+      if (match) {
+        const year = match[1];
+        const monthIdx = parseInt(match[2], 10) - 1;
+        const day = parseInt(match[3], 10);
+        const hour = match[4];
+        const minute = match[5];
+
+        const monthName = MONTH_NAMES_IND[monthIdx] || match[2];
+        const timeStr = `${day} ${monthName} ${year}, ${hour}.${minute}`;
+        const ts = new Date(Number(year), monthIdx, day, Number(hour), Number(minute)).getTime();
+        return { ts, timeStr };
+      }
+    }
+
+    let ts = NaN;
+
+    // Check numeric timestamp
+    if (item.timestamp && !isNaN(Number(item.timestamp))) {
+      const num = Number(item.timestamp);
+      if (num > 1000000000000) ts = num;
+      else if (num > 1000000000) ts = num * 1000;
+    }
+
+    if (isNaN(ts) && rawDate) {
+      if (typeof rawDate === 'number') {
+        ts = rawDate > 1000000000000 ? rawDate : rawDate * 1000;
+      } else if (rawDate instanceof Date) {
+        ts = rawDate.getTime();
+      } else if (typeof rawDate === 'string') {
+        const p1 = Date.parse(rawDate);
+        if (!isNaN(p1)) ts = p1;
+      }
+    }
+
+    if (isNaN(ts) && item.time && typeof item.time === 'string' && item.time.includes(',')) {
+      return { ts: Date.now(), timeStr: item.time };
+    }
+
+    if (isNaN(ts) || ts <= 0) {
+      ts = Date.now();
+    }
+
+    const d = new Date(ts);
+    const day = d.getDate();
+    const monthName = MONTH_NAMES_IND[d.getMonth()] || '';
+    const year = d.getFullYear();
+    const hour = String(d.getHours()).padStart(2, '0');
+    const minute = String(d.getMinutes()).padStart(2, '0');
+
+    const timeStr = `${day} ${monthName} ${year}, ${hour}.${minute}`;
+
+    return { ts, timeStr };
   };
 
   const adminActivityLogs = useMemo<AdminActivityLog[]>(() => {
@@ -673,23 +910,17 @@ export default function HomeView({
     if (Array.isArray(dbActivityLogs)) {
       dbActivityLogs.forEach((item: any) => {
         if (!item) return;
-        let ts = Date.now();
-        if (item.timestamp && !isNaN(Number(item.timestamp))) {
-          ts = Number(item.timestamp);
-        } else if (item.created_at) {
-          const parsed = new Date(item.created_at).getTime();
-          if (!isNaN(parsed)) ts = parsed;
-        }
-
-        const dateObj = new Date(ts);
-        const timeStr = dateObj.toLocaleDateString('id-ID', {
-          day: 'numeric',
-          month: 'short',
-          year: 'numeric'
-        }) + ', ' + String(dateObj.getHours()).padStart(2, '0') + '.' + String(dateObj.getMinutes()).padStart(2, '0');
+        const { ts, timeStr } = parseLogTime(item);
 
         const logId = String(item.id || `db-${ts}-${item.nama_user || ''}-${item.aksi || ''}`);
         seenIds.add(logId);
+
+        const resolvedModule = normalizeModuleLabel(
+          item.modul || item.module,
+          item.peran || item.adminRole,
+          item.aksi || item.actionType,
+          item.deskripsi || item.description
+        );
 
         list.push({
           id: logId,
@@ -697,7 +928,7 @@ export default function HomeView({
           timestamp: ts,
           adminName: normalizeAdminLabel(item.nama_user || item.adminName || item.user_id, item.peran || item.adminRole),
           adminRole: item.peran || item.adminRole || 'Pengurus',
-          module: (item.modul || item.module || 'Sekretariat') as any,
+          module: resolvedModule,
           actionType: item.aksi || item.actionType || 'AKTIVITAS',
           description: item.deskripsi || item.description || '',
           details: item.details || ''
@@ -712,13 +943,23 @@ export default function HomeView({
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) {
           parsed.forEach((p: any) => {
-            if (p && p.timestamp) {
-              const logId = String(p.id || `local-${p.timestamp}`);
+            if (p) {
+              const { ts, timeStr } = parseLogTime(p);
+              const logId = String(p.id || `local-${ts}`);
               if (!seenIds.has(logId)) {
                 seenIds.add(logId);
+                const resolvedModule = normalizeModuleLabel(
+                  p.module || p.modul,
+                  p.adminRole,
+                  p.actionType,
+                  p.description
+                );
                 list.push({
                   ...p,
-                  adminName: normalizeAdminLabel(p.adminName, p.adminRole)
+                  time: timeStr,
+                  timestamp: ts,
+                  adminName: normalizeAdminLabel(p.adminName, p.adminRole),
+                  module: resolvedModule
                 });
               }
             }
@@ -729,14 +970,11 @@ export default function HomeView({
       console.error(e);
     }
 
-    // Filter activities: exclude system-only changes AND delete logs older than 14 days
+    // Filter activities: delete logs older than 14 days
     const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
     const now = Date.now();
     const filteredList = list.filter(item => {
       if (!item || !item.timestamp) return false;
-      if (item.module === 'Sistem' || item.actionType?.toLowerCase().includes('sistem') || item.actionType?.toLowerCase().includes('hak akses')) {
-        return false;
-      }
       // Delete/Prune any log older than 14 days
       if (now - item.timestamp > FOURTEEN_DAYS_MS) {
         return false;
@@ -749,9 +987,9 @@ export default function HomeView({
   }, [dbActivityLogs, activityRefreshTrigger, uniqueAdmins]);
 
   const uniqueModules = useMemo(() => {
-    const set = new Set<string>(['Sekretariat', 'Keamanan', 'Keuangan', 'Pendidikan', 'Humas']);
+    const set = new Set<string>(['Sekretariat', 'Keamanan', 'Keuangan', 'Pendidikan', 'Humas', 'Sistem']);
     adminActivityLogs.forEach(a => {
-      if (a.module && a.module !== 'Sistem') {
+      if (a.module) {
         set.add(a.module);
       }
     });
@@ -2314,6 +2552,8 @@ export default function HomeView({
                           return 'bg-indigo-50 text-indigo-700 border-indigo-200';
                         case 'Humas':
                           return 'bg-teal-50 text-teal-700 border-teal-200';
+                        case 'Sistem':
+                          return 'bg-purple-50 text-purple-700 border-purple-200';
                         default:
                           return 'bg-slate-100 text-slate-700 border-slate-200';
                       }

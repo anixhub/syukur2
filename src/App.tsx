@@ -546,6 +546,22 @@ export default function App() {
 
   const handleUpdateSantri = async (updatedSantri: Santri) => {
     let processed = { ...updatedSantri };
+
+    // Determine module dynamically based on current active view or user role
+    const userRole = (localStorage.getItem('smartsantri_active_role') || '').toLowerCase();
+    let currentModuleForLog: 'Sekretariat' | 'Keamanan' | 'Keuangan' | 'Pendidikan' | 'Humas' = 'Sekretariat';
+
+    if (activeModule === 'humas' || userRole.includes('humas') || userRole.includes('humasy')) {
+      currentModuleForLog = 'Humas';
+    } else if (activeModule === 'pendidikan' || userRole.includes('pendidikan')) {
+      currentModuleForLog = 'Pendidikan';
+    } else if (activeModule === 'bendahara' || userRole.includes('bendahara') || userRole.includes('keuangan')) {
+      currentModuleForLog = 'Keuangan';
+    } else if (activeModule === 'keamanan' || userRole.includes('keamanan')) {
+      currentModuleForLog = 'Keamanan';
+    } else if (activeModule === 'sekretaris' || userRole.includes('sekretaris')) {
+      currentModuleForLog = 'Sekretariat';
+    }
     
     // Check if status is updated to Alumni
     const isNowAlumni = updatedSantri.statusKeanggotaan === 'Alumni';
@@ -562,7 +578,7 @@ export default function App() {
 
     if (existingSantri && oldStatus && oldStatus !== newStatus) {
       logAdminActivity(
-        'Sekretariat',
+        currentModuleForLog,
         'Perubahan Status Santri',
         `Mengubah status santri "${processed.nama}" dari ${oldStatus} menjadi ${newStatus}`,
         `Status Keanggotaan: ${newStatus} | NIS: ${processed.nis || '-'} | Kamar: ${processed.kamar || '-'}`
@@ -602,14 +618,14 @@ export default function App() {
         );
       } else if (changes.length > 0) {
         logAdminActivity(
-          'Sekretariat',
+          currentModuleForLog,
           'Update Data Santri',
           `Memperbarui data santri "${processed.nama}"`,
           changes.join(' | ')
         );
       } else {
         logAdminActivity(
-          'Sekretariat',
+          currentModuleForLog,
           'Update Data Santri',
           `Memperbarui data santri "${processed.nama}" (Status: ${newStatus})`,
           `Kamar: ${processed.kamar || '-'} | Kelas: ${processed.kelas || '-'}`

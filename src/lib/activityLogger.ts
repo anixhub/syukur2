@@ -18,12 +18,11 @@ export function logAdminActivity(
 ) {
   const role = (localStorage.getItem('smartsantri_active_role') || '').toLowerCase();
   const username = localStorage.getItem('smartsantri_active_username') || '';
-  const displayName = localStorage.getItem('smartsantri_active_display_name') || username.split('@')[0] || 'Admin';
+  const displayName = (localStorage.getItem('smartsantri_active_display_name') || '').trim();
 
   const isAdminSuper = role.includes('superadmin') || username.toLowerCase().includes('superadmin');
-  const formattedAdminName = isAdminSuper
-    ? 'Superadmin (superadmin@attaroqqy.com)'
-    : `${displayName} (${username})`;
+  const activeName = displayName || (username ? username.split('@')[0] : '') || (isAdminSuper ? 'Superadmin' : getRoleLabel(role));
+  const formattedAdminName = username ? `${activeName} (${username})` : activeName;
 
   const now = new Date();
   const timeStr = now.toLocaleDateString('id-ID', {
@@ -54,6 +53,17 @@ export function logAdminActivity(
     localStorage.setItem('smartsantri_admin_activity_logs', JSON.stringify(trimmed));
     window.dispatchEvent(new Event('smartsantri_activity_updated'));
 
+    const getLocalFormattedTime = () => {
+      const d = new Date();
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const h = String(d.getHours()).padStart(2, '0');
+      const min = String(d.getMinutes()).padStart(2, '0');
+      const s = String(d.getSeconds()).padStart(2, '0');
+      return `${y}-${m}-${day} ${h}:${min}:${s}`;
+    };
+
     // Kirim juga ke server backend untuk disimpan ke MySQL riwayat_aktivitas
     fetch('/api/db/riwayat_aktivitas', {
       method: 'POST',
@@ -63,7 +73,8 @@ export function logAdminActivity(
         peran: isAdminSuper ? 'Superadmin' : getRoleLabel(role),
         aksi: actionType,
         deskripsi: description,
-        modul: module
+        modul: module,
+        created_at: getLocalFormattedTime()
       })
     }).catch(err => {
       console.warn("Gagal mengirim riwayat_aktivitas ke server backend:", err);
