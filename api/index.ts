@@ -1091,6 +1091,26 @@ async function ensureTableExists(table: string, pool: mysql.Pool) {
         } catch (e) {}
       }
     } catch (e) {}
+  } else if (table === 'santri') {
+    try {
+      const santriCols = [
+        'induk_mhd', 'induk_wustho', 'induk_ulya',
+        'indukMhd', 'indukWustho', 'indukUlya',
+        'nisn', 'nik', 'no_kk', 'tempat_lahir', 'tanggal_lahir',
+        'anak_ke', 'dari_bersaudara', 'nama_ayah', 'nik_ayah',
+        'pekerjaan_ayah', 'pendidikan_ayah', 'nama_ibu', 'nik_ibu',
+        'pekerjaan_ibu', 'pendidikan_ibu', 'alamat', 'rt', 'rw',
+        'desa', 'kecamatan', 'kabupaten', 'provinsi', 'jarak_rumah',
+        'no_hp', 'status_keanggotaan', 'status_domisili', 'status_emis',
+        'status_verval', 'tanggal_keluar', 'catatan', 'nomor_lemari',
+        'pendidikan_terakhir', 'pendidikan_formal', 'pendidikan_internal', 'kelas_id'
+      ];
+      for (const col of santriCols) {
+        try {
+          await pool.query(`ALTER TABLE \`santri\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
+        } catch (e) {}
+      }
+    } catch (e) {}
   }
 }
 

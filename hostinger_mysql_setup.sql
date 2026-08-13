@@ -2,6 +2,18 @@
 -- SMART SANTRI DATABASE SCHEMA FOR HOSTINGER (MySQL / MariaDB)
 -- Siap di-import di cPanel phpMyAdmin Hostinger
 -- ===================================================
+-- 
+-- BAGIAN 1: QUERY UPDATE / MIGRASI (Jika Database Sudah Ada di phpMyAdmin)
+-- Jika tabel 'santri' sudah ada di phpMyAdmin dan Anda hanya ingin menambah
+-- kolom Induk MHD, Induk Wustho, dan Induk Ulya tanpa menghapus data:
+--
+-- ALTER TABLE `santri` ADD COLUMN `induk_mhd` VARCHAR(30) NULL AFTER `nisn`;
+-- ALTER TABLE `santri` ADD COLUMN `induk_wustho` VARCHAR(30) NULL AFTER `induk_mhd`;
+-- ALTER TABLE `santri` ADD COLUMN `induk_ulya` VARCHAR(30) NULL AFTER `induk_wustho`;
+-- ALTER TABLE `santri` ADD COLUMN `indukMhd` VARCHAR(30) NULL AFTER `induk_ulya`;
+-- ALTER TABLE `santri` ADD COLUMN `indukWustho` VARCHAR(30) NULL AFTER `indukMhd`;
+-- ALTER TABLE `santri` ADD COLUMN `indukUlya` VARCHAR(30) NULL AFTER `indukWustho`;
+-- ===================================================
 
 SET FOREIGN_KEY_CHECKS = 0;
 
