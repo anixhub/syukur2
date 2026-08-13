@@ -586,89 +586,83 @@ export default function HomeView({
   }, [activityRefreshTrigger]);
 
   const uniqueAdmins = useMemo(() => {
-    // Registered accounts from app_credentials
-    const displayable = (registeredAccounts || []).filter(
-      (c: any) =>
-        c.username &&
-        c.username.toLowerCase() !== 'superadmin@attaroqqy.com' &&
-        c.username.toLowerCase() !== 'superadmin'
-    );
+    const set = new Set<string>();
 
-    let sourceList = displayable;
-    if (sourceList.length === 0) {
-      sourceList = [
-        { username: 'david@attaroqqy.com', name: 'David', role: 'sekretaris_putra' },
-        { username: 'qowam@attaroqqy.com', name: 'Qowam', role: 'bendahara_putra' },
-        { username: 'aniq@attaroqqy.com', name: 'Aniq', role: 'humas_putra' },
-        { username: 'hasan@attaroqqy.com', name: 'Hasan', role: 'pendidikan_putra' },
-        { username: 'husein@attaroqqy.com', name: 'Husein', role: 'keamanan_putra' },
-        { username: 'fatimah@attaroqqy.com', name: 'Fatimah', role: 'sekretaris_putri' },
-        { username: 'ahmad@attaroqqy.com', name: 'Ahmad', role: 'bendahara_putri' },
-        { username: 'ali@attaroqqy.com', name: 'Ali', role: 'humas_putri' },
-        { username: 'zainab@attaroqqy.com', name: 'Zainab', role: 'pendidikan_putri' },
-        { username: 'umar@attaroqqy.com', name: 'Umar', role: 'keamanan_putri' },
-        { username: 'najih@attaroqqy.com', name: 'Najih', role: 'sekretaris_putra' }
-      ];
+    // 1. Registered accounts from app_credentials
+    if (Array.isArray(registeredAccounts)) {
+      registeredAccounts.forEach((acc: any) => {
+        if (!acc) return;
+        const u = (acc.username || acc.email || '').toLowerCase();
+        if (u) {
+          const rawName = acc.nama || acc.name || acc.displayName || u.split('@')[0];
+          const formattedName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+          if (u.includes('superadmin')) {
+            set.add('Superadmin (superadmin@attaroqqy.com)');
+          } else {
+            set.add(`${formattedName} (${u})`);
+          }
+        }
+      });
     }
 
-    const set = new Set<string>();
-    sourceList.forEach((acc: any) => {
-      const u = (acc.username || '').toLowerCase();
-      if (u && !u.includes('superadmin')) {
-        const rawName = acc.nama || acc.name || acc.displayName || u.split('@')[0];
-        const formattedName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
-        set.add(`${formattedName} (${u})`);
-      }
-    });
+    // 2. Admin names present in dbActivityLogs
+    if (Array.isArray(dbActivityLogs)) {
+      dbActivityLogs.forEach((log: any) => {
+        const name = log.nama_user || log.namaUser || log.adminName;
+        if (name && typeof name === 'string' && name.trim()) {
+          set.add(name.trim());
+        }
+      });
+    }
 
     if (isCurrentSuperadmin) {
       set.add('Superadmin (superadmin@attaroqqy.com)');
     }
 
-    return Array.from(set);
-  }, [registeredAccounts, isCurrentSuperadmin]);
+    return Array.from(set).filter(Boolean);
+  }, [registeredAccounts, dbActivityLogs, isCurrentSuperadmin]);
 
   const normalizeAdminLabel = (rawInput: string, fallbackGenderOrRole?: string): string => {
-    if (!rawInput) return 'David (david@attaroqqy.com)';
-    const input = rawInput.toLowerCase();
+    if (!rawInput || typeof rawInput !== 'string' || !rawInput.trim()) {
+      return fallbackGenderOrRole || 'Pengurus';
+    }
 
-    if (input.includes('superadmin') || input.includes('super admin')) {
+    const trimmed = rawInput.trim();
+    const lower = trimmed.toLowerCase();
+
+    if (lower.includes('superadmin') || lower === 'super admin') {
       return 'Superadmin (superadmin@attaroqqy.com)';
     }
 
-    // Direct check against uniqueAdmins
-    const foundDirect = uniqueAdmins.find(adm => adm.toLowerCase().includes(input) || input.includes(adm.toLowerCase()));
-    if (foundDirect) return foundDirect;
-
-    if (input.includes('david')) return 'David (david@attaroqqy.com)';
-    if (input.includes('qowam')) return 'Qowam (qowam@attaroqqy.com)';
-    if (input.includes('aniq')) return 'Aniq (aniq@attaroqqy.com)';
-    if (input.includes('hasan')) return 'Hasan (hasan@attaroqqy.com)';
-    if (input.includes('husein')) return 'Husein (husein@attaroqqy.com)';
-    if (input.includes('fatimah')) return 'Fatimah (fatimah@attaroqqy.com)';
-    if (input.includes('ahmad')) return 'Ahmad (ahmad@attaroqqy.com)';
-    if (input.includes('ali')) return 'Ali (ali@attaroqqy.com)';
-    if (input.includes('zainab')) return 'Zainab (zainab@attaroqqy.com)';
-    if (input.includes('umar')) return 'Umar (umar@attaroqqy.com)';
-    if (input.includes('najih')) return 'Najih (najih@attaroqqy.com)';
-
-    if (input.includes('keamanan')) {
-      return (input.includes('putri') || fallbackGenderOrRole === 'Putri') ? 'Umar (umar@attaroqqy.com)' : 'Husein (husein@attaroqqy.com)';
-    }
-    if (input.includes('sekretaris') || input.includes('sekretariat')) {
-      return (input.includes('putri') || fallbackGenderOrRole === 'Putri') ? 'Fatimah (fatimah@attaroqqy.com)' : 'David (david@attaroqqy.com)';
-    }
-    if (input.includes('bendahara') || input.includes('keuangan')) {
-      return (input.includes('putri') || fallbackGenderOrRole === 'Putri') ? 'Ahmad (ahmad@attaroqqy.com)' : 'Qowam (qowam@attaroqqy.com)';
-    }
-    if (input.includes('pendidikan')) {
-      return (input.includes('putri') || fallbackGenderOrRole === 'Putri') ? 'Zainab (zainab@attaroqqy.com)' : 'Hasan (hasan@attaroqqy.com)';
-    }
-    if (input.includes('humas')) {
-      return (input.includes('putri') || fallbackGenderOrRole === 'Putri') ? 'Ali (ali@attaroqqy.com)' : 'Aniq (aniq@attaroqqy.com)';
+    // If already contains brackets e.g. "Name (email)", return as is
+    if (trimmed.includes('(') && trimmed.includes(')')) {
+      return trimmed;
     }
 
-    return uniqueAdmins[0] || 'David (david@attaroqqy.com)';
+    // If it's an email format
+    if (trimmed.includes('@')) {
+      const username = trimmed.split('@')[0];
+      const capitalized = username.charAt(0).toUpperCase() + username.slice(1);
+      return `${capitalized} (${trimmed})`;
+    }
+
+    // Match registered accounts
+    if (Array.isArray(registeredAccounts)) {
+      const match = registeredAccounts.find((acc: any) => {
+        const accU = (acc.username || acc.email || '').toLowerCase();
+        const accN = (acc.nama || acc.name || '').toLowerCase();
+        return (accU && accU === lower) || (accN && accN === lower);
+      });
+
+      if (match) {
+        const u = match.username || match.email || '';
+        const rawName = match.nama || match.name || match.displayName || u.split('@')[0];
+        const formattedName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+        return u ? `${formattedName} (${u})` : formattedName;
+      }
+    }
+
+    return trimmed;
   };
 
   const adminActivityLogs = useMemo<AdminActivityLog[]>(() => {
@@ -754,7 +748,15 @@ export default function HomeView({
     return filteredList;
   }, [dbActivityLogs, activityRefreshTrigger, uniqueAdmins]);
 
-  const uniqueModules = ['Sekretariat', 'Keamanan', 'Keuangan', 'Pendidikan', 'Humas'];
+  const uniqueModules = useMemo(() => {
+    const set = new Set<string>(['Sekretariat', 'Keamanan', 'Keuangan', 'Pendidikan', 'Humas']);
+    adminActivityLogs.forEach(a => {
+      if (a.module && a.module !== 'Sistem') {
+        set.add(a.module);
+      }
+    });
+    return Array.from(set);
+  }, [adminActivityLogs]);
 
   const filteredAdminActivities = useMemo(() => {
     const todayYMD = getTodayYMD();
