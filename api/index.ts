@@ -1095,7 +1095,6 @@ async function ensureTableExists(table: string, pool: mysql.Pool) {
     try {
       const santriCols = [
         'induk_mhd', 'induk_wustho', 'induk_ulya',
-        'indukMhd', 'indukWustho', 'indukUlya',
         'nisn', 'nik', 'no_kk', 'tempat_lahir', 'tanggal_lahir',
         'anak_ke', 'dari_bersaudara', 'nama_ayah', 'nik_ayah',
         'pekerjaan_ayah', 'pendidikan_ayah', 'nama_ibu', 'nik_ibu',

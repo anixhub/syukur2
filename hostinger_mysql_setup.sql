@@ -4,15 +4,19 @@
 -- ===================================================
 -- 
 -- BAGIAN 1: QUERY UPDATE / MIGRASI (Jika Database Sudah Ada di phpMyAdmin)
--- Jika tabel 'santri' sudah ada di phpMyAdmin dan Anda hanya ingin menambah
+-- Jika tabel 'santri' sudah ada di phpMyAdmin dan Anda ingin menambah
 -- kolom Induk MHD, Induk Wustho, dan Induk Ulya tanpa menghapus data:
 --
 -- ALTER TABLE `santri` ADD COLUMN `induk_mhd` VARCHAR(30) NULL AFTER `nisn`;
 -- ALTER TABLE `santri` ADD COLUMN `induk_wustho` VARCHAR(30) NULL AFTER `induk_mhd`;
 -- ALTER TABLE `santri` ADD COLUMN `induk_ulya` VARCHAR(30) NULL AFTER `induk_wustho`;
--- ALTER TABLE `santri` ADD COLUMN `indukMhd` VARCHAR(30) NULL AFTER `induk_ulya`;
--- ALTER TABLE `santri` ADD COLUMN `indukWustho` VARCHAR(30) NULL AFTER `indukMhd`;
--- ALTER TABLE `santri` ADD COLUMN `indukUlya` VARCHAR(30) NULL AFTER `indukWustho`;
+--
+-- Jika sebelumnya sempat membuat kolom camelCase (indukMhd, indukWustho, indukUlya),
+-- hapus kolom duplikat tersebut dengan:
+-- ALTER TABLE `santri` 
+--   DROP COLUMN `indukMhd`, 
+--   DROP COLUMN `indukWustho`, 
+--   DROP COLUMN `indukUlya`;
 -- ===================================================
 
 SET FOREIGN_KEY_CHECKS = 0;
@@ -31,9 +35,6 @@ CREATE TABLE IF NOT EXISTS `santri` (
   `induk_mhd` VARCHAR(30),
   `induk_wustho` VARCHAR(30),
   `induk_ulya` VARCHAR(30),
-  `indukMhd` VARCHAR(30),
-  `indukWustho` VARCHAR(30),
-  `indukUlya` VARCHAR(30),
   `nik` CHAR(16),
   `no_kk` CHAR(16),
   `tempat_lahir` VARCHAR(50),
