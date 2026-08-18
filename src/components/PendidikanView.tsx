@@ -567,8 +567,99 @@ export default function PendidikanView({
       deskripsi: cleanDeskripsi
     };
 
+    const existingLembaga = lembagasList.find(l => l.id === upLem.id);
+    const oldName = existingLembaga?.nama?.trim();
+    const oldKode = existingLembaga?.kode?.trim();
+    const newName = upLem.nama.trim();
+    const newKode = upLem.kode ? upLem.kode.trim() : '';
+
     setLembagasList(prev => prev.map(l => l.id === upLem.id ? { ...upLem, deskripsi: cleanDeskripsi } : l));
     await updateTableRow('lembaga', 'smartsantri_lembagas', upLem.id, dbPayload);
+
+    // If the institution name or code changed, cascade the update to all affected santri
+    if (oldName && newName && (oldName.toLowerCase() !== newName.toLowerCase() || (oldKode && newKode && oldKode.toLowerCase() !== newKode.toLowerCase()))) {
+      const classesOfLembaga = kelasList.filter(c => String(c.lembagaId) === String(upLem.id));
+      const classNamesLower = classesOfLembaga.map(c => c.nama.trim().toLowerCase());
+
+      const affectedStudents: Santri[] = [];
+      const updatedSantriList = santriList.map(s => {
+        let changed = false;
+        let newFormal = s.pendidikanFormal || '';
+        let newInternal = s.pendidikanInternal || '';
+
+        const studentClasses = s.kelas ? s.kelas.split(',').map(x => x.trim().toLowerCase()).filter(Boolean) : [];
+        const hasClassInThisLembaga = studentClasses.some(cn => classNamesLower.includes(cn));
+
+        // 1. Update pendidikanFormal
+        if (s.pendidikanFormal) {
+          const parts = s.pendidikanFormal.split(',').map(p => p.trim());
+          const updatedParts = parts.map(part => {
+            if (!part) return part;
+            const subParts = part.split('-');
+            const prefix = subParts[0].trim();
+            const suffix = subParts.slice(1).join('-').trim();
+
+            const isMatchOld = prefix.toLowerCase() === oldName.toLowerCase() || 
+                              (oldKode && prefix.toLowerCase() === oldKode.toLowerCase()) ||
+                              prefix.toLowerCase().includes(oldName.toLowerCase()) ||
+                              oldName.toLowerCase().includes(prefix.toLowerCase()) ||
+                              (oldKode && prefix.toLowerCase().includes(oldKode.toLowerCase())) ||
+                              (suffix && classNamesLower.includes(suffix.toLowerCase()));
+
+            if (isMatchOld) {
+              changed = true;
+              return suffix ? `${newName} - ${suffix}` : newName;
+            }
+            return part;
+          });
+          newFormal = updatedParts.join(', ');
+        } else if (hasClassInThisLembaga) {
+          const matchedClass = classesOfLembaga.find(c => studentClasses.includes(c.nama.trim().toLowerCase()));
+          if (matchedClass) {
+            changed = true;
+            newFormal = `${newName} - ${matchedClass.nama.trim()}`;
+          }
+        }
+
+        // 2. Update pendidikanInternal
+        if (s.pendidikanInternal) {
+          const internalParts = s.pendidikanInternal.split(',').map(x => x.trim()).filter(Boolean);
+          const updatedInternalParts = internalParts.map(item => {
+            if (item.toLowerCase() === oldName.toLowerCase() || (oldKode && item.toLowerCase() === oldKode.toLowerCase())) {
+              changed = true;
+              return upLem.id;
+            }
+            return item;
+          });
+          newInternal = updatedInternalParts.join(',');
+        }
+
+        if (!changed) return s;
+
+        const updatedStudent: Santri = {
+          ...s,
+          pendidikanFormal: newFormal,
+          pendidikanInternal: newInternal
+        };
+        affectedStudents.push(updatedStudent);
+        return updatedStudent;
+      });
+
+      if (affectedStudents.length > 0) {
+        setSantriList(updatedSantriList);
+        await Promise.all(affectedStudents.map(async st => {
+          try {
+            if (onUpdateSantri) {
+              onUpdateSantri(st);
+            } else {
+              await updateTableRow('santri', 'smartsantri_santriList', st.id, st);
+            }
+          } catch (e) {
+            console.error(`Gagal update santri saat perubahan nama lembaga ${st.id}:`, e);
+          }
+        }));
+      }
+    }
   };
 
   const handleDeleteLembaga = async (id: string) => {

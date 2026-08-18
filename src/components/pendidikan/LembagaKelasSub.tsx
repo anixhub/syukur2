@@ -710,65 +710,80 @@ export default function LembagaKelasSub({
     if (!s || !l) return false;
     if (s.statusKeanggotaan === 'Meninggal') return false;
     
-    const norm = (str?: string | null) => (str || '').trim().toLowerCase().replace(/[-_]/g, ' ');
+    const norm = (str?: string | null) => (str || '').trim().toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ');
+    const rawLower = (str?: string | null) => (str || '').trim().toLowerCase();
 
-    const targetId = norm(l.id);
+    const targetId = rawLower(l.id);
     const targetNama = norm(l.nama);
-    const targetKode = norm(l.kode);
+    const targetKode = rawLower(l.kode);
+    const targetKodeNorm = norm(l.kode);
 
-    const jenisLembaga = getLembagaJenis(l);
+    const classesOfL = kelasList.filter(k => rawLower(getClsLembagaId(k)) === targetId);
+    const classNamesOfL = classesOfL.map(k => norm(k.nama)).filter(Boolean);
 
-    if (jenisLembaga === 'Formal') {
-      if (!s.pendidikanFormal || s.pendidikanFormal.trim() === '' || s.pendidikanFormal === 'TIDAK TERDAFTAR' || s.pendidikanFormal === 'Belum / Non-Formal') {
-        return false;
-      }
-      const formalParts = s.pendidikanFormal.split(',').map(x => norm(x)).filter(Boolean);
-      return formalParts.some(pf => {
-        if (pf === targetId) return true;
-        if (targetNama && (pf === targetNama || pf.includes(targetNama) || targetNama.includes(pf))) return true;
-        if (targetKode) {
-          const normKode = norm(targetKode);
-          if (normKode) {
-            const words = pf.split(/[\s-]+/);
-            if (words.includes(normKode) || pf === normKode || pf.startsWith(normKode + ' ') || pf.startsWith(normKode + '-')) return true;
-          }
-        }
-        return false;
-      });
+    // 1. Check if student's s.kelas matches any class defined for this lembaga
+    if (s.kelas) {
+      const sClasses = s.kelas.split(',').map(x => norm(x)).filter(Boolean);
+      const matchClass = classNamesOfL.some(cn => sClasses.includes(cn) || sClasses.some(sc => sc === cn || sc.includes(cn) || cn.includes(sc)));
+      if (matchClass) return true;
     }
 
-    // 1. Check s.pendidikanInternal
+    // 2. Check s.pendidikanInternal
     if (s.pendidikanInternal) {
-      const internalParts = s.pendidikanInternal.split(',').map(x => norm(x)).filter(Boolean);
-      const matchInternal = internalParts.some(pi => 
-        pi === targetId ||
-        (targetNama && pi === targetNama) ||
-        (targetKode && pi === targetKode) ||
-        (targetNama && targetNama.length > 2 && (pi.includes(targetNama) || targetNama.includes(pi))) ||
-        (targetKode && targetKode.length > 2 && (pi.includes(targetKode) || targetKode.includes(pi)))
-      );
+      const internalParts = s.pendidikanInternal.split(',').map(x => rawLower(x)).filter(Boolean);
+      const matchInternal = internalParts.some(pi => {
+        const normPi = norm(pi);
+        if (pi === targetId) return true;
+        if (targetNama && (normPi === targetNama || normPi.includes(targetNama) || targetNama.includes(normPi))) return true;
+        if (targetKode && (pi === targetKode || normPi === targetKodeNorm || normPi.includes(targetKode) || targetKode.includes(normPi))) return true;
+        return false;
+      });
       if (matchInternal) return true;
     }
 
-    // 2. Check s.pendidikanFormal
-    if (s.pendidikanFormal) {
-      const formalParts = s.pendidikanFormal.split(',').map(x => norm(x)).filter(Boolean);
-      const matchFormal = formalParts.some(pf => 
-        pf === targetId ||
-        (targetNama && pf === targetNama) ||
-        (targetKode && pf === targetKode) ||
-        (targetNama && targetNama.length > 2 && (pf.includes(targetNama) || targetNama.includes(pf))) ||
-        (targetKode && targetKode.length > 2 && (pf.includes(targetKode) || targetKode.includes(pf)))
-      );
-      if (matchFormal) return true;
-    }
+    // 3. Check s.pendidikanFormal
+    if (s.pendidikanFormal && s.pendidikanFormal.trim() !== '' && s.pendidikanFormal !== 'TIDAK TERDAFTAR' && s.pendidikanFormal !== 'Belum / Non-Formal') {
+      const formalParts = s.pendidikanFormal.split(',').map(x => x.trim()).filter(Boolean);
+      const matchFormal = formalParts.some(entry => {
+        const normEntry = norm(entry);
+        const lowerEntry = rawLower(entry);
 
-    // 3. Check if s.kelas matches any class defined for this internal lembaga in kelasList
-    if (s.kelas) {
-      const sClasses = s.kelas.split(',').map(x => norm(x)).filter(Boolean);
-      const classesOfL = kelasList.filter(k => norm(getClsLembagaId(k)) === targetId);
-      const matchClass = classesOfL.some(k => k.nama && sClasses.includes(norm(k.nama)));
-      if (matchClass) return true;
+        if (lowerEntry === targetId || normEntry === targetNama) return true;
+
+        // Split "Lembaga Name - Class Name"
+        const dashParts = entry.split('-');
+        const prefix = norm(dashParts[0]);
+        const suffix = dashParts.length > 1 ? norm(dashParts.slice(1).join('-')) : '';
+
+        // Match prefix against lembaga nama / kode
+        if (targetNama && (prefix === targetNama || prefix.includes(targetNama) || targetNama.includes(prefix))) {
+          return true;
+        }
+        if (targetKode && (prefix === targetKode || prefix === targetKodeNorm || prefix.includes(targetKode) || targetKode.includes(prefix))) {
+          return true;
+        }
+
+        // Suffix matches a known class of this lembaga
+        if (suffix && classNamesOfL.length > 0 && classNamesOfL.includes(suffix)) {
+          return true;
+        }
+
+        // Substring / word inclusion
+        if (targetNama && targetNama.length > 3 && (normEntry.includes(targetNama) || targetNama.includes(normEntry))) {
+          return true;
+        }
+
+        if (targetKode && targetKode.length >= 2) {
+          const words = normEntry.split(/[\s-]+/);
+          if (words.includes(targetKode) || normEntry.startsWith(targetKode + ' ') || normEntry.startsWith(targetKode + '-')) {
+            return true;
+          }
+        }
+
+        return false;
+      });
+
+      if (matchFormal) return true;
     }
 
     return false;
