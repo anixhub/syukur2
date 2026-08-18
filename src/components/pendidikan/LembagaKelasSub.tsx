@@ -911,18 +911,26 @@ export default function LembagaKelasSub({
         return str.trim().toLowerCase()
           .replace(/[-_]/g, ' ')
           .replace(/^(kelas|kls)\s+/, '')
+          .replace(/\s+(pa|pi|putra|putri)$/i, '')
           .replace(/\s+/g, ' ')
           .trim();
       };
+      const compactClassStr = (str?: string | null) => cleanClassStr(str).replace(/\s+/g, '');
 
       const matchNonDefaultClass = (targetClass: Kelas): boolean => {
         if (isDefaultClass(targetClass)) return false;
         const targetNorm = norm(targetClass.nama);
         if (!targetNorm) return false;
         const cleanedTarget = cleanClassStr(targetNorm);
+        const compactTarget = compactClassStr(targetNorm);
 
         // 1. Direct match in sClasses
-        if (sClasses.some(sc => sc === targetNorm || cleanClassStr(sc) === cleanedTarget)) {
+        if (sClasses.some(sc => {
+          const scNorm = norm(sc);
+          const scClean = cleanClassStr(scNorm);
+          const scCompact = compactClassStr(scNorm);
+          return scNorm === targetNorm || scClean === cleanedTarget || (compactTarget && scCompact === compactTarget);
+        })) {
           return true;
         }
 
@@ -930,7 +938,13 @@ export default function LembagaKelasSub({
         if (specificClassForThisLembaga) {
           const specNorm = norm(specificClassForThisLembaga);
           const cleanedSpec = cleanClassStr(specNorm);
-          if (specNorm === targetNorm || cleanedSpec === cleanedTarget || (cleanedTarget.length > 1 && (cleanedSpec.includes(cleanedTarget) || cleanedTarget.includes(cleanedSpec)))) {
+          const compactSpec = compactClassStr(specNorm);
+          if (
+            specNorm === targetNorm || 
+            cleanedSpec === cleanedTarget || 
+            (compactTarget && compactSpec === compactTarget) ||
+            (cleanedTarget.length > 1 && (cleanedSpec.includes(cleanedTarget) || cleanedTarget.includes(cleanedSpec)))
+          ) {
             return true;
           }
         }

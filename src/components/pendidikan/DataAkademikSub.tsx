@@ -523,6 +523,17 @@ export default function DataAkademikSub({
       return str || raw;
     };
 
+    const cleanClassStr = (str?: string | null) => {
+      if (!str) return '';
+      return str.trim().toLowerCase()
+        .replace(/[-_]/g, ' ')
+        .replace(/^(kelas|kls)\s+/, '')
+        .replace(/\s+(pa|pi|putra|putri)$/i, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    };
+    const compactClassStr = (str?: string | null) => cleanClassStr(str).replace(/\s+/g, '');
+
     if (isFormal) {
       // 1. Check s.pendidikanFormal
       if (s.pendidikanFormal && s.pendidikanFormal.trim() !== '' && s.pendidikanFormal !== 'TIDAK TERDAFTAR' && s.pendidikanFormal !== 'Belum / Non-Formal' && s.pendidikanFormal !== '-') {
@@ -534,7 +545,16 @@ export default function DataAkademikSub({
             if (dashParts.length > 1) {
               const clsPart = dashParts.slice(1).join('-').trim();
               if (clsPart && !/^\d{6,}$/.test(clsPart)) {
-                const matched = kelasList.find(k => String(k.lembagaId) === String(l.id) && k.nama.trim().toLowerCase() === clsPart.toLowerCase());
+                const clsPartClean = cleanClassStr(clsPart);
+                const clsPartCompact = compactClassStr(clsPart);
+                const matched = kelasList.find(k => {
+                  if (String(k.lembagaId || (k as any).lembaga_id) !== String(l.id)) return false;
+                  const kClean = cleanClassStr(k.nama);
+                  const kCompact = compactClassStr(k.nama);
+                  return k.nama.trim().toLowerCase() === clsPart.toLowerCase() ||
+                         kClean === clsPartClean ||
+                         (clsPartCompact && kCompact === clsPartCompact);
+                });
                 return cleanClassName(matched ? matched.nama : clsPart);
               }
             }
@@ -559,7 +579,14 @@ export default function DataAkademikSub({
           return lemId === targetId && !norm(k.nama).includes('calon') && !norm(k.nama).includes('tanpa kelas');
         });
         for (const k of classesOfL) {
-          if (k.nama && sClasses.includes(norm(k.nama)) && !/^\d{6,}$/.test(k.nama)) {
+          const kClean = cleanClassStr(k.nama);
+          const kCompact = compactClassStr(k.nama);
+          const hasMatch = sClasses.some(sc => {
+            const scClean = cleanClassStr(sc);
+            const scCompact = compactClassStr(sc);
+            return sc === norm(k.nama) || scClean === kClean || (kCompact && scCompact === kCompact);
+          });
+          if (k.nama && hasMatch && !/^\d{6,}$/.test(k.nama)) {
             return cleanClassName(k.nama);
           }
         }
@@ -576,7 +603,16 @@ export default function DataAkademikSub({
             if (dashParts.length > 1) {
               const clsPart = dashParts.slice(1).join('-').trim();
               if (clsPart && !/^\d{6,}$/.test(clsPart)) {
-                const matched = kelasList.find(k => String(k.lembagaId) === String(l.id) && k.nama.trim().toLowerCase() === clsPart.toLowerCase());
+                const clsPartClean = cleanClassStr(clsPart);
+                const clsPartCompact = compactClassStr(clsPart);
+                const matched = kelasList.find(k => {
+                  if (String(k.lembagaId || (k as any).lembaga_id) !== String(l.id)) return false;
+                  const kClean = cleanClassStr(k.nama);
+                  const kCompact = compactClassStr(k.nama);
+                  return k.nama.trim().toLowerCase() === clsPart.toLowerCase() ||
+                         kClean === clsPartClean ||
+                         (clsPartCompact && kCompact === clsPartCompact);
+                });
                 return cleanClassName(matched ? matched.nama : clsPart);
               }
             }
@@ -593,7 +629,14 @@ export default function DataAkademikSub({
           return lemId === targetId && !norm(k.nama).includes('calon') && !norm(k.nama).includes('tanpa kelas');
         });
         for (const k of classesOfL) {
-          if (k.nama && sClasses.includes(norm(k.nama)) && !/^\d{6,}$/.test(k.nama)) {
+          const kClean = cleanClassStr(k.nama);
+          const kCompact = compactClassStr(k.nama);
+          const hasMatch = sClasses.some(sc => {
+            const scClean = cleanClassStr(sc);
+            const scCompact = compactClassStr(sc);
+            return sc === norm(k.nama) || scClean === kClean || (kCompact && scCompact === kCompact);
+          });
+          if (k.nama && hasMatch && !/^\d{6,}$/.test(k.nama)) {
             return cleanClassName(k.nama);
           }
         }

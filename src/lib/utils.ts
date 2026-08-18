@@ -220,11 +220,20 @@ export function isMatchLembagaStrict(l: Lembaga, text?: string | null): boolean 
   const raw = (text || '').trim().toLowerCase();
   if (!raw || raw === 'tidak terdaftar' || raw === 'belum / non-formal' || raw === 'belum / non-madin' || raw === '-') return false;
 
-  const n = raw.replace(/[-_]/g, ' ').replace(/\s+/g, ' ');
+  const normalizeSpelling = (str: string) => {
+    return str
+      .replace(/wushto|wusto/g, 'wustho')
+      .replace(/ulia/g, 'ulya')
+      .replace(/ibtidaiyah/g, 'ibtidaiyyah')
+      .replace(/diniyah/g, 'diniyyah')
+      .replace(/tuhfatush/g, 'tuhfatus');
+  };
+
+  const n = normalizeSpelling(raw.replace(/[-_]/g, ' ').replace(/\s+/g, ' '));
   const targetId = (l.id || '').trim().toLowerCase();
-  const targetNama = (l.nama || '').trim().toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ');
+  const targetNama = normalizeSpelling((l.nama || '').trim().toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' '));
   const targetKode = (l.kode || '').trim().toLowerCase();
-  const targetKodeNorm = targetKode.replace(/[-_]/g, ' ').replace(/\s+/g, ' ');
+  const targetKodeNorm = normalizeSpelling(targetKode.replace(/[-_]/g, ' ').replace(/\s+/g, ' '));
 
   // 1. Direct exact matches
   if (raw === targetId || n === targetNama) return true;
@@ -232,9 +241,9 @@ export function isMatchLembagaStrict(l: Lembaga, text?: string | null): boolean 
 
   // 2. Strict Academic Tier Disambiguation (Mutually exclusive levels)
   const EXCLUSIVE_TIER_GROUPS = [
-    { name: 'wustho', terms: ['wustho', 'wushto', 'mts', 'smp', 'spmw'] },
-    { name: 'ulya', terms: ['ulya', 'ma', 'sma', 'smk', 'spmu'] },
-    { name: 'ula', terms: ['ula', 'mi', 'sd', 'spmua', 'ibtidaiyah'] },
+    { name: 'wustho', terms: ['wustho', 'wushto', 'wusto', 'mts', 'smp', 'spmw', 'spwu'] },
+    { name: 'ulya', terms: ['ulya', 'ulia', 'ma', 'sma', 'smk', 'spmu', 'spul'] },
+    { name: 'ula', terms: ['ula', 'mi', 'sd', 'spmua', 'ibtidaiyyah', 'ibtidaiyah'] },
   ];
 
   const findTierGroup = (str: string) => {
