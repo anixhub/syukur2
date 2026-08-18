@@ -117,10 +117,13 @@ export default function PendidikanView({
     return defaultGender;
   });
   
-  // Helper to parse TA_META from Lembaga description
+  // Helper to parse TA_META and map fields from Lembaga description
   const deserializeLembaga = (l: Lembaga): Lembaga => {
     if (!l) return l;
     const copy = { ...l };
+    if (copy.nomor_statistik && !copy.nomorStatistik) {
+      copy.nomorStatistik = copy.nomor_statistik;
+    }
     if (copy.deskripsi) {
       const match = copy.deskripsi.match(/\[TA_META:(.*?)\]/);
       if (match) {
@@ -130,6 +133,8 @@ export default function PendidikanView({
           if (copy.taMulaiBulan === undefined && meta.taMulaiBulan !== undefined) copy.taMulaiBulan = meta.taMulaiBulan;
           if (copy.taSelesaiTanggal === undefined && meta.taSelesaiTanggal !== undefined) copy.taSelesaiTanggal = meta.taSelesaiTanggal;
           if (copy.taSelesaiBulan === undefined && meta.taSelesaiBulan !== undefined) copy.taSelesaiBulan = meta.taSelesaiBulan;
+          if (!copy.nomorStatistik && meta.nomorStatistik) copy.nomorStatistik = meta.nomorStatistik;
+          if (!copy.npsn && meta.npsn) copy.npsn = meta.npsn;
         } catch (e) {}
       }
       copy.deskripsi = copy.deskripsi.replace(/\[TA_META:.*?\]/g, "").trim();

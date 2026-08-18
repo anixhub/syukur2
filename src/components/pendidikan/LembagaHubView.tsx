@@ -158,6 +158,24 @@ export const LembagaHubView: React.FC<LembagaHubViewProps> = ({
                   {(selectedLembaga.kode || generate4LetterKode(selectedLembaga.nama)).toUpperCase().slice(0, 4)}
                 </span>
               </div>
+
+              {((selectedLembaga.nomorStatistik || selectedLembaga.nomor_statistik) || selectedLembaga.npsn) && (
+                <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                  {(selectedLembaga.nomorStatistik || selectedLembaga.nomor_statistik) && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100/90 text-slate-750 text-xs font-semibold border border-slate-200/70 shadow-2xs">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide">No. Statistik:</span>
+                      <span className="font-mono font-bold text-slate-800">{selectedLembaga.nomorStatistik || selectedLembaga.nomor_statistik}</span>
+                    </span>
+                  )}
+                  {selectedLembaga.npsn && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100/90 text-slate-750 text-xs font-semibold border border-slate-200/70 shadow-2xs">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide">NPSN:</span>
+                      <span className="font-mono font-bold text-slate-800">{selectedLembaga.npsn}</span>
+                    </span>
+                  )}
+                </div>
+              )}
+
               {selectedLembaga.deskripsi && (
                 <p className="text-xs sm:text-sm text-slate-500 font-medium mt-1">
                   {selectedLembaga.deskripsi}

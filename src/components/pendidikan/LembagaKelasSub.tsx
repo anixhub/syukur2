@@ -517,6 +517,8 @@ export default function LembagaKelasSub({
   const [logoError, setLogoError] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [lemDeskripsi, setLemDeskripsi] = useState('');
+  const [lemNomorStatistik, setLemNomorStatistik] = useState('');
+  const [lemNpsn, setLemNpsn] = useState('');
   const [taMulaiTanggal, setTaMulaiTanggal] = useState<number>(1);
   const [taMulaiBulan, setTaMulaiBulan] = useState<number>(7);
   const [taSelesaiTanggal, setTaSelesaiTanggal] = useState<number>(30);
@@ -940,6 +942,9 @@ export default function LembagaKelasSub({
           logo: l.logo || '',
           gender: l.gender,
           jenis: getLembagaJenis(l),
+          nomorStatistik: l.nomorStatistik || l.nomor_statistik || '',
+          nomor_statistik: l.nomorStatistik || l.nomor_statistik || '',
+          npsn: l.npsn || '',
           classesCount: classes.length,
           studentsCount: studentsCount,
           taMulaiTanggal: l.taMulaiTanggal,
@@ -1355,6 +1360,8 @@ export default function LembagaKelasSub({
       setLemKode((lem.kode || '').toUpperCase().slice(0, 4));
       setLemLogo(lem.logo || '');
       setLemDeskripsi(lem.deskripsi || '');
+      setLemNomorStatistik(lem.nomorStatistik || lem.nomor_statistik || '');
+      setLemNpsn(lem.npsn || '');
       setTaMulaiTanggal(lem.taMulaiTanggal || 1);
       setTaMulaiBulan(lem.taMulaiBulan || 7);
       setTaSelesaiTanggal(lem.taSelesaiTanggal || 30);
@@ -1365,6 +1372,8 @@ export default function LembagaKelasSub({
       setLemKode('');
       setLemLogo('');
       setLemDeskripsi('');
+      setLemNomorStatistik('');
+      setLemNpsn('');
       setTaMulaiTanggal(1);
       setTaMulaiBulan(7);
       setTaSelesaiTanggal(30);
@@ -1430,6 +1439,9 @@ export default function LembagaKelasSub({
           nama: lemNama.trim(),
           kode: finalKode,
           logo: lemLogo || undefined,
+          nomorStatistik: lemNomorStatistik.trim() || undefined,
+          nomor_statistik: lemNomorStatistik.trim() || undefined,
+          npsn: lemNpsn.trim() || undefined,
           deskripsi: lemDeskripsi.trim(),
           taMulaiTanggal,
           taMulaiBulan,
@@ -1443,6 +1455,9 @@ export default function LembagaKelasSub({
             nama: lemNama.trim(),
             kode: finalKode,
             logo: lemLogo || undefined,
+            nomorStatistik: lemNomorStatistik.trim() || undefined,
+            nomor_statistik: lemNomorStatistik.trim() || undefined,
+            npsn: lemNpsn.trim() || undefined,
             deskripsi: lemDeskripsi.trim(),
             taMulaiTanggal,
             taMulaiBulan,
@@ -1460,6 +1475,9 @@ export default function LembagaKelasSub({
           gender: selectedGender,
           jenis: activeTab,
           logo: lemLogo || undefined,
+          nomorStatistik: lemNomorStatistik.trim() || undefined,
+          nomor_statistik: lemNomorStatistik.trim() || undefined,
+          npsn: lemNpsn.trim() || undefined,
           deskripsi: lemDeskripsi.trim(),
           taMulaiTanggal,
           taMulaiBulan,
@@ -2881,6 +2899,22 @@ export default function LembagaKelasSub({
                               <h3 className="text-base font-black text-slate-800 leading-tight group-hover:text-emerald-700 transition-colors truncate">
                                 {l.nama}
                               </h3>
+                              {(l.nomorStatistik || l.nomor_statistik || l.npsn) && (
+                                <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                  {(l.nomorStatistik || l.nomor_statistik) && (
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-semibold border border-slate-200/60">
+                                      <span className="text-[9px] font-black text-slate-400">NS:</span>
+                                      <span className="font-mono">{l.nomorStatistik || l.nomor_statistik}</span>
+                                    </span>
+                                  )}
+                                  {l.npsn && (
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-semibold border border-slate-200/60">
+                                      <span className="text-[9px] font-black text-slate-400">NPSN:</span>
+                                      <span className="font-mono">{l.npsn}</span>
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                               {l.deskripsi && (
                                 <p className="text-[10px] text-slate-400 font-medium truncate mt-0.5">
                                   {l.deskripsi}
@@ -3162,6 +3196,24 @@ export default function LembagaKelasSub({
                         {(selectedLembaga.kode || generate4LetterKode(selectedLembaga.nama)).toUpperCase().slice(0, 4)}
                       </span>
                     </div>
+
+                    {((selectedLembaga.nomorStatistik || selectedLembaga.nomor_statistik) || selectedLembaga.npsn) && (
+                      <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                        {(selectedLembaga.nomorStatistik || selectedLembaga.nomor_statistik) && (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100/90 text-slate-750 text-xs font-semibold border border-slate-200/70 shadow-2xs">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide">No. Statistik:</span>
+                            <span className="font-mono font-bold text-slate-800">{selectedLembaga.nomorStatistik || selectedLembaga.nomor_statistik}</span>
+                          </span>
+                        )}
+                        {selectedLembaga.npsn && (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100/90 text-slate-750 text-xs font-semibold border border-slate-200/70 shadow-2xs">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide">NPSN:</span>
+                            <span className="font-mono font-bold text-slate-800">{selectedLembaga.npsn}</span>
+                          </span>
+                        )}
+                      </div>
+                    )}
+
                     {selectedLembaga.deskripsi && (
                       <p className="text-xs sm:text-sm text-slate-500 font-medium mt-1">
                         {selectedLembaga.deskripsi}
@@ -4067,6 +4119,35 @@ export default function LembagaKelasSub({
                         placeholder="Contoh: Unit Satuan Pendidikan Menengah Formal"
                         className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:border-emerald-500 outline-none font-semibold text-slate-700"
                       />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                          <span>Nomor Statistik</span>
+                          <span className="text-[9px] text-slate-400 font-medium">NSM/NSS/NSPP</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={lemNomorStatistik}
+                          onChange={(e) => setLemNomorStatistik(e.target.value)}
+                          placeholder="Contoh: 131232010001"
+                          className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:border-emerald-500 outline-none font-mono font-semibold text-slate-700"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                          <span>NPSN</span>
+                          <span className="text-[9px] text-slate-400 font-medium">8 Digit</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={lemNpsn}
+                          onChange={(e) => setLemNpsn(e.target.value)}
+                          placeholder="Contoh: 69987654"
+                          className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:border-emerald-500 outline-none font-mono font-semibold text-slate-700"
+                        />
+                      </div>
                     </div>
 
                     <div>

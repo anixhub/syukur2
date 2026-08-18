@@ -11,6 +11,10 @@
 -- ALTER TABLE `santri` ADD COLUMN `induk_wustho` VARCHAR(30) NULL AFTER `induk_mhd`;
 -- ALTER TABLE `santri` ADD COLUMN `induk_ulya` VARCHAR(30) NULL AFTER `induk_wustho`;
 --
+-- Jika tabel 'lembaga' sudah ada di phpMyAdmin dan ingin menambah kolom Nomor Statistik dan NPSN:
+-- ALTER TABLE `lembaga` ADD COLUMN `nomor_statistik` VARCHAR(50) NULL AFTER `logo`;
+-- ALTER TABLE `lembaga` ADD COLUMN `npsn` VARCHAR(50) NULL AFTER `nomor_statistik`;
+--
 -- Jika sebelumnya sempat membuat kolom camelCase (indukMhd, indukWustho, indukUlya),
 -- hapus kolom duplikat tersebut dengan:
 -- ALTER TABLE `santri` 
@@ -86,6 +90,8 @@ CREATE TABLE IF NOT EXISTS `lembaga` (
   `gender` VARCHAR(10) DEFAULT 'Putra',
   `jenis` VARCHAR(20) DEFAULT 'Internal',
   `logo` TEXT,
+  `nomor_statistik` VARCHAR(50),
+  `npsn` VARCHAR(50),
   `ta_mulai_tanggal` INT DEFAULT 1,
   `ta_mulai_bulan` INT DEFAULT 7,
   `ta_selesai_tanggal` INT DEFAULT 30,

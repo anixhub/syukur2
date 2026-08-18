@@ -125,6 +125,9 @@ export interface Lembaga {
   gender?: 'Putra' | 'Putri';
   jenis?: 'Formal' | 'Internal' | 'Rombel';
   logo?: string;
+  nomorStatistik?: string;
+  nomor_statistik?: string;
+  npsn?: string;
   taMulaiTanggal?: number; // 1-31
   taMulaiBulan?: number; // 1-12
   taSelesaiTanggal?: number; // 1-31

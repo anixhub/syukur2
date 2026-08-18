@@ -989,6 +989,8 @@ async function ensureTableExists(table: string, pool: mysql.Pool) {
             \`gender\` VARCHAR(10) DEFAULT 'Putra',
             \`jenis\` VARCHAR(20) DEFAULT 'Internal',
             \`logo\` LONGTEXT NULL,
+            \`nomor_statistik\` VARCHAR(50) NULL,
+            \`npsn\` VARCHAR(50) NULL,
             \`ta_mulai_tanggal\` INT DEFAULT 1,
             \`ta_mulai_bulan\` INT DEFAULT 7,
             \`ta_selesai_tanggal\` INT DEFAULT 30,
@@ -996,7 +998,7 @@ async function ensureTableExists(table: string, pool: mysql.Pool) {
             \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
           ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         `);
-        const cols = ['logo', 'deskripsi', 'kode', 'gender', 'jenis', 'ta_mulai_tanggal', 'ta_mulai_bulan', 'ta_selesai_tanggal', 'ta_selesai_bulan'];
+        const cols = ['logo', 'deskripsi', 'kode', 'gender', 'jenis', 'nomor_statistik', 'nomorStatistik', 'npsn', 'ta_mulai_tanggal', 'ta_mulai_bulan', 'ta_selesai_tanggal', 'ta_selesai_bulan'];
         for (const col of cols) {
           try {
             await pool.query(`ALTER TABLE \`lembaga\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
