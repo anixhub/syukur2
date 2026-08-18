@@ -1802,6 +1802,60 @@ export default function LembagaKelasSub({
     setConfirmRemoveOpen(true);
   };
 
+  const handleRemoveGraduate = (student: Santri) => {
+    if (!selectedLembaga) return;
+    setConfirmRemoveData({
+      type: 'single',
+      studentName: student.nama,
+      studentId: student.id,
+      label: 'lulusan / alumni',
+      className: 'Lulusan & Alumni',
+      onConfirm: () => {
+        onUpdateSantriClass(student.id, 'Tanpa Kelas', selectedLembaga.id);
+        if (onUpdateSantri) {
+          onUpdateSantri({
+            ...student,
+            tahunLulus: undefined,
+            catatan: student.catatan ? student.catatan.replace(/\[PF:.*?\]\s*/g, '').replace(/\[PI:.*?\]\s*/g, '').trim() : undefined
+          });
+        }
+        showToast(`${student.nama} berhasil dihapus dari daftar lulusan ${selectedLembaga.nama}.`);
+      }
+    });
+    setConfirmRemoveOpen(true);
+  };
+
+  const handleClearAllGraduates = () => {
+    if (!selectedLembaga) return;
+    const targetGrads = allGraduatesOfLembaga;
+    if (targetGrads.length === 0) return;
+    setConfirmRemoveData({
+      type: 'bulk',
+      count: targetGrads.length,
+      label: 'seluruh lulusan',
+      className: 'Lulusan & Alumni',
+      onConfirm: () => {
+        const ids = targetGrads.map(s => s.id);
+        if (onUpdateSantriClassBatch) {
+          onUpdateSantriClassBatch(ids, 'Tanpa Kelas', selectedLembaga.id);
+        } else {
+          ids.forEach(id => onUpdateSantriClass(id, 'Tanpa Kelas', selectedLembaga.id));
+        }
+        if (onUpdateSantri) {
+          targetGrads.forEach(s => {
+            onUpdateSantri({
+              ...s,
+              tahunLulus: undefined,
+              catatan: s.catatan ? s.catatan.replace(/\[PF:.*?\]\s*/g, '').replace(/\[PI:.*?\]\s*/g, '').trim() : undefined
+            });
+          });
+        }
+        showToast(`Seluruh data lulusan pada ${selectedLembaga.nama} (${targetGrads.length} santri) berhasil dikosongkan.`);
+      }
+    });
+    setConfirmRemoveOpen(true);
+  };
+
   const handleTransferFromCalon = (student: Santri) => {
     if (!selectedLembaga) return;
     setTransferStudent(student);
@@ -3180,6 +3234,9 @@ export default function LembagaKelasSub({
             onPrintPDF={handlePrintLulusanPDF}
             onSelectStudentDetail={(s) => setSelectedSantriForDetail(s)}
             selectedGender={selectedGender}
+            canWriteCurrent={canWriteCurrent}
+            onClearAllGraduates={handleClearAllGraduates}
+            onRemoveGraduate={handleRemoveGraduate}
           />
         ) : (
           <motion.div

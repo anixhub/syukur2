@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { motion } from 'motion/react';
 import { 
   ArrowLeft, Printer, Search, X, Award, GraduationCap, Users, Home, ExternalLink,
-  Calendar, CheckCircle2, ChevronRight, Folder
+  Calendar, CheckCircle2, ChevronRight, Folder, Trash2
 } from 'lucide-react';
 import { Santri } from '../../types';
 import { renderSantriAvatar } from '../SekretarisHelper';
@@ -22,6 +22,9 @@ interface LembagaLulusanViewProps {
   onPrintPDF: () => void;
   onSelectStudentDetail: (s: Santri) => void;
   selectedGender: 'Putra' | 'Putri';
+  canWriteCurrent?: boolean;
+  onClearAllGraduates?: () => void;
+  onRemoveGraduate?: (s: Santri) => void;
 }
 
 export const LembagaLulusanView: React.FC<LembagaLulusanViewProps> = ({
@@ -39,6 +42,9 @@ export const LembagaLulusanView: React.FC<LembagaLulusanViewProps> = ({
   onPrintPDF,
   onSelectStudentDetail,
   selectedGender,
+  canWriteCurrent,
+  onClearAllGraduates,
+  onRemoveGraduate,
 }) => {
   const isFormal = activeTab === 'Formal';
 
@@ -93,6 +99,16 @@ export const LembagaLulusanView: React.FC<LembagaLulusanViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {canWriteCurrent && allGraduates.length > 0 && onClearAllGraduates && (
+              <button
+                onClick={onClearAllGraduates}
+                className="inline-flex items-center justify-center bg-red-50 border border-red-200 h-9 px-3.5 rounded-xl text-xs font-bold text-red-600 hover:bg-red-100 cursor-pointer shadow-3xs active:scale-95 transition-all gap-1.5"
+                title="Kosongkan Seluruh Data Lulusan Lembaga Ini"
+              >
+                <Trash2 className="h-4 w-4 text-red-600" />
+                <span>Kosongkan Lulusan</span>
+              </button>
+            )}
             <button
               onClick={onPrintPDF}
               className="inline-flex items-center justify-center bg-white border border-slate-200 h-9 px-3.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer shadow-3xs active:scale-95 transition-all gap-1.5"
@@ -326,13 +342,24 @@ export const LembagaLulusanView: React.FC<LembagaLulusanViewProps> = ({
                           </span>
                         </td>
                         <td className="py-3.5 px-3 text-center">
-                          <button
-                            onClick={() => onSelectStudentDetail(s)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-purple-700 hover:bg-purple-50 transition-colors cursor-pointer"
-                            title="Lihat Detail Santri"
-                          >
-                            <ExternalLink className="h-4 w-4" />
-                          </button>
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => onSelectStudentDetail(s)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-purple-700 hover:bg-purple-50 transition-colors cursor-pointer"
+                              title="Lihat Detail Santri"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </button>
+                            {canWriteCurrent && onRemoveGraduate && (
+                              <button
+                                onClick={() => onRemoveGraduate(s)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                                title="Keluarkan / Hapus dari Data Lulusan"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))
