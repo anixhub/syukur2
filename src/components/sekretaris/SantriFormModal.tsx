@@ -453,7 +453,7 @@ const initialFormState = {
   noHp: '',
 
   // Status & Administrasi
-  statusKeanggotaan: 'Aktif' as 'Aktif' | 'Alumni' | 'Meninggal',
+  statusKeanggotaan: 'Aktif' as 'Aktif' | 'Alumni' | 'Meninggal' | 'Mutasi',
   statusDomisili: 'Muqim' as 'Muqim' | 'Kampung',
   statusEmis: 'Belum' as 'Terdaftar' | 'Invalid' | 'Belum',
   statusVerval: 'Proses' as 'Sukses' | 'Proses',

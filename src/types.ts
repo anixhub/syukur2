@@ -44,11 +44,12 @@ export interface Santri {
   hubunganWali?: string;
 
   // Status Tambahan
-  statusKeanggotaan: 'Aktif' | 'Alumni' | 'Meninggal';
+  statusKeanggotaan: 'Aktif' | 'Alumni' | 'Meninggal' | 'Mutasi';
   status?: string;
   statusDomisili?: 'Muqim' | 'Kampung';
   statusEmis?: 'Terdaftar' | 'Invalid' | 'Belum';
   statusVerval?: 'Sukses' | 'Proses';
+  tahunLulus?: string;
 
   // Administrasi
   tanggalKeluar?: string;
@@ -135,7 +136,7 @@ export interface Kelas {
   lembagaId: string;
   nama: string;
   waliKelas: string;
-  tingkatan: 'Ula' | 'Wustho' | 'Ulya' | 'Lainnya';
+  tingkatan: 'Ula' | 'Wustho' | 'Ulya' | 'Lainnya' | string;
   kapasitas?: number;
   batasUsiaHari?: number;
   batasUsiaBulan?: number;

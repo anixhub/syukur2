@@ -6,13 +6,18 @@ import {
   ArrowLeft, Search, GraduationCap, ArrowLeftRight, Check, CheckCircle2, CheckSquare, 
   UserCheck, AlertCircle, X, MoreVertical, Award, ShieldAlert, UserMinus, ArrowRightLeft,
   Folder, FolderOpen, User, ArrowUpDown, Pencil, Settings, UserPlus, ArrowUp, ArrowDown,
-  ChevronDown, ChevronsUpDown, Printer, Sparkles, Home, Loader2, Upload
+  ChevronDown, ChevronsUpDown, Printer, Sparkles, Home, Loader2, Upload, ArrowRight,
+  FileSpreadsheet, ClipboardList, Filter
 } from 'lucide-react';
 import { Lembaga, Kelas, Santri, KategoriRombel, KelompokRombel, RombelAssignment, isDefaultClass, isEmisTerdaftar, getClsLembagaId, isGenderMatch } from '../../types';
 import { demoteSantriToCalonPesertaDidik, compressImage, parseCatatanInvalid, formatCatatanWithInvalid, cleanWaliKelas } from '../../lib/utils';
 import { uploadFileToStorage, getApiUrl } from '../../lib/api';
 import SantriDetailModal from '../sekretaris/SantriDetailModal';
 import { PUTRA_AVATAR, PUTRI_AVATAR, renderSantriAvatar, calculateRealtimeAge, getPesantrenProfile } from '../SekretarisHelper';
+import LembagaHubView from './LembagaHubView';
+import LembagaDataIndukView from './LembagaDataIndukView';
+import LembagaCalonView from './LembagaCalonView';
+import LembagaLulusanView from './LembagaLulusanView';
 
 const MONTH_NAMES = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
@@ -110,9 +115,22 @@ export default function LembagaKelasSub({
   // selectedLembaga can represent either a real Lembaga (Formal/Internal) or a KategoriRombel (Rombel)
   const [selectedLembaga, setSelectedLembaga] = useState<any | null>(null);
   const [selectedKelas, setSelectedKelas] = useState<any | null>(null);
+  const detailKelasRef = useRef<HTMLDivElement>(null);
   
+  // Navigation State within Selected Lembaga: 'hub' (4 tombol) | 'data_induk' | 'calon_peserta_didik' | 'kelas' | 'lulusan'
+  const [selectedLembagaView, setSelectedLembagaView] = useState<'hub' | 'data_induk' | 'calon_peserta_didik' | 'kelas' | 'lulusan'>('hub');
+  const [selectedCohort, setSelectedCohort] = useState<string>('Semua');
+  const [dataIndukClassFilter, setDataIndukClassFilter] = useState<string>('Semua');
+  const [dataIndukSearch, setDataIndukSearch] = useState<string>('');
+  const [dataIndukStatusFilter, setDataIndukStatusFilter] = useState<string>('Semua');
+  const [calonSearch, setCalonSearch] = useState<string>('');
+  const [calonStatusFilter, setCalonStatusFilter] = useState<string>('Semua');
+  const [lulusanSearch, setLulusanSearch] = useState<string>('');
+  const [lulusanStatusFilter, setLulusanStatusFilter] = useState<string>('Semua');
+
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState('');
+  const [classListSearch, setClassListSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('Semua');
   const [activeActionStudentId, setActiveActionStudentId] = useState<string | null>(null);
   const [activeEmisDropdownId, setActiveEmisDropdownId] = useState<string | null>(null);
@@ -1012,18 +1030,75 @@ export default function LembagaKelasSub({
     }
   }, [selectedLembaga, activeTab, groupsList, kelasList]);
 
+  // --- Dynamic Data Induk Students ---
+  const allStudentsOfLembaga = useMemo(() => {
+    if (!selectedLembaga) return [];
+    return santriList.filter(s => {
+      if (!isGenderMatch(s.gender, selectedGender)) return false;
+      return isStudentInLembaga(s, selectedLembaga);
+    });
+  }, [santriList, selectedLembaga, selectedGender]);
+
+  // --- Dynamic Calon Peserta Didik Students ---
+  const calonStudentsOfLembaga = useMemo(() => {
+    if (!selectedLembaga) return [];
+    const defaultCls = subClasses.find(c => isDefaultClass(c));
+    if (defaultCls) {
+      return getStudentsInClass(defaultCls, selectedLembaga);
+    }
+    const nonDefaultClasses = subClasses.filter(c => !isDefaultClass(c));
+    return allStudentsOfLembaga.filter(s => {
+      return !nonDefaultClasses.some(c => getStudentsInClass(c, selectedLembaga).some(cs => cs.id === s.id));
+    });
+  }, [selectedLembaga, subClasses, allStudentsOfLembaga]);
+
+  // --- Dynamic Lulusan / Alumni Students ---
+  const allGraduatesOfLembaga = useMemo(() => {
+    if (!selectedLembaga) return [];
+    return santriList.filter(s => {
+      if (!isGenderMatch(s.gender, selectedGender)) return false;
+      const inLembaga = isStudentInLembaga(s, selectedLembaga);
+      const isAlumniOrGrad = s.statusKeanggotaan === 'Alumni' || 
+                             (s as any).statusSantri === 'Alumni' || 
+                             !!s.tahunLulus ||
+                             (s.kelas && s.kelas.toLowerCase().includes('alumni')) ||
+                             (s.kelas && s.kelas.toLowerCase().includes('lulus'));
+      return inLembaga && isAlumniOrGrad;
+    });
+  }, [santriList, selectedLembaga, selectedGender]);
+
+  // --- Class Pill Items in Horizontal Scroll ---
+  const classPillItems = useMemo(() => {
+    if (!selectedLembaga) return [];
+    const regularClasses = subClasses.filter(c => !isDefaultClass(c));
+    
+    return regularClasses.map(c => ({
+      ...c,
+      pillType: 'kelas',
+      displayName: c.nama.toUpperCase(),
+    }));
+  }, [selectedLembaga, subClasses]);
+
+  const effectiveSelectedKelas = useMemo(() => {
+    if (selectedKelas) {
+      const match = classPillItems.find(p => p.id === selectedKelas.id);
+      return match || selectedKelas;
+    }
+    return classPillItems.length > 0 ? classPillItems[0] : null;
+  }, [selectedKelas, classPillItems]);
+
   // --- Dynamic Unified Students Getter ---
   const currentClassStudents = useMemo(() => {
-    if (!selectedKelas) return [];
+    if (!effectiveSelectedKelas || !selectedLembaga) return [];
     if (activeTab === 'Rombel') {
       const assignedIds = assignmentsList
-        .filter(a => a.kelompokId === selectedKelas.id)
+        .filter(a => a.kelompokId === effectiveSelectedKelas.id)
         .map(a => a.santriId);
       return santriList.filter(s => assignedIds.includes(s.id) && s.gender === selectedGender);
     } else {
-      return getStudentsInClass(selectedKelas, selectedLembaga);
+      return getStudentsInClass(effectiveSelectedKelas, selectedLembaga);
     }
-  }, [selectedKelas, selectedLembaga, activeTab, assignmentsList, santriList, selectedGender, kelasList]);
+  }, [effectiveSelectedKelas, selectedLembaga, activeTab, assignmentsList, santriList, selectedGender]);
 
   // Filtered students by search query and status filter
   const searchedStudents = useMemo(() => {
@@ -1043,7 +1118,7 @@ export default function LembagaKelasSub({
 
       // Apply status filter
       if (statusFilter && statusFilter !== 'Semua') {
-        const isCP = !!(selectedKelas && isDefaultClass(selectedKelas));
+        const isCP = !!(effectiveSelectedKelas && (isDefaultClass(effectiveSelectedKelas) || effectiveSelectedKelas.pillType === 'calon'));
         if (isCP) {
           // Status EMIS filter: 'Terdaftar' or 'Belum'
           const isTerdaftar = isEmisTerdaftar(s.statusEmis);
@@ -1065,7 +1140,7 @@ export default function LembagaKelasSub({
 
       return true;
     });
-  }, [currentClassStudents, searchQuery, statusFilter, selectedKelas]);
+  }, [currentClassStudents, searchQuery, statusFilter, effectiveSelectedKelas]);
 
   // Sort and filter students
   const filteredStudents = useMemo(() => {
@@ -1104,15 +1179,136 @@ export default function LembagaKelasSub({
     });
   }, [searchedStudents, sortField, sortDirection]);
 
-  // --- Automatical Selection of Topmost Class ---
+  const filteredDataIndukStudents = useMemo(() => {
+    const q = dataIndukSearch.trim().toLowerCase();
+    return allStudentsOfLembaga.filter(s => {
+      const matchesSearch = !q || (
+        (s.nama || '').toLowerCase().includes(q) ||
+        (s.nik && s.nik.toLowerCase().includes(q)) ||
+        (s.nis && s.nis.toLowerCase().includes(q)) ||
+        (s.nisn && s.nisn.toLowerCase().includes(q)) ||
+        (s.indukMhd && s.indukMhd.toLowerCase().includes(q)) ||
+        (s.indukWustho && s.indukWustho.toLowerCase().includes(q)) ||
+        (s.indukUlya && s.indukUlya.toLowerCase().includes(q))
+      );
+      if (!matchesSearch) return false;
+
+      if (dataIndukClassFilter && dataIndukClassFilter !== 'Semua') {
+        const targetClass = subClasses.find(c => c.id === dataIndukClassFilter || c.nama === dataIndukClassFilter);
+        if (targetClass) {
+          const inClass = getStudentsInClass(targetClass, selectedLembaga).some(cs => cs.id === s.id);
+          if (!inClass) return false;
+        }
+      }
+
+      if (dataIndukStatusFilter && dataIndukStatusFilter !== 'Semua') {
+        const st = s.statusKeanggotaan || 'Aktif';
+        if (dataIndukStatusFilter === 'Aktif' && st !== 'Aktif') return false;
+        if (dataIndukStatusFilter === 'Alumni' && st !== 'Alumni') return false;
+        if (dataIndukStatusFilter === 'Mutasi' && st !== 'Mutasi') return false;
+      }
+
+      return true;
+    }).sort((a, b) => (a.nama || '').localeCompare(b.nama || '', 'id', { sensitivity: 'base', numeric: true }));
+  }, [allStudentsOfLembaga, dataIndukSearch, dataIndukClassFilter, dataIndukStatusFilter, subClasses, selectedLembaga]);
+
+  const filteredCalonStudents = useMemo(() => {
+    const q = calonSearch.trim().toLowerCase();
+    return calonStudentsOfLembaga.filter(s => {
+      const matchesSearch = !q || (
+        (s.nama || '').toLowerCase().includes(q) ||
+        (s.nik && s.nik.toLowerCase().includes(q)) ||
+        (s.nis && s.nis.toLowerCase().includes(q)) ||
+        (s.nisn && s.nisn.toLowerCase().includes(q)) ||
+        (s.indukMhd && s.indukMhd.toLowerCase().includes(q)) ||
+        (s.indukWustho && s.indukWustho.toLowerCase().includes(q)) ||
+        (s.indukUlya && s.indukUlya.toLowerCase().includes(q))
+      );
+      if (!matchesSearch) return false;
+
+      if (calonStatusFilter && calonStatusFilter !== 'Semua') {
+        const isTerdaftar = isEmisTerdaftar(s.statusEmis);
+        if (calonStatusFilter === 'Terdaftar' && !isTerdaftar) return false;
+        if (calonStatusFilter === 'Belum' && isTerdaftar) return false;
+        if (calonStatusFilter === 'Invalid' && s.statusEmis !== 'Invalid') return false;
+      }
+
+      return true;
+    }).sort((a, b) => (a.nama || '').localeCompare(b.nama || '', 'id', { sensitivity: 'base', numeric: true }));
+  }, [calonStudentsOfLembaga, calonSearch, calonStatusFilter]);
+
+  const graduationCohorts = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const years = [
+      'Semua',
+      String(currentYear),
+      String(currentYear - 1),
+      String(currentYear - 2),
+      String(currentYear - 3),
+      'Sebelumnya'
+    ];
+    return years.map(yr => {
+      let count = 0;
+      if (yr === 'Semua') {
+        count = allGraduatesOfLembaga.length;
+      } else if (yr === 'Sebelumnya') {
+        count = allGraduatesOfLembaga.filter(s => {
+          const y = parseInt(s.tahunLulus || '0');
+          return y > 0 && y < (currentYear - 3);
+        }).length;
+      } else {
+        count = allGraduatesOfLembaga.filter(s => s.tahunLulus === yr || (!s.tahunLulus && yr === String(currentYear))).length;
+      }
+      return {
+        id: yr,
+        nama: yr === 'Semua' ? 'Semua Angkatan / Lulusan' : `Lulusan Tahun ${yr}`,
+        tahun: yr,
+        count
+      };
+    });
+  }, [allGraduatesOfLembaga]);
+
+  const filteredGraduates = useMemo(() => {
+    const q = lulusanSearch.trim().toLowerCase();
+    const currentYear = new Date().getFullYear();
+    return allGraduatesOfLembaga.filter(s => {
+      const matchesSearch = !q || (
+        (s.nama || '').toLowerCase().includes(q) ||
+        (s.nik && s.nik.toLowerCase().includes(q)) ||
+        (s.nis && s.nis.toLowerCase().includes(q)) ||
+        (s.nisn && s.nisn.toLowerCase().includes(q)) ||
+        (s.indukMhd && s.indukMhd.toLowerCase().includes(q)) ||
+        (s.indukWustho && s.indukWustho.toLowerCase().includes(q)) ||
+        (s.indukUlya && s.indukUlya.toLowerCase().includes(q))
+      );
+      if (!matchesSearch) return false;
+
+      if (selectedCohort && selectedCohort !== 'Semua') {
+        if (selectedCohort === 'Sebelumnya') {
+          const y = parseInt(s.tahunLulus || '0');
+          if (!(y > 0 && y < (currentYear - 3))) return false;
+        } else {
+          const matchYear = s.tahunLulus === selectedCohort || (!s.tahunLulus && selectedCohort === String(currentYear));
+          if (!matchYear) return false;
+        }
+      }
+
+      if (lulusanStatusFilter && lulusanStatusFilter !== 'Semua') {
+        if (s.statusKeanggotaan !== lulusanStatusFilter) return false;
+      }
+
+      return true;
+    }).sort((a, b) => (a.nama || '').localeCompare(b.nama || '', 'id', { sensitivity: 'base', numeric: true }));
+  }, [allGraduatesOfLembaga, lulusanSearch, selectedCohort, lulusanStatusFilter]);
+
+  // --- Class selection and cleanup ---
   useEffect(() => {
     if (selectedLembaga) {
       const classes = subClasses;
-      if (classes.length > 0) {
-        // Find if selectedKelas is already in this new list, otherwise fallback to the first
+      if (classes.length > 0 && selectedKelas) {
         const stillExists = classes.find(c => c.id === selectedKelas?.id);
         if (!stillExists) {
-          setSelectedKelas(classes[0]);
+          setSelectedKelas(null);
         }
       } else {
         setSelectedKelas(null);
@@ -1122,7 +1318,8 @@ export default function LembagaKelasSub({
     }
     setSearchQuery('');
     setActiveActionStudentId(null);
-  }, [selectedLembaga, activeTab]);
+    setClassListSearch('');
+  }, [selectedLembaga?.id, activeTab]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -1854,7 +2051,8 @@ export default function LembagaKelasSub({
   const startIndex = (activePage - 1) * itemsPerPage;
   const paginatedStudents = filteredStudents.slice(startIndex, startIndex + itemsPerPage);
 
-  const isCalonPelajarPage = !!(selectedKelas && isDefaultClass(selectedKelas));
+  const isCalonPelajarPage = !!(effectiveSelectedKelas && (isDefaultClass(effectiveSelectedKelas) || effectiveSelectedKelas.pillType === 'calon'));
+  const isLulusanPage = !!(effectiveSelectedKelas && (effectiveSelectedKelas.isLulusan || effectiveSelectedKelas.pillType === 'lulusan'));
   const gridColsClass = 'grid-cols-[55px_240px_110px_110px_100px_100px_50px]';
 
   // Toggle selection for individual student
@@ -2080,6 +2278,278 @@ export default function LembagaKelasSub({
       </html>
     `;
 
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
+
+  // Handle printing PDF for Data Induk
+  const handlePrintDataIndukPDF = () => {
+    if (!selectedLembaga) return;
+    const profile = getPesantrenProfile();
+    const studentsToPrint = allStudentsOfLembaga;
+    if (studentsToPrint.length === 0) {
+      alert(`Tidak ada data santri pada lembaga ${selectedLembaga.nama}.`);
+      return;
+    }
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Gagal membuka jendela cetak. Pastikan pop-up dibolehkan di peramban Anda.');
+      return;
+    }
+    const dateStr = new Date().toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+    const isFormal = activeTab === 'Formal';
+    const rowsHtml = studentsToPrint.map((s, idx) => `
+      <tr>
+        <td style="text-align: center;">${idx + 1}</td>
+        <td>${s.nis || '-'}</td>
+        <td><strong>${s.nama}</strong></td>
+        <td>${s.nik || '-'}</td>
+        <td>${s.nisn || '-'}</td>
+        <td>${s.indukMhd || s.indukWustho || s.indukUlya || '-'}</td>
+        ${isFormal ? `<td>${s.statusEmis || '-'}</td>` : `<td>${s.kamar || '-'}</td>`}
+        <td style="text-align: center;">${s.statusKeanggotaan || 'Aktif'}</td>
+      </tr>
+    `).join('');
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>DATA INDUK SANTRI - ${selectedLembaga.nama.toUpperCase()}</title>
+        <style>
+          @page { size: A4 landscape; margin: 12mm; }
+          body { font-family: sans-serif; color: #1e293b; margin: 0; padding: 10px; font-size: 10px; }
+          .header { text-align: center; border-bottom: 2px solid #00693E; padding-bottom: 8px; margin-bottom: 12px; }
+          .header h1 { margin: 0; font-size: 16px; color: #00693E; font-weight: bold; }
+          .header p { margin: 2px 0 0; font-size: 10px; color: #64748b; }
+          .title { text-align: center; font-size: 13px; font-weight: bold; margin-bottom: 4px; text-transform: uppercase; }
+          .info { margin-bottom: 10px; font-size: 10px; display: flex; justify-content: space-between; }
+          table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+          th, td { border: 1px solid #cbd5e1; padding: 5px 6px; font-size: 9.5px; text-align: left; }
+          th { background-color: #f1f5f9; font-weight: bold; color: #334155; }
+          tr:nth-child(even) { background-color: #f8fafc; }
+          .footer { margin-top: 20px; text-align: right; font-size: 9.5px; color: #64748b; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>${profile.namaPesantren || 'PONDOK PESANTREN'}</h1>
+          <p>${profile.alamat || ''} ${(profile as any).kota ? ' - ' + (profile as any).kota : ''}</p>
+        </div>
+        <div class="title">DATA INDUK SANTRI - ${selectedLembaga.nama.toUpperCase()}</div>
+        <div class="info">
+          <span><strong>Gender:</strong> Santri ${selectedGender} | <strong>Total Santri:</strong> ${studentsToPrint.length} Santri</span>
+          <span>Dicetak pada: ${dateStr}</span>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 25px; text-align: center;">No</th>
+              <th style="width: 80px;">NIS</th>
+              <th>Nama Lengkap Santri</th>
+              <th style="width: 110px;">NIK</th>
+              <th style="width: 90px;">NISN</th>
+              <th style="width: 80px;">No. Induk</th>
+              ${isFormal ? '<th style="width: 80px;">EMIS</th>' : '<th style="width: 80px;">Kamar</th>'}
+              <th style="width: 70px; text-align: center;">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
+        <div class="footer">
+          Dicetak dari Sistem SMART SANTRI - Modul Pendidikan
+        </div>
+        <script>
+          window.onload = function() { window.print(); };
+        </script>
+      </body>
+      </html>
+    `;
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
+
+  // Handle printing PDF for Calon Peserta Didik
+  const handlePrintCalonPDF = () => {
+    if (!selectedLembaga) return;
+    const profile = getPesantrenProfile();
+    const studentsToPrint = calonStudentsOfLembaga;
+    if (studentsToPrint.length === 0) {
+      alert(`Tidak ada data calon peserta didik pada lembaga ${selectedLembaga.nama}.`);
+      return;
+    }
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Gagal membuka jendela cetak. Pastikan pop-up dibolehkan di peramban Anda.');
+      return;
+    }
+    const dateStr = new Date().toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+    const rowsHtml = studentsToPrint.map((s, idx) => `
+      <tr>
+        <td style="text-align: center;">${idx + 1}</td>
+        <td>${s.nis || '-'}</td>
+        <td><strong>${s.nama}</strong></td>
+        <td>${s.nik || '-'}</td>
+        <td>${s.nisn || '-'}</td>
+        <td>${s.statusEmis || '-'}</td>
+        <td>${s.kamar || '-'}</td>
+      </tr>
+    `).join('');
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>DAFTAR CALON PESERTA DIDIK - ${selectedLembaga.nama.toUpperCase()}</title>
+        <style>
+          @page { size: A4 portrait; margin: 15mm; }
+          body { font-family: sans-serif; color: #1e293b; margin: 0; padding: 10px; font-size: 11px; }
+          .header { text-align: center; border-bottom: 2px solid #00693E; padding-bottom: 10px; margin-bottom: 15px; }
+          .header h1 { margin: 0; font-size: 18px; color: #00693E; font-weight: bold; }
+          .header p { margin: 3px 0 0; font-size: 11px; color: #64748b; }
+          .title { text-align: center; font-size: 14px; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; }
+          .info { margin-bottom: 12px; font-size: 11px; display: flex; justify-content: space-between; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+          th, td { border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 10px; text-align: left; }
+          th { background-color: #f1f5f9; font-weight: bold; color: #334155; }
+          tr:nth-child(even) { background-color: #f8fafc; }
+          .footer { margin-top: 25px; text-align: right; font-size: 10px; color: #64748b; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>${profile.namaPesantren || 'PONDOK PESANTREN'}</h1>
+          <p>${profile.alamat || ''} ${(profile as any).kota ? ' - ' + (profile as any).kota : ''}</p>
+        </div>
+        <div class="title">DAFTAR CALON PESERTA DIDIK - ${selectedLembaga.nama.toUpperCase()}</div>
+        <div class="info">
+          <span><strong>Gender:</strong> Santri ${selectedGender} | <strong>Total Calon:</strong> ${studentsToPrint.length} Santri</span>
+          <span>Dicetak pada: ${dateStr}</span>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 30px; text-align: center;">No</th>
+              <th style="width: 80px;">NIS</th>
+              <th>Nama Santri</th>
+              <th style="width: 110px;">NIK</th>
+              <th style="width: 90px;">NISN</th>
+              <th style="width: 80px;">Status EMIS</th>
+              <th style="width: 80px;">Kamar</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
+        <div class="footer">
+          Dicetak dari Sistem SMART SANTRI - Modul Pendidikan
+        </div>
+        <script>
+          window.onload = function() { window.print(); };
+        </script>
+      </body>
+      </html>
+    `;
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
+
+  // Handle printing PDF for Lulusan
+  const handlePrintLulusanPDF = () => {
+    if (!selectedLembaga) return;
+    const profile = getPesantrenProfile();
+    const studentsToPrint = allGraduatesOfLembaga;
+    if (studentsToPrint.length === 0) {
+      alert(`Tidak ada data lulusan pada lembaga ${selectedLembaga.nama}.`);
+      return;
+    }
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Gagal membuka jendela cetak. Pastikan pop-up dibolehkan di peramban Anda.');
+      return;
+    }
+    const dateStr = new Date().toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+    const rowsHtml = studentsToPrint.map((s, idx) => `
+      <tr>
+        <td style="text-align: center;">${idx + 1}</td>
+        <td>${s.nis || '-'}</td>
+        <td><strong>${s.nama}</strong></td>
+        <td>${s.nik || '-'}</td>
+        <td>${s.nisn || '-'}</td>
+        <td>${s.tahunLulus || '-'}</td>
+        <td>${s.kamar || '-'}</td>
+        <td style="text-align: center;">Alumni</td>
+      </tr>
+    `).join('');
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>DAFTAR LULUSAN & ALUMNI - ${selectedLembaga.nama.toUpperCase()}</title>
+        <style>
+          @page { size: A4 portrait; margin: 15mm; }
+          body { font-family: sans-serif; color: #1e293b; margin: 0; padding: 10px; font-size: 11px; }
+          .header { text-align: center; border-bottom: 2px solid #00693E; padding-bottom: 10px; margin-bottom: 15px; }
+          .header h1 { margin: 0; font-size: 18px; color: #00693E; font-weight: bold; }
+          .header p { margin: 3px 0 0; font-size: 11px; color: #64748b; }
+          .title { text-align: center; font-size: 14px; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; }
+          .info { margin-bottom: 12px; font-size: 11px; display: flex; justify-content: space-between; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+          th, td { border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 10px; text-align: left; }
+          th { background-color: #f1f5f9; font-weight: bold; color: #334155; }
+          tr:nth-child(even) { background-color: #f8fafc; }
+          .footer { margin-top: 25px; text-align: right; font-size: 10px; color: #64748b; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>${profile.namaPesantren || 'PONDOK PESANTREN'}</h1>
+          <p>${profile.alamat || ''} ${(profile as any).kota ? ' - ' + (profile as any).kota : ''}</p>
+        </div>
+        <div class="title">DAFTAR LULUSAN & ALUMNI - ${selectedLembaga.nama.toUpperCase()}</div>
+        <div class="info">
+          <span><strong>Gender:</strong> Santri ${selectedGender} | <strong>Total Lulusan:</strong> ${studentsToPrint.length} Santri</span>
+          <span>Dicetak pada: ${dateStr}</span>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 30px; text-align: center;">No</th>
+              <th style="width: 80px;">NIS</th>
+              <th>Nama Santri</th>
+              <th style="width: 110px;">NIK</th>
+              <th style="width: 90px;">NISN</th>
+              <th style="width: 90px;">Tahun Lulus</th>
+              <th style="width: 80px;">Kamar Asal</th>
+              <th style="width: 70px; text-align: center;">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
+        <div class="footer">
+          Dicetak dari Sistem SMART SANTRI - Modul Pendidikan
+        </div>
+        <script>
+          window.onload = function() { window.print(); };
+        </script>
+      </body>
+      </html>
+    `;
     printWindow.document.write(html);
     printWindow.document.close();
   };
@@ -2356,7 +2826,11 @@ export default function LembagaKelasSub({
                   return (
                     <div
                       key={l.id}
-                      onClick={() => setSelectedLembaga(l)}
+                      onClick={() => {
+                        setSelectedLembaga(l);
+                        setSelectedLembagaView('hub');
+                        setSelectedKelas(null);
+                      }}
                       className="group relative bg-white border border-slate-100 rounded-2xl cursor-pointer transition-all hover:border-slate-300 hover:shadow-md flex h-32 overflow-hidden"
                     >
                       {/* Logo or placeholder icon on the left */}
@@ -2483,36 +2957,119 @@ export default function LembagaKelasSub({
               </div>
             )}
           </motion.div>
+        ) : selectedLembagaView === 'hub' ? (
+          <LembagaHubView
+            key="lembaga-hub-view"
+            selectedLembaga={selectedLembaga}
+            activeTab={activeTab}
+            subClasses={subClasses}
+            allStudentsCount={allStudentsOfLembaga.length}
+            calonCount={calonStudentsOfLembaga.length}
+            graduatesCount={allGraduatesOfLembaga.length}
+            canWriteCurrent={canWriteCurrent}
+            isSelectionMode={isSelectionMode}
+            onBack={() => {
+              setSelectedLembaga(null);
+              setSelectedKelas(null);
+              setSelectedLembagaView('hub');
+            }}
+            onSelectView={(v) => {
+              setSelectedLembagaView(v);
+              if (v === 'kelas') {
+                setSelectedKelas(null);
+              }
+            }}
+            onPrint={handlePrintLembagaPDF}
+            onEdit={() => handleOpenLembagaModal(selectedLembaga)}
+            onDelete={() => handleDeleteLembagaClick(selectedLembaga.id, selectedLembaga.nama)}
+            generate4LetterKode={generate4LetterKode}
+            getLogoUrl={getLogoUrl}
+          />
+        ) : selectedLembagaView === 'data_induk' ? (
+          <LembagaDataIndukView
+            key="data-induk-view"
+            selectedLembaga={selectedLembaga}
+            activeTab={activeTab}
+            subClasses={subClasses}
+            students={filteredDataIndukStudents}
+            totalStudentsCount={allStudentsOfLembaga.length}
+            searchQuery={dataIndukSearch}
+            onSearchChange={setDataIndukSearch}
+            classFilter={dataIndukClassFilter}
+            onClassFilterChange={setDataIndukClassFilter}
+            statusFilter={dataIndukStatusFilter}
+            onStatusFilterChange={setDataIndukStatusFilter}
+            onBackToHub={() => setSelectedLembagaView('hub')}
+            onPrintPDF={handlePrintDataIndukPDF}
+            onSelectStudentDetail={(s) => setSelectedSantriForDetail(s)}
+            selectedGender={selectedGender}
+          />
+        ) : selectedLembagaView === 'calon_peserta_didik' ? (
+          <LembagaCalonView
+            key="calon-view"
+            selectedLembaga={selectedLembaga}
+            activeTab={activeTab}
+            students={filteredCalonStudents}
+            totalCalonCount={calonStudentsOfLembaga.length}
+            searchQuery={calonSearch}
+            onSearchChange={setCalonSearch}
+            statusFilter={calonStatusFilter}
+            onStatusFilterChange={setCalonStatusFilter}
+            onBackToHub={() => setSelectedLembagaView('hub')}
+            onPrintPDF={handlePrintCalonPDF}
+            onSelectStudentDetail={(s) => setSelectedSantriForDetail(s)}
+            selectedGender={selectedGender}
+            canWriteCurrent={canWriteCurrent}
+          />
+        ) : selectedLembagaView === 'lulusan' ? (
+          <LembagaLulusanView
+            key="lulusan-view"
+            selectedLembaga={selectedLembaga}
+            activeTab={activeTab}
+            students={filteredGraduates}
+            allGraduates={allGraduatesOfLembaga}
+            selectedCohort={selectedCohort}
+            onSelectCohort={setSelectedCohort}
+            searchQuery={lulusanSearch}
+            onSearchChange={setLulusanSearch}
+            statusFilter={lulusanStatusFilter}
+            onStatusFilterChange={setLulusanStatusFilter}
+            onBackToHub={() => setSelectedLembagaView('hub')}
+            onPrintPDF={handlePrintLulusanPDF}
+            onSelectStudentDetail={(s) => setSelectedSantriForDetail(s)}
+            selectedGender={selectedGender}
+          />
         ) : (
           <motion.div
-            key="stacked-view-container"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            key="unified-daftar-kelas-view"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
             className="flex flex-col gap-6 animate-fade-in"
           >
-            {/* TOP CARD: NAMA LEMBAGA & DAFTAR KELAS */}
-            <div className="w-full bg-white border border-slate-100 rounded-3xl p-5 sm:p-6 shadow-xs relative">
+            {/* Lembaga Profile Header Card */}
+            <div className="w-full bg-white border border-slate-100 rounded-3xl p-5 sm:p-7 shadow-xs relative">
               
-              {/* Header Bar: Back to Units button, Category Tag, and Lembaga Action Buttons */}
-              <div className="flex items-center justify-between gap-4 mb-5 pb-4 border-b border-slate-100/90">
+              {/* Header Bar: Back to Lembaga button, Category Tag, and Lembaga Action Buttons */}
+              <div className="flex items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-100/90">
                 <div className="flex items-center gap-3">
                   <button
                     disabled={isSelectionMode}
                     onClick={() => {
                       if (isSelectionMode) return;
-                      setSelectedLembaga(null);
+                      setSelectedLembagaView('hub');
                       setSelectedKelas(null);
                     }}
-                    className={`p-2 rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-all cursor-pointer shadow-3xs shrink-0 ${
-                      isSelectionMode ? 'opacity-40 cursor-not-allowed text-slate-300' : 'active:scale-95'
+                    className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-[#00693E] transition-all font-bold text-xs shadow-3xs shrink-0 ${
+                      isSelectionMode ? 'opacity-40 cursor-not-allowed text-slate-300' : 'active:scale-95 cursor-pointer'
                     }`}
-                    title="Kembali ke Daftar Unit"
+                    title="Kembali ke Menu Lembaga"
                   >
                     <ArrowLeft className="h-4 w-4" />
+                    <span>Kembali ke Menu Lembaga</span>
                   </button>
 
-                  <span className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none">
+                  <span className="hidden sm:inline-block text-xs font-black text-slate-400 uppercase tracking-widest leading-none">
                     {activeTab === 'Formal'
                       ? 'Pendidikan Formal'
                       : activeTab === 'Rombel'
@@ -2565,10 +3122,9 @@ export default function LembagaKelasSub({
               </div>
 
               {/* Lembaga Info Row (Logo, Nama, Kode, Stats) */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                <div className="flex items-center gap-4">
-                  {/* Circle / Rounded Logo */}
-                  <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-2xl overflow-hidden bg-slate-50 flex items-center justify-center border border-slate-100 shadow-2xs shrink-0">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-slate-100">
+                <div className="flex items-center gap-4 sm:gap-5">
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl overflow-hidden bg-slate-50 flex items-center justify-center border border-slate-100 shadow-2xs shrink-0">
                     {selectedLembaga.logo ? (
                       <div className="w-full h-full relative flex items-center justify-center">
                         <img 
@@ -2584,49 +3140,69 @@ export default function LembagaKelasSub({
                         />
                         <div className="hidden flex items-center justify-center w-full h-full">
                           {activeTab === 'Rombel' ? (
-                            <Award className="h-8 w-8 text-emerald-600" />
+                            <Award className="h-9 w-9 text-emerald-600" />
                           ) : (
-                            <School className="h-8 w-8 text-emerald-600" />
+                            <School className="h-9 w-9 text-emerald-600" />
                           )}
                         </div>
                       </div>
                     ) : activeTab === 'Rombel' ? (
-                      <Award className="h-8 w-8 text-emerald-600" />
+                      <Award className="h-9 w-9 text-emerald-600" />
                     ) : (
-                      <School className="h-8 w-8 text-emerald-600" />
+                      <School className="h-9 w-9 text-emerald-600" />
                     )}
                   </div>
 
-                  {/* Lembaga Name & 4-letter Kode Badge */}
                   <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight leading-tight uppercase truncate">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <h2 className="text-xl sm:text-2xl lg:text-3xl font-black text-slate-800 tracking-tight leading-tight uppercase">
                         {selectedLembaga.nama}
                       </h2>
-                      <span className="px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 text-xs font-black uppercase tracking-wider border border-emerald-200/80 shrink-0 shadow-2xs">
+                      <span className="px-2.5 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 text-xs font-black uppercase tracking-wider border border-emerald-200/80 shrink-0 shadow-2xs">
                         {(selectedLembaga.kode || generate4LetterKode(selectedLembaga.nama)).toUpperCase().slice(0, 4)}
                       </span>
                     </div>
-                    
-                    {/* Stats */}
-                    <p className="text-xs font-extrabold text-slate-400 mt-1 uppercase tracking-wider">
-                      {subClasses.length} {activeTab === 'Rombel' ? 'Kelompok' : 'Kelas'} &bull; {institutions.find(x => x.id === selectedLembaga.id)?.studentsCount || 0} Santri
-                    </p>
+                    {selectedLembaga.deskripsi && (
+                      <p className="text-xs sm:text-sm text-slate-500 font-medium mt-1">
+                        {selectedLembaga.deskripsi}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Lembaga Stat Badges */}
+                <div className="flex items-center gap-3 self-start md:self-center">
+                  <div className="bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-center min-w-[100px]">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-0.5">
+                      TOTAL {activeTab === 'Rombel' ? 'ROMBEL' : 'KELAS'}
+                    </span>
+                    <span className="text-base sm:text-lg font-black text-slate-800">
+                      {subClasses.length}
+                    </span>
+                  </div>
+                  <div className="bg-emerald-50/60 border border-emerald-100 rounded-2xl px-4 py-3 text-center min-w-[100px]">
+                    <span className="text-[10px] font-black text-emerald-600 uppercase tracking-wider block mb-0.5">
+                      TOTAL SANTRI
+                    </span>
+                    <span className="text-base sm:text-lg font-black text-[#00693E]">
+                      {institutions.find(x => x.id === selectedLembaga.id)?.studentsCount || 0}
+                    </span>
                   </div>
                 </div>
               </div>
 
-              {/* Section: Daftar Kelas (Placed right here on top in a single horizontal scroll row) */}
-              <div className="bg-slate-50/70 border border-slate-100/90 rounded-2xl p-3.5 sm:p-4">
-                <div className="flex items-center justify-between mb-3">
+              {/* HORIZONTAL DAFTAR KELAS PILLS */}
+              <div className="mt-5">
+                <div className="flex items-center justify-between gap-4 mb-3.5">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-black text-slate-500 uppercase tracking-wider">
+                    <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider">
                       Daftar {activeTab === 'Rombel' ? 'Rombel' : 'Kelas'}
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full bg-slate-200/80 text-slate-600 text-[11px] font-extrabold">
-                      {subClasses.length}
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-black">
+                      {classPillItems.length}
                     </span>
                   </div>
+
                   {canWriteCurrent && (
                     <button
                       disabled={isSelectionMode}
@@ -2647,119 +3223,99 @@ export default function LembagaKelasSub({
                   )}
                 </div>
 
-                {/* Single Row Horizontal Scroll */}
-                <div className="flex items-center flex-nowrap gap-2 sm:gap-2.5 overflow-x-auto pb-1.5 pt-0.5 px-0.5 scrollbar-thin">
-                  {subClasses.length === 0 ? (
-                    <div className="text-center py-2 w-full text-slate-400 text-xs font-medium italic">
-                      Belum ada {activeTab === 'Rombel' ? 'kelompok' : 'kelas'} terdaftar.
-                    </div>
-                  ) : (
-                    subClasses.map((c: any) => {
-                      const isSelected = selectedKelas?.id === c.id;
-                      const isDefault = activeTab !== 'Rombel' && isDefaultClass(c);
-                      
-                      return (
-                        <div
-                          key={c.id}
-                          onClick={() => {
-                            if (isSelectionMode) return;
-                            setSelectedKelas(c);
-                            setTimeout(() => {
-                              detailKelasSectionRef.current?.scrollIntoView({
-                                behavior: 'smooth',
-                                block: 'start'
-                              });
-                            }, 50);
-                          }}
-                          className={`group px-3.5 py-2 rounded-xl transition-all flex items-center justify-between gap-2.5 relative select-none border shrink-0 ${
-                            isSelectionMode
-                              ? 'opacity-50 cursor-not-allowed'
-                              : 'cursor-pointer'
-                          } ${
-                            isSelected 
-                              ? 'bg-[#00693E] border-[#00693E] text-white shadow-sm ring-2 ring-emerald-500/20' 
-                              : 'bg-white border-slate-200/80 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            {isSelected ? (
-                              <FolderOpen className="h-4 w-4 text-white shrink-0" />
-                            ) : (
-                              <Folder className="h-4 w-4 text-slate-400 shrink-0" />
-                            )}
-                            <span className="text-xs font-black uppercase tracking-wider whitespace-nowrap">
-                              {c.nama}
-                            </span>
-                          </div>
+                {/* Horizontal Scrollable Pills */}
+                <div className="flex items-center gap-2.5 overflow-x-auto pb-2 pt-1 no-scrollbar">
+                  {classPillItems.map((item) => {
+                    const isSelected = effectiveSelectedKelas?.id === item.id;
+                    const isRegular = item.pillType === 'kelas';
 
-                          {/* Titik 3 Action Button with Dropdown */}
-                          {canWriteCurrent && (
-                            <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
-                              <button
-                                disabled={isSelectionMode}
-                                onClick={(e) => {
-                                  if (isSelectionMode) return;
-                                  if (activeActionKelasId === c.id) {
-                                    setActiveActionKelasId(null);
-                                    setKelasDropdownPos(null);
-                                  } else {
-                                    const rect = e.currentTarget.getBoundingClientRect();
-                                    const dropdownWidth = 120;
-                                    const dropdownHeight = 100;
-                                    let top = rect.bottom + 4;
-                                    if (top + dropdownHeight > window.innerHeight) {
-                                      top = rect.top - dropdownHeight - 4;
-                                    }
-                                    let left = rect.right - dropdownWidth;
-                                    if (left < 8) left = 8;
-                                    if (left + dropdownWidth > window.innerWidth - 8) {
-                                      left = window.innerWidth - dropdownWidth - 8;
-                                    }
-                                    setKelasDropdownPos({ top, left });
-                                    setActiveActionKelasId(c.id);
-                                  }
-                                }}
-                                className={`p-1 rounded-lg transition-colors ${
-                                  isSelectionMode 
-                                    ? 'opacity-30 cursor-not-allowed text-slate-350' 
-                                    : 'cursor-pointer'
-                                } ${
-                                  isSelected 
-                                    ? 'hover:bg-emerald-800 text-emerald-100' 
-                                    : 'hover:bg-slate-100 text-slate-400 hover:text-slate-700'
-                                }`}
-                                title="Opsi Aksi"
-                              >
-                                <MoreVertical className="h-3.5 w-3.5 text-current" />
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })
-                  )}
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={() => {
+                          setSelectedKelas(item);
+                          setTimeout(() => {
+                            detailKelasRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                          }, 50);
+                        }}
+                        className={`group inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer select-none shrink-0 shadow-2xs ${
+                          isSelected
+                            ? 'bg-[#00693E] text-white shadow-md'
+                            : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200/80 hover:border-emerald-500/50'
+                        }`}
+                      >
+                        <Folder className={`h-4 w-4 ${isSelected ? 'text-white' : 'text-emerald-600'}`} />
+                        <span className="tracking-tight uppercase">{item.displayName || item.nama}</span>
+                        
+                        {/* 3 dots menu for regular classes */}
+                        {isRegular && canWriteCurrent && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (activeActionKelasId === item.id) {
+                                setActiveActionKelasId(null);
+                                setKelasDropdownPos(null);
+                              } else {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                const dropdownWidth = 140;
+                                const dropdownHeight = 110;
+                                let top = rect.bottom + 4;
+                                if (top + dropdownHeight > window.innerHeight) {
+                                  top = rect.top - dropdownHeight - 4;
+                                }
+                                let left = rect.right - dropdownWidth;
+                                if (left < 8) left = 8;
+                                if (left + dropdownWidth > window.innerWidth - 8) {
+                                  left = window.innerWidth - dropdownWidth - 8;
+                                }
+                                setKelasDropdownPos({ top, left });
+                                setActiveActionKelasId(item.id);
+                              }
+                            }}
+                            className={`p-1 rounded-lg transition-colors cursor-pointer ${
+                              isSelected
+                                ? 'text-emerald-100 hover:text-white hover:bg-emerald-700/60'
+                                : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                            }`}
+                            title="Menu Kelas"
+                          >
+                            <MoreVertical className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
 
-            {/* BOTTOM CARD: DATA KELAS (FULL WIDTH) */}
-            <div 
-              ref={detailKelasSectionRef} 
-              className="w-full bg-white border border-slate-100 rounded-3xl p-5 sm:p-6 shadow-xs relative scroll-mt-20 sm:scroll-mt-24"
-            >
-              
-              {!selectedKelas ? (
-                <div className="flex flex-col items-center justify-center text-center py-16 px-4">
-                  <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-4 shadow-3xs">
-                    <GraduationCap className="h-8 w-8 text-[#00693E]" />
-                  </div>
-                  <h3 className="text-base font-black text-slate-800 uppercase tracking-tight">Silakan Pilih Kelas</h3>
-                  <p className="text-xs text-slate-400 max-w-sm mt-2 font-medium">
-                    Pilih salah satu kelas di bawah naungan {selectedLembaga.nama} pada daftar kelas di atas untuk melihat data santri secara lengkap.
-                  </p>
+            {/* DETAIL KELAS SECTION / TABLE */}
+            {!effectiveSelectedKelas ? (
+              <div className="w-full bg-white border border-slate-100 rounded-3xl p-8 sm:p-12 text-center shadow-xs flex flex-col items-center justify-center">
+                <div className="w-16 h-16 rounded-3xl bg-slate-50 text-slate-400 flex items-center justify-center mb-4 border border-slate-100">
+                  <Folder className="h-8 w-8 text-slate-300" />
                 </div>
-              ) : (
-                <div className="flex flex-col w-full min-h-0">
+                <h4 className="text-base font-black text-slate-700 uppercase tracking-tight">
+                  Belum Ada {activeTab === 'Rombel' ? 'Rombongan Belajar' : 'Kelas'}
+                </h4>
+                <p className="text-xs text-slate-400 max-w-sm mt-1 font-medium">
+                  Silakan tambahkan {activeTab === 'Rombel' ? 'kelompok rombel' : 'kelas'} baru untuk lembaga ini menggunakan tombol Tambah di atas.
+                </p>
+                {canWriteCurrent && (
+                  <button
+                    onClick={() => handleOpenKelasModal()}
+                    className="mt-5 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#00693E] text-white text-xs font-bold hover:bg-emerald-800 transition-all cursor-pointer shadow-xs active:scale-95"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span>Tambah {activeTab === 'Rombel' ? 'Rombel Pertama' : 'Kelas Pertama'}</span>
+                  </button>
+                )}
+              </div>
+            ) : (() => {
+              const selectedKelas = effectiveSelectedKelas;
+              return (
+                <div ref={detailKelasRef} className="w-full bg-white border border-slate-100 rounded-3xl p-5 sm:p-6 lg:p-7 shadow-xs relative scroll-mt-6">
+                  <div className="flex flex-col w-full min-h-0">
                   
                   {/* 1. Detail Kelas Header */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5 shrink-0">
@@ -3415,9 +3971,10 @@ export default function LembagaKelasSub({
                     );
                   })()}
                 </div>
-              )}
               </div>
-          </motion.div>
+            );
+          })()}
+        </motion.div>
         )}
       </AnimatePresence>
 
