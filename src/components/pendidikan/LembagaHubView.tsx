@@ -40,6 +40,8 @@ export const LembagaHubView: React.FC<LembagaHubViewProps> = ({
   generate4LetterKode,
   getLogoUrl,
 }) => {
+  const realClassesCount = subClasses.filter(c => !c.isDefault && c.nama !== 'Calon Peserta Didik').length;
+
   return (
     <motion.div
       key="lembaga-hub-view"
@@ -171,7 +173,7 @@ export const LembagaHubView: React.FC<LembagaHubViewProps> = ({
                 TOTAL {activeTab === 'Rombel' ? 'ROMBEL' : 'KELAS'}
               </span>
               <span className="text-base sm:text-lg font-black text-slate-800">
-                {subClasses.length}
+                {realClassesCount}
               </span>
             </div>
             <div className="bg-emerald-50/60 border border-emerald-100 rounded-2xl px-4 py-3 text-center min-w-[100px]">
@@ -263,7 +265,7 @@ export const LembagaHubView: React.FC<LembagaHubViewProps> = ({
                   <BookOpen className="h-6 w-6" />
                 </div>
                 <span className="px-3 py-1 rounded-xl bg-blue-50 text-blue-800 text-xs font-black border border-blue-200/80">
-                  {subClasses.length} {activeTab === 'Rombel' ? 'Rombel' : 'Kelas'}
+                  {realClassesCount} {activeTab === 'Rombel' ? 'Rombel' : 'Kelas'}
                 </span>
               </div>
               <h4 className="text-base font-black text-slate-800 group-hover:text-blue-700 transition-colors uppercase tracking-tight mb-1">

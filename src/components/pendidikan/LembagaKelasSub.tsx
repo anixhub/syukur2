@@ -930,7 +930,7 @@ export default function LembagaKelasSub({
       });
     } else {
       return filteredLembagas.map(l => {
-        const classes = getClassesOfLembaga(l.id);
+        const classes = getClassesOfLembaga(l.id).filter(x => !isDefaultClass(x));
         const studentsCount = getLembagaStudentCount(l);
         return {
           id: l.id,
@@ -2962,7 +2962,7 @@ export default function LembagaKelasSub({
             key="lembaga-hub-view"
             selectedLembaga={selectedLembaga}
             activeTab={activeTab}
-            subClasses={subClasses}
+            subClasses={subClasses.filter(c => !isDefaultClass(c))}
             allStudentsCount={allStudentsOfLembaga.length}
             calonCount={calonStudentsOfLembaga.length}
             graduatesCount={allGraduatesOfLembaga.length}
@@ -3177,7 +3177,7 @@ export default function LembagaKelasSub({
                       TOTAL {activeTab === 'Rombel' ? 'ROMBEL' : 'KELAS'}
                     </span>
                     <span className="text-base sm:text-lg font-black text-slate-800">
-                      {subClasses.length}
+                      {classPillItems.length}
                     </span>
                   </div>
                   <div className="bg-emerald-50/60 border border-emerald-100 rounded-2xl px-4 py-3 text-center min-w-[100px]">
