@@ -152,31 +152,31 @@ export const LembagaHubView: React.FC<LembagaHubViewProps> = ({
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2.5">
                 <h2 className="text-xl sm:text-2xl lg:text-3xl font-black text-slate-800 tracking-tight leading-tight uppercase">
-                  {selectedLembaga.nama}
+                  {selectedLembaga?.nama || 'Lembaga'}
                 </h2>
                 <span className="px-2.5 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 text-xs font-black uppercase tracking-wider border border-emerald-200/80 shrink-0 shadow-2xs">
-                  {(selectedLembaga.kode || generate4LetterKode(selectedLembaga.nama)).toUpperCase().slice(0, 4)}
+                  {(selectedLembaga?.kode || generate4LetterKode(selectedLembaga?.nama || '')).toUpperCase().slice(0, 4)}
                 </span>
               </div>
 
-              {((selectedLembaga.nomorStatistik || selectedLembaga.nomor_statistik) || selectedLembaga.npsn) && (
+              {((selectedLembaga?.nomorStatistik || selectedLembaga?.nomor_statistik) || selectedLembaga?.npsn) && (
                 <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                  {(selectedLembaga.nomorStatistik || selectedLembaga.nomor_statistik) && (
+                  {(selectedLembaga?.nomorStatistik || selectedLembaga?.nomor_statistik) && (
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100/90 text-slate-750 text-xs font-semibold border border-slate-200/70 shadow-2xs">
                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide">No. Statistik:</span>
-                      <span className="font-mono font-bold text-slate-800">{selectedLembaga.nomorStatistik || selectedLembaga.nomor_statistik}</span>
+                      <span className="font-mono font-bold text-slate-800">{selectedLembaga?.nomorStatistik || selectedLembaga?.nomor_statistik}</span>
                     </span>
                   )}
-                  {selectedLembaga.npsn && (
+                  {selectedLembaga?.npsn && (
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100/90 text-slate-750 text-xs font-semibold border border-slate-200/70 shadow-2xs">
                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide">NPSN:</span>
-                      <span className="font-mono font-bold text-slate-800">{selectedLembaga.npsn}</span>
+                      <span className="font-mono font-bold text-slate-800">{selectedLembaga?.npsn}</span>
                     </span>
                   )}
                 </div>
               )}
 
-              {selectedLembaga.deskripsi && (
+              {selectedLembaga?.deskripsi && (
                 <p className="text-xs sm:text-sm text-slate-500 font-medium mt-1">
                   {selectedLembaga.deskripsi}
                 </p>

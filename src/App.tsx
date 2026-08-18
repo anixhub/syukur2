@@ -353,10 +353,10 @@ export default function App() {
 
     loadAllData();
 
-    // Auto-polling every 10 seconds to ensure database changes (e.g. from MySQL / direct queries / other devices) are always displayed
+    // Polling fallback every 60 seconds (WebSocket provides instant real-time sync)
     const appPollInterval = setInterval(() => {
       loadAllData();
-    }, 10000);
+    }, 60000);
 
     // Subscribe to WebSocket realtime changes from server
     const unsubscribeWs = subscribeRealtimeChanges((payload: any) => {

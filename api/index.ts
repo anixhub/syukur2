@@ -195,15 +195,29 @@ export function handleMySQLError(err: any) {
   if (
     msg.includes("max_connections_per_hour") ||
     msg.includes("too many connections") ||
+    msg.includes("user limit reached") ||
+    msg.includes("resource limit") ||
     code === "ER_USER_LIMIT_REACHED" ||
-    code === "ER_CON_COUNT_ERROR"
+    code === "ER_CON_COUNT_ERROR" ||
+    code === "PROTOCOL_CONNECTION_LOST" ||
+    code === "ECONNREFUSED"
   ) {
-    console.warn(">>> Hostinger MySQL Rate Limit / Connection Limit reached. Using persistent memory store fallback.");
-    mySQLThrottleUntil = Date.now() + 10000;
+    console.warn(">>> Hostinger MySQL Resource Limit reached (max_connections_per_hour). Circuit breaker active: using persistent memory store & disk backup for 15 minutes.");
+    mySQLThrottleUntil = Date.now() + 15 * 60 * 1000; // 15 minutes cooldown
+    if (mysqlPool) {
+      try {
+        mysqlPool.end().catch(() => {});
+      } catch (e) {}
+      mysqlPool = null;
+    }
   }
 }
 
 export function getMySQLPool(): mysql.Pool | null {
+  if (Date.now() < mySQLThrottleUntil) {
+    return null; // Circuit breaker active - seamlessly use memoryStore fallback
+  }
+
   const host = process.env.MYSQL_HOST || process.env.DB_HOST || "localhost";
   const user = process.env.MYSQL_USER || process.env.DB_USER;
   const password = process.env.MYSQL_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS || "";
@@ -223,11 +237,11 @@ export function getMySQLPool(): mysql.Pool | null {
         database,
         port,
         waitForConnections: true,
-        connectionLimit: 4,
+        connectionLimit: 2,
         maxIdle: 2,
-        idleTimeout: 60000,
+        idleTimeout: 600000,
         enableKeepAlive: true,
-        keepAliveInitialDelay: 10000,
+        keepAliveInitialDelay: 0,
         queueLimit: 0,
         dateStrings: true
       });
@@ -735,6 +749,34 @@ function unpackPendidikanFormal(data: any): any {
       copy.pendidikan_formal = val;
       copy.pendidikanFormal = val;
     }
+    return copy;
+  }
+  return data;
+}
+
+function packLembaga(body: any): any {
+  if (!body) return body;
+  if (Array.isArray(body)) return body.map(packLembaga);
+  if (typeof body === 'object') {
+    const copy = { ...body };
+    const ns = copy.nomor_statistik !== undefined ? copy.nomor_statistik : copy.nomorStatistik;
+    if (ns !== undefined) {
+      copy.nomor_statistik = ns;
+      copy.nomorStatistik = ns;
+    }
+    return copy;
+  }
+  return body;
+}
+
+function unpackLembaga(data: any): any {
+  if (!data) return data;
+  if (Array.isArray(data)) return data.map(unpackLembaga);
+  if (typeof data === 'object') {
+    const copy = { ...data };
+    const ns = copy.nomor_statistik !== undefined ? copy.nomor_statistik : (copy.nomorStatistik ?? null);
+    copy.nomor_statistik = ns;
+    copy.nomorStatistik = ns;
     return copy;
   }
   return data;
@@ -1300,6 +1342,8 @@ app.get("/api/db/:table", async (req, res) => {
     let finalData = stripPassword(table, mysqlRes.rows || []);
     if (table === "santri") {
       finalData = unpackPendidikanFormal(finalData);
+    } else if (table === "lembaga") {
+      finalData = unpackLembaga(finalData);
     }
     return res.json({ success: true, data: finalData });
   }
@@ -1309,6 +1353,8 @@ app.get("/api/db/:table", async (req, res) => {
   let finalData = stripPassword(table, data);
   if (table === "santri") {
     finalData = unpackPendidikanFormal(finalData);
+  } else if (table === "lembaga") {
+    finalData = unpackLembaga(finalData);
   }
   res.json({ success: true, data: finalData });
 });
@@ -1323,12 +1369,16 @@ app.post("/api/db/:table", async (req, res) => {
   let sanitizedBody = sanitizePayload(req.body);
   if (table === "santri") {
     sanitizedBody = packPendidikanFormal(sanitizedBody);
+  } else if (table === "lembaga") {
+    sanitizedBody = packLembaga(sanitizedBody);
   }
 
   const rowsToInsert = Array.isArray(sanitizedBody) ? sanitizedBody : [sanitizedBody];
   const insertedResults: any[] = [];
 
   const pool = getMySQLPool();
+  let list = memoryStore.get(table) || [];
+
   if (pool) {
     await ensureTableExists(table, pool).catch(() => {});
     const existingColumns = await getTableColumns(table, pool);
@@ -1337,15 +1387,7 @@ app.post("/api/db/:table", async (req, res) => {
         if (!row.id) {
           row.id = String(Date.now()) + Math.random().toString(36).substring(2, 7);
         }
-        let existingRow: any = null;
-        try {
-          const [eRows]: any = await pool.query(`SELECT * FROM \`${table}\` WHERE \`id\` = ? LIMIT 1`, [row.id]);
-          if (eRows?.[0]) existingRow = eRows[0];
-        } catch (e) {}
-        if (!existingRow) {
-          const list = memoryStore.get(table) || [];
-          existingRow = list.find((item: any) => item.id === row.id);
-        }
+        const existingRow = list.find((item: any) => item.id === row.id);
         if (existingRow) {
           cleanupReplacedFiles(existingRow, row);
         }
@@ -1372,7 +1414,7 @@ app.post("/api/db/:table", async (req, res) => {
   }
 
   // Memory store mirror + disk persist
-  let list = memoryStore.get(table) || [];
+  list = memoryStore.get(table) || [];
   for (const row of rowsToInsert) {
     if (!row.id) {
       row.id = String(Date.now()) + Math.random().toString(36).substring(2, 7);
@@ -1393,6 +1435,8 @@ app.post("/api/db/:table", async (req, res) => {
   let resultData = stripPassword(table, Array.isArray(sanitizedBody) ? insertedResults : insertedResults[0]);
   if (table === "santri") {
     resultData = unpackPendidikanFormal(resultData);
+  } else if (table === "lembaga") {
+    resultData = unpackLembaga(resultData);
   }
 
   // Realtime WebSocket broadcast
@@ -1416,6 +1460,8 @@ app.put("/api/db/:table/:id", async (req, res) => {
   let sanitizedBody = sanitizePayload(req.body);
   if (table === "santri") {
     sanitizedBody = packPendidikanFormal(sanitizedBody);
+  } else if (table === "lembaga") {
+    sanitizedBody = packLembaga(sanitizedBody);
   } else if (table === "app_credentials") {
     const dName = sanitizedBody.displayName || sanitizedBody.display_name || sanitizedBody.nama;
     if (dName) {
@@ -1430,27 +1476,19 @@ app.put("/api/db/:table/:id", async (req, res) => {
     }
   }
 
-  let updatedResult: any = { id, ...sanitizedBody };
+  const list = memoryStore.get(table) || [];
+  const existingOldRecord = list.find((item: any) => item.id === id);
 
-  const pool = getMySQLPool();
-  let existingOldRecord: any = null;
-  if (pool) {
-    try {
-      await ensureTableExists(table, pool).catch(() => {});
-      const [rows]: any = await pool.query(`SELECT * FROM \`${table}\` WHERE \`id\` = ? LIMIT 1`, [id]);
-      if (rows?.[0]) existingOldRecord = rows[0];
-    } catch (e) {}
-  }
-  if (!existingOldRecord) {
-    const list = memoryStore.get(table) || [];
-    existingOldRecord = list.find((item: any) => item.id === id);
-  }
   if (existingOldRecord) {
     cleanupReplacedFiles(existingOldRecord, { id, ...sanitizedBody });
   }
 
+  let updatedResult: any = { id, ...(existingOldRecord || {}), ...sanitizedBody };
+
+  const pool = getMySQLPool();
   if (pool) {
     try {
+      await ensureTableExists(table, pool).catch(() => {});
       const existingColumns = await getTableColumns(table, pool);
       const updateData = { ...sanitizedBody };
       delete updateData.id;
@@ -1467,9 +1505,6 @@ app.put("/api/db/:table/:id", async (req, res) => {
         const sql = `UPDATE \`${table}\` SET ${setClause} WHERE \`id\` = ?`;
         await pool.query(sql, values);
       }
-
-      const [rows]: any = await pool.query(`SELECT * FROM \`${table}\` WHERE \`id\` = ? LIMIT 1`, [id]);
-      if (rows?.[0]) updatedResult = rows[0];
     } catch (err: any) {
       handleMySQLError(err);
       console.warn(`MySQL PUT /api/db/${table}/${id} error:`, err.message);
@@ -1477,7 +1512,6 @@ app.put("/api/db/:table/:id", async (req, res) => {
   }
 
   // Memory store mirror + disk persist
-  let list = memoryStore.get(table) || [];
   const idx = list.findIndex((item: any) => item.id === id);
   if (idx >= 0) {
     list[idx] = { ...list[idx], ...sanitizedBody, id };
@@ -1490,6 +1524,8 @@ app.put("/api/db/:table/:id", async (req, res) => {
   let resultData = stripPassword(table, updatedResult);
   if (table === "santri") {
     resultData = unpackPendidikanFormal(resultData);
+  } else if (table === "lembaga") {
+    resultData = unpackLembaga(resultData);
   }
 
   // Realtime WebSocket broadcast

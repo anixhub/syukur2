@@ -211,6 +211,71 @@ export function formatClassNameOnly(rawClassOrFormal?: string | null): string {
   return str;
 }
 
+/**
+ * Rigorous helper to match an institution against a text string (e.g. from pendidikanFormal or pendidikanInternal prefix).
+ * Guarantees strict isolation across tiers (Wustho vs Ulya vs Ula) so candidates of one tier NEVER leak into another.
+ */
+export function isMatchLembagaStrict(l: Lembaga, text?: string | null): boolean {
+  if (!text || !l) return false;
+  const raw = (text || '').trim().toLowerCase();
+  if (!raw || raw === 'tidak terdaftar' || raw === 'belum / non-formal' || raw === 'belum / non-madin' || raw === '-') return false;
+
+  const n = raw.replace(/[-_]/g, ' ').replace(/\s+/g, ' ');
+  const targetId = (l.id || '').trim().toLowerCase();
+  const targetNama = (l.nama || '').trim().toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ');
+  const targetKode = (l.kode || '').trim().toLowerCase();
+  const targetKodeNorm = targetKode.replace(/[-_]/g, ' ').replace(/\s+/g, ' ');
+
+  // 1. Direct exact matches
+  if (raw === targetId || n === targetNama) return true;
+  if (targetKode && (raw === targetKode || n === targetKodeNorm)) return true;
+
+  // 2. Strict Academic Tier Disambiguation (Mutually exclusive levels)
+  const EXCLUSIVE_TIER_GROUPS = [
+    { name: 'wustho', terms: ['wustho', 'wushto', 'mts', 'smp', 'spmw'] },
+    { name: 'ulya', terms: ['ulya', 'ma', 'sma', 'smk', 'spmu'] },
+    { name: 'ula', terms: ['ula', 'mi', 'sd', 'spmua', 'ibtidaiyah'] },
+  ];
+
+  const findTierGroup = (str: string) => {
+    return EXCLUSIVE_TIER_GROUPS.find(g => 
+      g.terms.some(t => new RegExp(`(^|\\s|[-_])${t}($|\\s|[-_])`, 'i').test(str) || str.toLowerCase().includes(t))
+    );
+  };
+
+  const textTier = findTierGroup(n);
+  const targetTier = findTierGroup(targetNama) || (targetKode ? findTierGroup(targetKode) : undefined);
+
+  // If text belongs to a tier (e.g. Wustho) and target belongs to a different tier (e.g. Ulya), NEVER match
+  if (textTier && targetTier && textTier.name !== targetTier.name) {
+    return false;
+  }
+  // If target has a tier and text has a conflicting tier
+  if (targetTier && textTier && textTier.name !== targetTier.name) {
+    return false;
+  }
+
+  // 3. Normalized inclusion / word check
+  const genericWords = new Set(['spm', 'madrasah', 'pondok', 'pesantren', 'sekolah', 'unit', 'pendidikan', 'lembaga', 'yayasan', 'al', 'ad', 'at', 'an', 'el', 'diniyyah', 'diniyah']);
+  const textWords = n.split(' ').filter(w => w.length > 0 && !genericWords.has(w));
+  const targetWords = targetNama.split(' ').filter(w => w.length > 0 && !genericWords.has(w));
+
+  if (textWords.length > 0) {
+    const allWordsMatch = textWords.every(tw => targetWords.some(tgtW => tgtW === tw || tgtW.includes(tw) || tw.includes(tgtW)));
+    if (allWordsMatch) return true;
+
+    if (targetNama.includes(n) && textWords.length >= 1) return true;
+    if (n.includes(targetNama) && targetWords.length >= 1) return true;
+  }
+
+  if (targetKode && targetKode.length >= 3 && !genericWords.has(targetKode)) {
+    const codeRegex = new RegExp(`\\b${targetKode}\\b`, 'i');
+    if (codeRegex.test(n)) return true;
+  }
+
+  return false;
+}
+
 export function demoteSantriToCalonPesertaDidik(
   santri: Santri,
   lembagasList?: Lembaga[],

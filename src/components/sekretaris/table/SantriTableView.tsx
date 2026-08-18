@@ -1535,12 +1535,18 @@ export default function SantriTableView({
                         const clsName = parts.length > 1 ? parts.slice(1).join(' - ').trim() : '';
 
                         if (lemName) {
-                          const matchLem = formalLembagas.find(fl => 
-                            fl.nama.toLowerCase() === lemName.toLowerCase() ||
-                            (fl.kode && fl.kode.toLowerCase() === lemName.toLowerCase()) ||
-                            s.pendidikanFormal!.toLowerCase().includes(fl.nama.toLowerCase()) ||
-                            (fl.kode && s.pendidikanFormal!.toLowerCase().includes(fl.kode.toLowerCase()))
-                          );
+                          const matchLem = formalLembagas.find(fl => {
+                            const flNama = fl.nama.toLowerCase();
+                            const flKode = fl.kode ? fl.kode.toLowerCase() : '';
+                            const lNameLower = lemName.toLowerCase();
+                            return (
+                              flNama === lNameLower ||
+                              (flKode && flKode === lNameLower) ||
+                              String(fl.id) === lNameLower ||
+                              (flNama.length >= 3 && (lNameLower.includes(flNama) || flNama.includes(lNameLower))) ||
+                              (flKode && flKode.length >= 2 && (lNameLower.includes(flKode) || flKode.includes(lNameLower)))
+                            );
+                          });
                           if (matchLem) {
                             currentFormalLembaga = matchLem;
                             const classesOfFl = kelasList.filter(k => String(k.lembagaId || (k as any).lembaga_id) === String(matchLem.id));
@@ -2672,12 +2678,18 @@ export default function SantriTableView({
                 const clsName = parts.length > 1 ? parts.slice(1).join(' - ').trim() : '';
 
                 if (lemName) {
-                  const matchLem = formalLembagas.find(fl => 
-                    fl.nama.toLowerCase() === lemName.toLowerCase() ||
-                    (fl.kode && fl.kode.toLowerCase() === lemName.toLowerCase()) ||
-                    s.pendidikanFormal!.toLowerCase().includes(fl.nama.toLowerCase()) ||
-                    (fl.kode && s.pendidikanFormal!.toLowerCase().includes(fl.kode.toLowerCase()))
-                  );
+                  const matchLem = formalLembagas.find(fl => {
+                    const flNama = fl.nama.toLowerCase();
+                    const flKode = fl.kode ? fl.kode.toLowerCase() : '';
+                    const lNameLower = lemName.toLowerCase();
+                    return (
+                      flNama === lNameLower ||
+                      (flKode && flKode === lNameLower) ||
+                      String(fl.id) === lNameLower ||
+                      (flNama.length >= 3 && (lNameLower.includes(flNama) || flNama.includes(lNameLower))) ||
+                      (flKode && flKode.length >= 2 && (lNameLower.includes(flKode) || flKode.includes(lNameLower)))
+                    );
+                  });
                   if (matchLem) {
                     currentFormalLembaga = matchLem;
                     const classesOfFl = kelasList.filter(k => String(k.lembagaId || (k as any).lembaga_id) === String(matchLem.id));

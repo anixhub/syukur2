@@ -588,13 +588,13 @@ export default function HomeView({
     loadAccounts();
     loadActivityLogs();
 
-    // Auto-polling every 8 seconds to continuously fetch updates entering the database
+    // Polling fallback every 60 seconds (WebSocket provides instant real-time sync)
     const pollInterval = setInterval(() => {
       if (isMounted) {
         loadAccounts();
         loadActivityLogs();
       }
-    }, 8000);
+    }, 60000);
 
     const unsubscribeWs = subscribeRealtimeChanges((payload: any) => {
       loadActivityLogs();
