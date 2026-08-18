@@ -21,9 +21,11 @@ ALTER TABLE `santri`
   ADD COLUMN `induk_ulya` VARCHAR(30) NULL AFTER `induk_wustho`;
 
 -- ------------------------------------------------------------------------------
--- 2. HAPUS KOLOM DUPLIKAT (indukMhd, indukWustho, indukUlya) JIKA SEBELUMNYA SUDAH DIBUAT
+-- 2. (JIKA SUDAH TERLANJUR DITAMBAH) HAPUS KOLOM npsn, nomor_statistik, ATAU DUPLIKAT
 -- ------------------------------------------------------------------------------
 -- ALTER TABLE `santri` 
+--   DROP COLUMN `npsn`,
+--   DROP COLUMN `nomor_statistik`,
 --   DROP COLUMN `indukMhd`, 
 --   DROP COLUMN `indukWustho`, 
 --   DROP COLUMN `indukUlya`;

@@ -140,6 +140,7 @@ export default function LembagaKelasSub({
   const [canScrollRight, setCanScrollRight] = useState(true);
   const [isScrollable, setIsScrollable] = useState(true);
   const tableContainerRef = useRef<HTMLDivElement>(null);
+  const detailKelasSectionRef = useRef<HTMLDivElement>(null);
   const floatingHeaderRef = useRef<HTMLDivElement>(null);
   const floatingHeaderOuterRef = useRef<HTMLDivElement>(null);
 
@@ -2481,21 +2482,19 @@ export default function LembagaKelasSub({
             )}
           </motion.div>
         ) : (
-                  /* 3. WIDESCREEN 30/70 SPLIT LAYOUT (Halaman tampilan luas yang memanfaatkan seluruh lebar layar) */
           <motion.div
-            key="split-view-container"
+            key="stacked-view-container"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="bg-slate-50/50 rounded-2xl p-0 border-none shadow-none animate-fade-in"
+            className="flex flex-col gap-6 animate-fade-in"
           >
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+            {/* TOP CARD: NAMA LEMBAGA & DAFTAR KELAS */}
+            <div className="w-full bg-white border border-slate-100 rounded-3xl p-5 sm:p-6 shadow-xs relative">
               
-              {/* LEFT COLUMN (30% Width - col-span-4) - Styled as a beautiful high-contrast card with fixed desktop height */}
-              <div className="lg:col-span-4 bg-white border border-slate-100 rounded-2xl px-5 py-6 flex flex-col relative lg:h-[680px] min-h-[500px] shadow-xs overflow-hidden">
-                
-                {/* Top Header Bar inside Left Column (Back Button & Centered Keterangan aligned vertically) */}
-                <div className="relative flex items-center justify-center w-full min-h-[36px] mb-3 shrink-0">
+              {/* Header Bar: Back to Units button, Category Tag, and Lembaga Action Buttons */}
+              <div className="flex items-center justify-between gap-4 mb-5 pb-4 border-b border-slate-100/90">
+                <div className="flex items-center gap-3">
                   <button
                     disabled={isSelectionMode}
                     onClick={() => {
@@ -2503,17 +2502,15 @@ export default function LembagaKelasSub({
                       setSelectedLembaga(null);
                       setSelectedKelas(null);
                     }}
-                    className={`absolute left-0 w-9 h-9 rounded-full border border-slate-100 flex items-center justify-center bg-white transition-all shrink-0 z-10 ${
-                      isSelectionMode 
-                        ? 'opacity-40 cursor-not-allowed text-slate-300' 
-                        : 'hover:bg-slate-50 cursor-pointer text-slate-500 shadow-3xs'
+                    className={`p-2 rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-all cursor-pointer shadow-3xs shrink-0 ${
+                      isSelectionMode ? 'opacity-40 cursor-not-allowed text-slate-300' : 'active:scale-95'
                     }`}
                     title="Kembali ke Daftar Unit"
                   >
-                    <ArrowLeft className="h-4.5 w-4.5 text-slate-500" />
+                    <ArrowLeft className="h-4 w-4" />
                   </button>
 
-                  <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-widest text-center px-10 leading-none">
+                  <span className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none">
                     {activeTab === 'Formal'
                       ? 'Pendidikan Formal'
                       : activeTab === 'Rombel'
@@ -2522,10 +2519,54 @@ export default function LembagaKelasSub({
                   </span>
                 </div>
 
-                {/* Center Logo & Name Header */}
-                <div className="flex flex-col items-center text-center mt-2 mb-5 shrink-0">
-                  {/* Circle Logo (No Outline) */}
-                  <div className="w-24 h-24 rounded-full overflow-hidden bg-slate-50 flex items-center justify-center mb-4 shadow-3xs">
+                {/* Lembaga Action Buttons (Cetak, Edit, Hapus) */}
+                <div className="flex items-center gap-2">
+                  <button
+                    disabled={isSelectionMode}
+                    onClick={handlePrintLembagaPDF}
+                    className="inline-flex items-center justify-center bg-white border border-slate-200 h-9 px-3 sm:px-3.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer shadow-3xs active:scale-95 transition-all disabled:opacity-40 gap-1.5"
+                    title="Cetak Data Lembaga"
+                  >
+                    <Printer className="h-4 w-4 text-slate-600" />
+                    <span className="hidden sm:inline">Cetak Unit</span>
+                  </button>
+                  {canWriteCurrent && (
+                    <>
+                      <button
+                        disabled={isSelectionMode}
+                        onClick={() => handleOpenLembagaModal(selectedLembaga)}
+                        className="inline-flex items-center justify-center bg-white border border-slate-200 h-9 px-3 sm:px-3.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer shadow-3xs active:scale-95 transition-all disabled:opacity-40 gap-1.5"
+                        title="Edit Lembaga"
+                      >
+                        <Pencil className="h-4 w-4 text-slate-600" />
+                        <span className="hidden sm:inline">Edit</span>
+                      </button>
+                      <button
+                        disabled={isSelectionMode}
+                        onClick={() => {
+                          if (isSelectionMode) return;
+                          handleDeleteLembagaClick(selectedLembaga.id, selectedLembaga.nama);
+                        }}
+                        className={`inline-flex items-center justify-center border h-9 px-3 rounded-xl text-xs font-bold transition-all shrink-0 gap-1.5 ${
+                          isSelectionMode 
+                            ? 'bg-rose-50/50 border-rose-50/50 opacity-40 cursor-not-allowed text-rose-350' 
+                            : 'bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-150 cursor-pointer shadow-3xs active:scale-95'
+                        }`}
+                        title={activeTab === 'Rombel' ? 'Hapus Kategori Rombel' : 'Hapus Lembaga'}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        <span className="hidden sm:inline">Hapus</span>
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Lembaga Info Row (Logo, Nama, Kode, Stats) */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                <div className="flex items-center gap-4">
+                  {/* Circle / Rounded Logo */}
+                  <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-2xl overflow-hidden bg-slate-50 flex items-center justify-center border border-slate-100 shadow-2xs shrink-0">
                     {selectedLembaga.logo ? (
                       <div className="w-full h-full relative flex items-center justify-center">
                         <img 
@@ -2541,309 +2582,271 @@ export default function LembagaKelasSub({
                         />
                         <div className="hidden flex items-center justify-center w-full h-full">
                           {activeTab === 'Rombel' ? (
-                            <Award className="h-10 w-10 text-emerald-600" />
+                            <Award className="h-8 w-8 text-emerald-600" />
                           ) : (
-                            <School className="h-10 w-10 text-emerald-600" />
+                            <School className="h-8 w-8 text-emerald-600" />
                           )}
                         </div>
                       </div>
                     ) : activeTab === 'Rombel' ? (
-                      <Award className="h-10 w-10 text-emerald-600" />
+                      <Award className="h-8 w-8 text-emerald-600" />
                     ) : (
-                      <School className="h-10 w-10 text-emerald-600" />
+                      <School className="h-8 w-8 text-emerald-600" />
                     )}
                   </div>
 
-                  {/* Institution Name & 4-letter Kode Badge */}
-                  <div className="flex items-center justify-center gap-2 max-w-full px-2">
-                    <h2 className="text-xl font-black text-slate-800 tracking-tight leading-tight uppercase truncate">
-                      {selectedLembaga.nama}
-                    </h2>
-                    <span className="px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 text-xs font-black uppercase tracking-wider border border-emerald-200/80 shrink-0 shadow-2xs">
-                      {(selectedLembaga.kode || generate4LetterKode(selectedLembaga.nama)).toUpperCase().slice(0, 4)}
-                    </span>
-                  </div>
-                  
-                  {/* Stats */}
-                  <p className="text-[11px] font-extrabold text-slate-400 mt-1 uppercase tracking-wider">
-                    {subClasses.length} {activeTab === 'Rombel' ? 'Kelompok' : 'Kelas'} &bull; {institutions.find(x => x.id === selectedLembaga.id)?.studentsCount || 0} Santri
-                  </p>
-
-                  {/* Action Buttons: Print & Edit Pencil */}
-                  <div className="flex items-center justify-center gap-2 mt-3">
-                    <button
-                      disabled={isSelectionMode}
-                      onClick={handlePrintLembagaPDF}
-                      className="inline-flex items-center justify-center bg-white border border-slate-200 h-8 w-8 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer shadow-3xs active:scale-95 transition-all disabled:opacity-40"
-                      title="Cetak Data Lembaga"
-                    >
-                      <Printer className="h-4 w-4 text-slate-600" />
-                    </button>
-                    {canWriteCurrent && (
-                      <>
-                        <button
-                          disabled={isSelectionMode}
-                          onClick={() => handleOpenLembagaModal(selectedLembaga)}
-                          className="inline-flex items-center justify-center bg-white border border-slate-200 h-8 w-8 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer shadow-3xs active:scale-95 transition-all disabled:opacity-40"
-                          title="Edit Lembaga"
-                        >
-                          <Pencil className="h-4 w-4 text-slate-600" />
-                        </button>
-                        <button
-                          disabled={isSelectionMode}
-                          onClick={() => {
-                            if (isSelectionMode) return;
-                            handleDeleteLembagaClick(selectedLembaga.id, selectedLembaga.nama);
-                          }}
-                          className={`inline-flex items-center justify-center border h-8 w-8 rounded-xl text-xs font-bold transition-all shrink-0 ${
-                            isSelectionMode 
-                              ? 'bg-rose-50/50 border-rose-50/50 opacity-40 cursor-not-allowed text-rose-350' 
-                              : 'bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-150 cursor-pointer shadow-3xs active:scale-95'
-                          }`}
-                          title={activeTab === 'Rombel' ? 'Hapus Kategori Rombel' : 'Hapus Lembaga'}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* Thin horizontal divider line */}
-                <div className="border-t border-slate-100/80 my-4 w-full shrink-0" />
-
-                {/* Daftar Kelas Panel */}
-                <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-                  {/* Centered Title with Plus button */}
-                  <div className="flex items-center justify-between mb-4.5 px-1 shrink-0">
-                    <span className="text-xs font-black text-slate-400 uppercase tracking-wider">
-                      Daftar {activeTab === 'Rombel' ? 'Rombel' : 'Kelas'}
-                    </span>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {canWriteCurrent && (
-                        <button
-                          disabled={isSelectionMode}
-                          onClick={() => {
-                            if (isSelectionMode) return;
-                            handleOpenKelasModal();
-                          }}
-                          className={`w-8 h-8 rounded-lg bg-[#00693E] text-white flex items-center justify-center transition-all shrink-0 ${
-                            isSelectionMode 
-                              ? 'opacity-40 cursor-not-allowed' 
-                              : 'hover:bg-emerald-800 hover:scale-105 cursor-pointer shadow-xs'
-                          }`}
-                          title={activeTab === 'Rombel' ? 'Tambah Kelompok Rombel' : 'Tambah Kelas'}
-                        >
-                          <Plus className="h-4 w-4" />
-                        </button>
-                      )}
+                  {/* Lembaga Name & 4-letter Kode Badge */}
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight leading-tight uppercase truncate">
+                        {selectedLembaga.nama}
+                      </h2>
+                      <span className="px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 text-xs font-black uppercase tracking-wider border border-emerald-200/80 shrink-0 shadow-2xs">
+                        {(selectedLembaga.kode || generate4LetterKode(selectedLembaga.nama)).toUpperCase().slice(0, 4)}
+                      </span>
                     </div>
-                  </div>
-
-                  {/* Scrollable list */}
-                  <div className="flex-1 overflow-y-auto space-y-3 pr-1 scrollbar-thin">
-                    {subClasses.length === 0 ? (
-                      <div className="text-center py-10 text-slate-400 text-xs font-medium italic">
-                        Belum ada {activeTab === 'Rombel' ? 'kelompok' : 'kelas'} terdaftar.
-                      </div>
-                    ) : (
-                      subClasses.map((c: any) => {
-                        const isSelected = selectedKelas?.id === c.id;
-                        const isDefault = activeTab !== 'Rombel' && isDefaultClass(c);
-                        
-                        return (
-                          <div
-                            key={c.id}
-                            onClick={() => {
-                              if (isSelectionMode) return;
-                              setSelectedKelas(c);
-                            }}
-                            className={`group p-4 rounded-2xl transition-all flex items-center justify-between relative select-none ${
-                              isSelectionMode
-                                ? 'opacity-50 cursor-not-allowed'
-                                : 'cursor-pointer'
-                            } ${
-                              isSelected 
-                                ? 'bg-[#00693E] text-white shadow-sm' 
-                                : 'bg-[#EFEFEF]/80 text-slate-700 hover:bg-[#EFEFEF]'
-                            }`}
-                          >
-                            <div className="flex items-center gap-3 truncate">
-                              {isSelected ? (
-                                <FolderOpen className="h-5 w-5 text-white shrink-0" />
-                              ) : (
-                                <Folder className="h-5 w-5 text-slate-400 shrink-0" />
-                              )}
-                              <span className="text-xs font-black truncate uppercase tracking-wider">
-                                {c.nama}
-                              </span>
-                            </div>
-
-                            {/* Titik 3 Action Button with Dropdown (No icons, text only as requested) */}
-                            {canWriteCurrent && (
-                              <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
-                                <button
-                                  disabled={isSelectionMode}
-                                  onClick={(e) => {
-                                    if (isSelectionMode) return;
-                                    if (activeActionKelasId === c.id) {
-                                      setActiveActionKelasId(null);
-                                      setKelasDropdownPos(null);
-                                    } else {
-                                      const rect = e.currentTarget.getBoundingClientRect();
-                                      const dropdownWidth = 112;
-                                      const dropdownHeight = 80;
-                                      let top = rect.bottom;
-                                      if (top + dropdownHeight > window.innerHeight) {
-                                        top = rect.top - dropdownHeight;
-                                      }
-                                      let left = rect.right - dropdownWidth;
-                                      if (left < 8) left = 8;
-                                      if (left + dropdownWidth > window.innerWidth - 8) {
-                                        left = window.innerWidth - dropdownWidth - 8;
-                                      }
-                                      setKelasDropdownPos({ top, left });
-                                      setActiveActionKelasId(c.id);
-                                    }
-                                  }}
-                                  className={`p-1 rounded-md transition-colors ${
-                                    isSelectionMode 
-                                      ? 'opacity-30 cursor-not-allowed text-slate-350' 
-                                      : 'cursor-pointer'
-                                  } ${
-                                    isSelected 
-                                      ? 'hover:bg-emerald-800 text-emerald-100' 
-                                      : 'hover:bg-slate-200 text-slate-400 hover:text-slate-750'
-                                  }`}
-                                  title="Opsi Aksi"
-                                >
-                                  <MoreVertical className="h-4 w-4 text-current" />
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-
-              </div>
-
-              {/* RIGHT COLUMN (70% Width - col-span-8) - Styled as a beautiful high-contrast card with fixed desktop height */}
-              <div className="lg:col-span-8 bg-white border border-slate-100 rounded-2xl px-5 py-6 flex flex-col relative lg:h-[680px] min-h-[500px] shadow-xs">
-                
-                {!selectedKelas ? (
-                  <div className="flex-1 flex flex-col items-center justify-center text-center h-full p-12">
-                    <GraduationCap className="h-16 w-16 text-slate-300 mb-4 animate-pulse" />
-                    <h3 className="text-base font-black text-slate-800 uppercase tracking-tight">Silakan Pilih Kelas</h3>
-                    <p className="text-xs text-slate-400 max-w-xs mt-2 font-medium">
-                      Pilih salah satu kelas di bawah naungan {selectedLembaga.nama} pada panel kiri untuk melihat daftar anggotanya.
+                    
+                    {/* Stats */}
+                    <p className="text-xs font-extrabold text-slate-400 mt-1 uppercase tracking-wider">
+                      {subClasses.length} {activeTab === 'Rombel' ? 'Kelompok' : 'Kelas'} &bull; {institutions.find(x => x.id === selectedLembaga.id)?.studentsCount || 0} Santri
                     </p>
                   </div>
-                ) : (
-                  <div className="flex flex-col flex-1 min-h-0 overflow-y-auto pr-1">
-                    
-                    {/* 1. Detail Kelas Card Top Section */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 shrink-0">
-                      <div className="flex items-center gap-3">
-                        <button
-                          disabled={isSelectionMode}
+                </div>
+              </div>
+
+              {/* Section: Daftar Kelas (Placed right here on top in a single horizontal scroll row) */}
+              <div className="bg-slate-50/70 border border-slate-100/90 rounded-2xl p-3.5 sm:p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black text-slate-500 uppercase tracking-wider">
+                      Daftar {activeTab === 'Rombel' ? 'Rombel' : 'Kelas'}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full bg-slate-200/80 text-slate-600 text-[11px] font-extrabold">
+                      {subClasses.length}
+                    </span>
+                  </div>
+                  {canWriteCurrent && (
+                    <button
+                      disabled={isSelectionMode}
+                      onClick={() => {
+                        if (isSelectionMode) return;
+                        handleOpenKelasModal();
+                      }}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#00693E] text-white text-xs font-bold transition-all shadow-xs shrink-0 ${
+                        isSelectionMode 
+                          ? 'opacity-40 cursor-not-allowed' 
+                          : 'hover:bg-emerald-800 hover:scale-105 cursor-pointer active:scale-95'
+                      }`}
+                      title={activeTab === 'Rombel' ? 'Tambah Kelompok Rombel' : 'Tambah Kelas'}
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>Tambah {activeTab === 'Rombel' ? 'Rombel' : 'Kelas'}</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Single Row Horizontal Scroll */}
+                <div className="flex items-center flex-nowrap gap-2 sm:gap-2.5 overflow-x-auto pb-1.5 pt-0.5 px-0.5 scrollbar-thin">
+                  {subClasses.length === 0 ? (
+                    <div className="text-center py-2 w-full text-slate-400 text-xs font-medium italic">
+                      Belum ada {activeTab === 'Rombel' ? 'kelompok' : 'kelas'} terdaftar.
+                    </div>
+                  ) : (
+                    subClasses.map((c: any) => {
+                      const isSelected = selectedKelas?.id === c.id;
+                      const isDefault = activeTab !== 'Rombel' && isDefaultClass(c);
+                      
+                      return (
+                        <div
+                          key={c.id}
                           onClick={() => {
                             if (isSelectionMode) return;
-                            setSelectedKelas(null);
+                            setSelectedKelas(c);
+                            setTimeout(() => {
+                              detailKelasSectionRef.current?.scrollIntoView({
+                                behavior: 'smooth',
+                                block: 'start'
+                              });
+                            }, 50);
                           }}
-                          className={`p-2 rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-all cursor-pointer shadow-3xs shrink-0 ${
-                            isSelectionMode ? 'opacity-40 cursor-not-allowed' : 'active:scale-95'
+                          className={`group px-3.5 py-2 rounded-xl transition-all flex items-center justify-between gap-2.5 relative select-none border shrink-0 ${
+                            isSelectionMode
+                              ? 'opacity-50 cursor-not-allowed'
+                              : 'cursor-pointer'
+                          } ${
+                            isSelected 
+                              ? 'bg-[#00693E] border-[#00693E] text-white shadow-sm ring-2 ring-emerald-500/20' 
+                              : 'bg-white border-slate-200/80 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
                           }`}
-                          title="Kembali ke Daftar Kelas"
                         >
-                          <ArrowLeft className="h-4 w-4" />
-                        </button>
-                        <div>
-                          <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider">Detail Kelas</span>
-                          <h2 className="text-2xl lg:text-3xl font-black text-slate-800 tracking-tight leading-none uppercase mt-0.5">
-                            {selectedKelas.nama}
-                          </h2>
+                          <div className="flex items-center gap-2 min-w-0">
+                            {isSelected ? (
+                              <FolderOpen className="h-4 w-4 text-white shrink-0" />
+                            ) : (
+                              <Folder className="h-4 w-4 text-slate-400 shrink-0" />
+                            )}
+                            <span className="text-xs font-black uppercase tracking-wider whitespace-nowrap">
+                              {c.nama}
+                            </span>
+                          </div>
+
+                          {/* Titik 3 Action Button with Dropdown */}
+                          {canWriteCurrent && (
+                            <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                disabled={isSelectionMode}
+                                onClick={(e) => {
+                                  if (isSelectionMode) return;
+                                  if (activeActionKelasId === c.id) {
+                                    setActiveActionKelasId(null);
+                                    setKelasDropdownPos(null);
+                                  } else {
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    const dropdownWidth = 120;
+                                    const dropdownHeight = 100;
+                                    let top = rect.bottom + 4;
+                                    if (top + dropdownHeight > window.innerHeight) {
+                                      top = rect.top - dropdownHeight - 4;
+                                    }
+                                    let left = rect.right - dropdownWidth;
+                                    if (left < 8) left = 8;
+                                    if (left + dropdownWidth > window.innerWidth - 8) {
+                                      left = window.innerWidth - dropdownWidth - 8;
+                                    }
+                                    setKelasDropdownPos({ top, left });
+                                    setActiveActionKelasId(c.id);
+                                  }
+                                }}
+                                className={`p-1 rounded-lg transition-colors ${
+                                  isSelectionMode 
+                                    ? 'opacity-30 cursor-not-allowed text-slate-350' 
+                                    : 'cursor-pointer'
+                                } ${
+                                  isSelected 
+                                    ? 'hover:bg-emerald-800 text-emerald-100' 
+                                    : 'hover:bg-slate-100 text-slate-400 hover:text-slate-700'
+                                }`}
+                                title="Opsi Aksi"
+                              >
+                                <MoreVertical className="h-3.5 w-3.5 text-current" />
+                              </button>
+                            </div>
+                          )}
                         </div>
-                      </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
 
-                      {/* Class Action Buttons directly visible */}
-                      <div className="flex items-center gap-1.5 self-start sm:self-auto">
-                        <button
-                          disabled={isSelectionMode}
-                          onClick={handlePrintKelasPDF}
-                          className="inline-flex items-center justify-center bg-white border border-slate-200 h-8 w-8 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer shadow-3xs active:scale-95 transition-all disabled:opacity-40 shrink-0"
-                          title="Cetak Data Kelas"
-                        >
-                          <Printer className="h-4 w-4 text-slate-600" />
-                        </button>
-                        {canWriteCurrent && (() => {
-                          const isRombelTab = (activeTab as string) === 'Rombel';
-                          const isSelectedKelasDefault = !isRombelTab && isDefaultClass(selectedKelas);
-                          return (
-                            <>
-                              <button
-                                disabled={isSelectionMode}
-                                onClick={() => {
-                                  if (isSelectionMode) return;
-                                  handleOpenKelasModal(selectedKelas);
-                                }}
-                                className={`inline-flex items-center justify-center bg-white border border-slate-200 h-8 w-8 rounded-xl text-xs font-bold transition-all shrink-0 ${
-                                  isSelectionMode 
-                                    ? 'opacity-40 cursor-not-allowed text-slate-350' 
-                                    : 'hover:bg-slate-50 cursor-pointer text-slate-700 shadow-3xs active:scale-95'
-                                }`}
-                                title="Edit Kelas"
-                              >
-                                <Pencil className="h-4 w-4 text-slate-500" />
-                              </button>
-                            
-                              <button
-                                disabled={isSelectionMode}
-                                onClick={() => {
-                                  if (isSelectionMode) return;
-                                  setAddMemberSearch('');
-                                  setAddMemberGroupFilter('Semua');
-                                  setIsAddMemberModalOpen(true);
-                                }}
-                                className={`inline-flex items-center justify-center gap-1.5 px-3 border h-8 rounded-xl text-xs font-bold transition-all shrink-0 ${
-                                  isSelectionMode 
-                                    ? 'bg-emerald-50/55 border-emerald-50/55 opacity-40 cursor-not-allowed text-emerald-350' 
-                                    : 'bg-emerald-50 hover:bg-emerald-100/80 text-[#00693E] border border-emerald-100 cursor-pointer shadow-3xs active:scale-95'
-                                }`}
-                                title={isRombelTab ? 'Tambah Anggota Rombel' : 'Tambah Santri'}
-                              >
-                                <UserPlus className="h-4 w-4" />
-                                <span className="hidden sm:inline">
-                                  {isRombelTab ? 'Tambah Anggota' : 'Tambah Santri'}
-                                </span>
-                              </button>
-
-                              {!isSelectedKelasDefault && (
-                                <button
-                                  disabled={isSelectionMode}
-                                  onClick={() => {
-                                    if (isSelectionMode) return;
-                                    handleDeleteKelasClick(selectedKelas.id, selectedKelas.nama);
-                                  }}
-                                  className={`inline-flex items-center justify-center border h-8 w-8 rounded-xl text-xs font-bold transition-all shrink-0 ${
-                                    isSelectionMode 
-                                      ? 'bg-rose-50/50 border-rose-50/50 opacity-40 cursor-not-allowed text-rose-350' 
-                                      : 'bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-150 cursor-pointer shadow-3xs active:scale-95'
-                                  }`}
-                                  title="Hapus Kelas"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
-                              )}
-                            </>
-                          );
-                        })()}
-                      </div>
+            {/* BOTTOM CARD: DATA KELAS (FULL WIDTH) */}
+            <div 
+              ref={detailKelasSectionRef} 
+              className="w-full bg-white border border-slate-100 rounded-3xl p-5 sm:p-6 shadow-xs relative scroll-mt-20 sm:scroll-mt-24"
+            >
+              
+              {!selectedKelas ? (
+                <div className="flex flex-col items-center justify-center text-center py-16 px-4">
+                  <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-4 shadow-3xs">
+                    <GraduationCap className="h-8 w-8 text-[#00693E]" />
+                  </div>
+                  <h3 className="text-base font-black text-slate-800 uppercase tracking-tight">Silakan Pilih Kelas</h3>
+                  <p className="text-xs text-slate-400 max-w-sm mt-2 font-medium">
+                    Pilih salah satu kelas di bawah naungan {selectedLembaga.nama} pada daftar kelas di atas untuk melihat data santri secara lengkap.
+                  </p>
+                </div>
+              ) : (
+                <div className="flex flex-col w-full min-h-0">
+                  
+                  {/* 1. Detail Kelas Header */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5 shrink-0">
+                    <div>
+                      <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider">Detail Kelas</span>
+                      <h2 className="text-2xl lg:text-3xl font-black text-slate-800 tracking-tight leading-none uppercase mt-0.5">
+                        {selectedKelas.nama}
+                      </h2>
                     </div>
 
-                    {/* 2. BENTO STATS CARDS */}
+                    {/* Class Action Buttons directly visible */}
+                    <div className="flex items-center gap-2 self-start sm:self-auto">
+                      <button
+                        disabled={isSelectionMode}
+                        onClick={handlePrintKelasPDF}
+                        className="inline-flex items-center justify-center bg-white border border-slate-200 h-9 px-3 sm:px-3.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer shadow-3xs active:scale-95 transition-all disabled:opacity-40 gap-1.5"
+                        title="Cetak Data Kelas"
+                      >
+                        <Printer className="h-4 w-4 text-slate-600" />
+                        <span className="hidden sm:inline">Cetak Kelas</span>
+                      </button>
+                      {canWriteCurrent && (() => {
+                        const isRombelTab = (activeTab as string) === 'Rombel';
+                        const isSelectedKelasDefault = !isRombelTab && isDefaultClass(selectedKelas);
+                        return (
+                          <>
+                            <button
+                              disabled={isSelectionMode}
+                              onClick={() => {
+                                if (isSelectionMode) return;
+                                handleOpenKelasModal(selectedKelas);
+                              }}
+                              className={`inline-flex items-center justify-center bg-white border border-slate-200 h-9 px-3 sm:px-3.5 rounded-xl text-xs font-bold transition-all gap-1.5 ${
+                                isSelectionMode 
+                                  ? 'opacity-40 cursor-not-allowed text-slate-350' 
+                                  : 'hover:bg-slate-50 cursor-pointer text-slate-700 shadow-3xs active:scale-95'
+                              }`}
+                              title="Edit Kelas"
+                            >
+                              <Pencil className="h-4 w-4 text-slate-500" />
+                              <span className="hidden sm:inline">Edit</span>
+                            </button>
+                          
+                            <button
+                              disabled={isSelectionMode}
+                              onClick={() => {
+                                if (isSelectionMode) return;
+                                setAddMemberSearch('');
+                                setAddMemberGroupFilter('Semua');
+                                setIsAddMemberModalOpen(true);
+                              }}
+                              className={`inline-flex items-center justify-center gap-1.5 px-3.5 border h-9 rounded-xl text-xs font-bold transition-all ${
+                                isSelectionMode 
+                                  ? 'bg-emerald-50/55 border-emerald-50/55 opacity-40 cursor-not-allowed text-emerald-350' 
+                                  : 'bg-emerald-50 hover:bg-emerald-100/80 text-[#00693E] border border-emerald-100 cursor-pointer shadow-3xs active:scale-95'
+                              }`}
+                              title={isRombelTab ? 'Tambah Anggota Rombel' : 'Tambah Santri'}
+                            >
+                              <UserPlus className="h-4 w-4" />
+                              <span>
+                                {isRombelTab ? 'Tambah Anggota' : 'Tambah Santri'}
+                              </span>
+                            </button>
+
+                            {!isSelectedKelasDefault && (
+                              <button
+                                disabled={isSelectionMode}
+                                onClick={() => {
+                                  if (isSelectionMode) return;
+                                  handleDeleteKelasClick(selectedKelas.id, selectedKelas.nama);
+                                }}
+                                className={`inline-flex items-center justify-center border h-9 px-3 rounded-xl text-xs font-bold transition-all shrink-0 gap-1.5 ${
+                                  isSelectionMode 
+                                    ? 'bg-rose-50/50 border-rose-50/50 opacity-40 cursor-not-allowed text-rose-350' 
+                                    : 'bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-150 cursor-pointer shadow-3xs active:scale-95'
+                                }`}
+                                title="Hapus Kelas"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                <span className="hidden sm:inline">Hapus</span>
+                              </button>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* 2. BENTO STATS CARDS */}
                     <div className={`grid grid-cols-1 ${
                       activeTab === 'Formal' 
                         ? (isCalonPelajarPage ? 'sm:grid-cols-2' : 'sm:grid-cols-3') 
@@ -3412,7 +3415,6 @@ export default function LembagaKelasSub({
                 </div>
               )}
               </div>
-            </div>
           </motion.div>
         )}
       </AnimatePresence>
