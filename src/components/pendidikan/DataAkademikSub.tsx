@@ -29,7 +29,7 @@ import {
   GraduationCap
 } from 'lucide-react';
 import { Santri, Lembaga, Kelas, KategoriRombel, KelompokRombel, RombelAssignment, isEmisTerdaftar, isGenderMatch } from '../../types';
-import { demoteSantriToCalonPesertaDidik, parseCatatanInvalid } from '../../lib/utils';
+import { demoteSantriToCalonPesertaDidik, parseCatatanInvalid, cleanWaliKelas } from '../../lib/utils';
 import { renderSantriAvatar, getPesantrenProfile, calculateRealtimeAge } from '../SekretarisHelper';
 import SantriDetailModal from '../sekretaris/SantriDetailModal';
 import { ExportModal } from '../ExportModal';
@@ -3573,11 +3573,14 @@ export default function DataAkademikSub({
                         className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-800 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 focus:outline-none transition-all shadow-2xs cursor-pointer"
                       >
                         <option value="">-- Pilih Kelas --</option>
-                        {targetClasses.map(c => (
-                          <option key={c.id} value={c.id}>
-                            {c.nama} {c.waliKelas && c.waliKelas !== '-' ? `(${c.waliKelas})` : ''}
-                          </option>
-                        ))}
+                        {targetClasses.map(c => {
+                          const cleanWali = cleanWaliKelas(c.waliKelas);
+                          return (
+                            <option key={c.id} value={c.id}>
+                              {c.nama} {cleanWali && cleanWali !== '-' ? `(${cleanWali})` : ''}
+                            </option>
+                          );
+                        })}
                       </select>
                     )}
                   </div>

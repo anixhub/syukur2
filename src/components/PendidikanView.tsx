@@ -15,6 +15,7 @@ import LembagaKelasSub from './pendidikan/LembagaKelasSub';
 import RombelSub from './pendidikan/RombelSub';
 import DataAkademikSub from './pendidikan/DataAkademikSub';
 import { fetchTableData, insertTableRow, updateTableRow, deleteTableRow, safeLocalStorageSetItem, subscribeRealtimeChanges, snakeToCamel } from '../lib/api';
+import { cleanWaliKelas } from '../lib/utils';
 
 // Initial Mock Data matching SQL seeds
 const INITIAL_LEMBAGA: Lembaga[] = [];
@@ -169,45 +170,60 @@ export default function PendidikanView({
   });
 
   const deserializeKelas = (k: Kelas): Kelas => {
-    let isDefault = Boolean(k && (k.isDefault || k.id?.includes('-default') || k.nama?.toLowerCase() === 'calon pelajar' || k.nama?.toLowerCase() === 'calon peserta didik'));
-    if (k && k.waliKelas) {
-      const match = k.waliKelas.match(/\[KELAS_META:(.*?)\]/);
-      if (match) {
+    if (!k) return k;
+    let isDefault = Boolean(k.isDefault || k.id?.includes('-default') || k.nama?.toLowerCase() === 'calon pelajar' || k.nama?.toLowerCase() === 'calon peserta didik');
+    let tingkatan = k.tingkatan;
+    let kapasitas = k.kapasitas;
+    let batasUsiaHari = k.batasUsiaHari;
+    let batasUsiaBulan = k.batasUsiaBulan;
+    let batasUsiaUmurMin = k.batasUsiaUmurMin;
+    let batasUsiaUmurMax = k.batasUsiaUmurMax;
+
+    if (k.waliKelas && typeof k.waliKelas === 'string') {
+      const rawWali = k.waliKelas;
+      const metaStart = rawWali.indexOf('[KELAS_META:');
+      if (metaStart !== -1) {
+        let metaStr = rawWali.substring(metaStart + 12);
+        if (metaStr.endsWith(']')) {
+          metaStr = metaStr.slice(0, -1);
+        } else {
+          const lastBrace = metaStr.lastIndexOf('}');
+          if (lastBrace !== -1) {
+            metaStr = metaStr.substring(0, lastBrace + 1);
+          }
+        }
         try {
-          const meta = JSON.parse(match[1]);
+          const meta = JSON.parse(metaStr);
           if (meta.isDefault !== undefined) isDefault = Boolean(meta.isDefault);
-          return {
-            ...k,
-            isDefault,
-            tingkatan: k.tingkatan !== undefined ? k.tingkatan : meta.tingkatan,
-            kapasitas: k.kapasitas !== undefined ? k.kapasitas : meta.kapasitas,
-            batasUsiaHari: k.batasUsiaHari !== undefined ? k.batasUsiaHari : meta.batasUsiaHari,
-            batasUsiaBulan: k.batasUsiaBulan !== undefined ? k.batasUsiaBulan : meta.batasUsiaBulan,
-            batasUsiaUmurMin: k.batasUsiaUmurMin !== undefined ? k.batasUsiaUmurMin : meta.batasUsiaUmurMin,
-            batasUsiaUmurMax: k.batasUsiaUmurMax !== undefined ? k.batasUsiaUmurMax : meta.batasUsiaUmurMax,
-            waliKelas: k.waliKelas.replace(/\[KELAS_META:.*?\]/g, "").trim()
-          };
+          if (meta.tingkatan !== undefined && tingkatan === undefined) tingkatan = meta.tingkatan;
+          if (meta.kapasitas !== undefined && kapasitas === undefined) kapasitas = meta.kapasitas;
+          if (meta.batasUsiaHari !== undefined && batasUsiaHari === undefined) batasUsiaHari = meta.batasUsiaHari;
+          if (meta.batasUsiaBulan !== undefined && batasUsiaBulan === undefined) batasUsiaBulan = meta.batasUsiaBulan;
+          if (meta.batasUsiaUmurMin !== undefined && batasUsiaUmurMin === undefined) batasUsiaUmurMin = meta.batasUsiaUmurMin;
+          if (meta.batasUsiaUmurMax !== undefined && batasUsiaUmurMax === undefined) batasUsiaUmurMax = meta.batasUsiaUmurMax;
         } catch (e) {}
       }
     }
-    return { ...k, isDefault };
+
+    return {
+      ...k,
+      isDefault,
+      tingkatan: tingkatan ?? 'Lainnya',
+      kapasitas: kapasitas ?? 40,
+      batasUsiaHari: batasUsiaHari ?? 1,
+      batasUsiaBulan: batasUsiaBulan ?? 7,
+      batasUsiaUmurMin: batasUsiaUmurMin ?? 0,
+      batasUsiaUmurMax: batasUsiaUmurMax ?? 99,
+      waliKelas: cleanWaliKelas(k.waliKelas)
+    };
   };
 
   const serializeKelas = (k: Kelas): Kelas => {
     const isDefault = k.isDefault !== undefined ? k.isDefault : Boolean(k.id?.includes('-default') || k.nama?.toLowerCase() === 'calon pelajar' || k.nama?.toLowerCase() === 'calon peserta didik');
-    const meta = {
-      isDefault,
-      tingkatan: k.tingkatan,
-      kapasitas: k.kapasitas,
-      batasUsiaHari: k.batasUsiaHari,
-      batasUsiaBulan: k.batasUsiaBulan,
-      batasUsiaUmurMin: k.batasUsiaUmurMin,
-      batasUsiaUmurMax: k.batasUsiaUmurMax
-    };
-    const cleanWali = (k.waliKelas || "").replace(/\[KELAS_META:.*?\]/g, "").trim();
     return {
       ...k,
-      waliKelas: `${cleanWali} [KELAS_META:${JSON.stringify(meta)}]`.trim()
+      isDefault,
+      waliKelas: cleanWaliKelas(k.waliKelas)
     };
   };
 

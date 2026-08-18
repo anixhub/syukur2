@@ -476,3 +476,14 @@ export function parseCatatanInvalid(catatan?: string): { invalidReason: string; 
 export function formatCatatanWithInvalid(invalidReason: string, extraNote?: string): string {
   return formatCatatanParts('', invalidReason, extraNote || '');
 }
+
+export function cleanWaliKelas(val?: string | null): string {
+  if (!val || typeof val !== 'string') return '-';
+  const trimmed = val.trim();
+  if (!trimmed || trimmed === '-' || trimmed === '--') return '-';
+  const cleaned = trimmed
+    .replace(/\[KELAS_META:.*?\]/gi, '')
+    .replace(/\[KELAS_META:.*$/gi, '')
+    .trim();
+  return cleaned || '-';
+}

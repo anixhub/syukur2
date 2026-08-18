@@ -9,7 +9,7 @@ import {
   ChevronDown, ChevronsUpDown, Printer, Sparkles, Home, Loader2, Upload
 } from 'lucide-react';
 import { Lembaga, Kelas, Santri, KategoriRombel, KelompokRombel, RombelAssignment, isDefaultClass, isEmisTerdaftar, getClsLembagaId, isGenderMatch } from '../../types';
-import { demoteSantriToCalonPesertaDidik, compressImage, parseCatatanInvalid, formatCatatanWithInvalid } from '../../lib/utils';
+import { demoteSantriToCalonPesertaDidik, compressImage, parseCatatanInvalid, formatCatatanWithInvalid, cleanWaliKelas } from '../../lib/utils';
 import { uploadFileToStorage, getApiUrl } from '../../lib/api';
 import SantriDetailModal from '../sekretaris/SantriDetailModal';
 import { PUTRA_AVATAR, PUTRI_AVATAR, renderSantriAvatar, calculateRealtimeAge, getPesantrenProfile } from '../SekretarisHelper';
@@ -1314,7 +1314,7 @@ export default function LembagaKelasSub({
     if (kel) {
       setEditingKelas(kel);
       setKelNama(kel.nama);
-      setKelWali(kel.waliKelas || '');
+      setKelWali(cleanWaliKelas(kel.waliKelas) !== '-' ? cleanWaliKelas(kel.waliKelas) : '');
       setKelTingkat(kel.tingkatan as any || 'Lainnya');
       setKelKapasitas(kel.kapasitas || 40);
       setKelBatasUsiaHari(kel.batasUsiaHari !== undefined ? kel.batasUsiaHari : 1);
@@ -1341,6 +1341,8 @@ export default function LembagaKelasSub({
     const targetNama = kelNama.trim();
     if (!selectedLembaga || !targetNama) return;
 
+    const finalWali = cleanWaliKelas(kelWali);
+
     if (activeTab === 'Rombel') {
       if (editingKelas) {
         if (onUpdateGroup) {
@@ -1348,7 +1350,7 @@ export default function LembagaKelasSub({
             id: editingKelas.id,
             kategoriId: selectedLembaga.id,
             nama: kelNama.trim(),
-            pembimbing: kelWali.trim() || '-',
+            pembimbing: finalWali,
             kuota: Number(kelKapasitas)
           });
           showToast('Kelompok rombel berhasil diperbarui.');
@@ -1356,7 +1358,7 @@ export default function LembagaKelasSub({
             setSelectedKelas({
               ...selectedKelas,
               nama: kelNama.trim(),
-              waliKelas: kelWali.trim() || '-',
+              waliKelas: finalWali,
               kapasitas: Number(kelKapasitas)
             });
           }
@@ -1367,7 +1369,7 @@ export default function LembagaKelasSub({
             id: 'G-' + Date.now(),
             kategoriId: selectedLembaga.id,
             nama: kelNama.trim(),
-            pembimbing: kelWali.trim() || '-',
+            pembimbing: finalWali,
             kuota: Number(kelKapasitas),
             gender: selectedGender
           });
@@ -1379,7 +1381,7 @@ export default function LembagaKelasSub({
         onUpdateKelas({
           ...editingKelas,
           nama: targetNama,
-          waliKelas: kelWali.trim() || '-',
+          waliKelas: finalWali,
           tingkatan: kelTingkat,
           kapasitas: Number(kelKapasitas),
           batasUsiaHari: Number(kelBatasUsiaHari),
@@ -1392,7 +1394,7 @@ export default function LembagaKelasSub({
           setSelectedKelas({
             ...selectedKelas,
             nama: targetNama,
-            waliKelas: kelWali.trim() || '-',
+            waliKelas: finalWali,
             tingkatan: kelTingkat,
             kapasitas: Number(kelKapasitas),
             batasUsiaHari: Number(kelBatasUsiaHari),
@@ -1406,7 +1408,7 @@ export default function LembagaKelasSub({
           id: 'K-' + Date.now(),
           lembagaId: selectedLembaga.id,
           nama: kelNama.trim(),
-          waliKelas: kelWali.trim() || '-',
+          waliKelas: finalWali,
           tingkatan: kelTingkat,
           kapasitas: Number(kelKapasitas)
         });
@@ -2152,7 +2154,7 @@ export default function LembagaKelasSub({
         <div class="title">DAFTAR SANTRI KELAS: ${selectedKelas.nama}</div>
         <div class="subtitle">${selectedLembaga.nama} (${selectedGender})</div>
         <div class="info">
-          <span><strong>Wali Kelas / Pembimbing:</strong> ${selectedKelas.waliKelas || '-'}</span>
+          <span><strong>Wali Kelas / Pembimbing:</strong> ${cleanWaliKelas(selectedKelas.waliKelas || selectedKelas.pembimbing)}</span>
           <span><strong>Total Santri:</strong> ${studentsInClass.length} Santri</span>
         </div>
         <table>
@@ -2863,8 +2865,8 @@ export default function LembagaKelasSub({
                              <div className="h-9 w-9 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
                                <User className="h-4.5 w-4.5 text-[#046A38]" />
                              </div>
-                             <span className="text-sm font-extrabold text-slate-800 truncate" title={selectedKelas.waliKelas || selectedKelas.pembimbing || '-'}>
-                               {selectedKelas.waliKelas || selectedKelas.pembimbing || '-'}
+                             <span className="text-sm font-extrabold text-slate-800 truncate" title={cleanWaliKelas(selectedKelas.waliKelas || selectedKelas.pembimbing)}>
+                               {cleanWaliKelas(selectedKelas.waliKelas || selectedKelas.pembimbing)}
                              </span>
                            </div>
                          </div>
@@ -3844,11 +3846,14 @@ export default function LembagaKelasSub({
                         className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-800 focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 focus:outline-none transition-all shadow-2xs cursor-pointer"
                       >
                         <option value="">-- Pilih Kelas --</option>
-                        {targetClasses.map(c => (
-                          <option key={c.id} value={c.id}>
-                            {c.nama} {c.waliKelas && c.waliKelas !== '-' ? `(${c.waliKelas})` : ''}
-                          </option>
-                        ))}
+                        {targetClasses.map(c => {
+                          const cleanWali = cleanWaliKelas(c.waliKelas);
+                          return (
+                            <option key={c.id} value={c.id}>
+                              {c.nama} {cleanWali && cleanWali !== '-' ? `(${cleanWali})` : ''}
+                            </option>
+                          );
+                        })}
                       </select>
                     )}
                   </div>
@@ -3980,11 +3985,14 @@ export default function LembagaKelasSub({
                         className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-800 focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 focus:outline-none transition-all shadow-2xs cursor-pointer"
                       >
                         <option value="">-- Pilih Kelas --</option>
-                        {targetBulkClasses.map(c => (
-                          <option key={c.id} value={c.id}>
-                            {c.nama} {c.waliKelas && c.waliKelas !== '-' ? `(${c.waliKelas})` : ''}
-                          </option>
-                        ))}
+                        {targetBulkClasses.map(c => {
+                          const cleanWali = cleanWaliKelas(c.waliKelas);
+                          return (
+                            <option key={c.id} value={c.id}>
+                              {c.nama} {cleanWali && cleanWali !== '-' ? `(${cleanWali})` : ''}
+                            </option>
+                          );
+                        })}
                       </select>
                     )}
                   </div>

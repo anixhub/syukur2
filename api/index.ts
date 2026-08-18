@@ -917,6 +917,36 @@ async function ensureTableExists(table: string, pool: mysql.Pool) {
     } catch (e) {
       console.warn("Could not auto-create lembaga table:", e);
     }
+  } else if (table === 'kelas') {
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS \`kelas\` (
+          \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
+          \`lembaga_id\` VARCHAR(50) NOT NULL,
+          \`nama\` VARCHAR(100) NOT NULL,
+          \`wali_kelas\` LONGTEXT NULL,
+          \`tingkatan\` VARCHAR(50) DEFAULT 'Lainnya',
+          \`kapasitas\` INT DEFAULT 40,
+          \`is_default\` TINYINT(1) DEFAULT 0,
+          \`batas_usia_hari\` INT DEFAULT 1,
+          \`batas_usia_bulan\` INT DEFAULT 7,
+          \`batas_usia_umur_min\` INT DEFAULT 0,
+          \`batas_usia_umur_max\` INT DEFAULT 99,
+          \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `);
+      const cols = ['wali_kelas', 'tingkatan', 'kapasitas', 'is_default', 'isDefault', 'batas_usia_hari', 'batas_usia_bulan', 'batas_usia_umur_min', 'batas_usia_umur_max'];
+      for (const col of cols) {
+        try {
+          await pool.query(`ALTER TABLE \`kelas\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
+        } catch (e) {}
+      }
+      try {
+        await pool.query(`ALTER TABLE \`kelas\` MODIFY COLUMN \`wali_kelas\` LONGTEXT NULL`);
+      } catch (e) {}
+    } catch (e) {
+      console.warn("Could not auto-create kelas table:", e);
+    }
   } else if (table === 'tugas' || table === 'tasks') {
     try {
       await pool.query(`
@@ -1175,12 +1205,7 @@ app.post("/api/db/:table", async (req, res) => {
   }
 
   let sanitizedBody = sanitizePayload(req.body);
-  if (table === "kelas") {
-    delete sanitizedBody.tingkatan;
-    delete sanitizedBody.kapasitas;
-    delete sanitizedBody.tingkatan_kelas;
-    delete sanitizedBody.kapasitas_kelas;
-  } else if (table === "santri") {
+  if (table === "santri") {
     sanitizedBody = packPendidikanFormal(sanitizedBody);
   }
 
@@ -1271,12 +1296,7 @@ app.put("/api/db/:table/:id", async (req, res) => {
   }
 
   let sanitizedBody = sanitizePayload(req.body);
-  if (table === "kelas") {
-    delete sanitizedBody.tingkatan;
-    delete sanitizedBody.kapasitas;
-    delete sanitizedBody.tingkatan_kelas;
-    delete sanitizedBody.kapasitas_kelas;
-  } else if (table === "santri") {
+  if (table === "santri") {
     sanitizedBody = packPendidikanFormal(sanitizedBody);
   } else if (table === "app_credentials") {
     const dName = sanitizedBody.displayName || sanitizedBody.display_name || sanitizedBody.nama;
