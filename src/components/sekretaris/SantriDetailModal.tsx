@@ -57,6 +57,52 @@ const formatDateDMY = (dateVal?: any) => {
   return dateStr;
 };
 
+function parseSafeDate(dateStr?: string | null): Date | null {
+  if (!dateStr || typeof dateStr !== 'string') return null;
+  const trimmed = dateStr.trim();
+  if (!trimmed) return null;
+
+  const ymdWithTimeMatch = trimmed.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})(?:[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  if (ymdWithTimeMatch) {
+    const year = parseInt(ymdWithTimeMatch[1], 10);
+    const month = parseInt(ymdWithTimeMatch[2], 10) - 1;
+    const day = parseInt(ymdWithTimeMatch[3], 10);
+    const hour = ymdWithTimeMatch[4] !== undefined ? parseInt(ymdWithTimeMatch[4], 10) : 0;
+    const minute = ymdWithTimeMatch[5] !== undefined ? parseInt(ymdWithTimeMatch[5], 10) : 0;
+    const second = ymdWithTimeMatch[6] !== undefined ? parseInt(ymdWithTimeMatch[6], 10) : 0;
+    
+    if (trimmed.includes('Z') || /[+-]\d{2}:\d{2}$/.test(trimmed)) {
+      const d = new Date(trimmed);
+      if (!isNaN(d.getTime())) return d;
+    }
+    
+    const d = new Date(year, month, day, hour, minute, second);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  const dmyWithTimeMatch = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  if (dmyWithTimeMatch) {
+    const day = parseInt(dmyWithTimeMatch[1], 10);
+    const month = parseInt(dmyWithTimeMatch[2], 10) - 1;
+    const year = parseInt(dmyWithTimeMatch[3], 10);
+    const hour = dmyWithTimeMatch[4] !== undefined ? parseInt(dmyWithTimeMatch[4], 10) : 0;
+    const minute = dmyWithTimeMatch[5] !== undefined ? parseInt(dmyWithTimeMatch[5], 10) : 0;
+    const second = dmyWithTimeMatch[6] !== undefined ? parseInt(dmyWithTimeMatch[6], 10) : 0;
+    const d = new Date(year, month, day, hour, minute, second);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  const d = new Date(trimmed);
+  if (!isNaN(d.getTime())) return d;
+
+  return null;
+}
+
+function getDateTimestamp(dateStr?: string | null): number {
+  const d = parseSafeDate(dateStr);
+  return d ? d.getTime() : 0;
+}
+
 interface SantriDetailModalProps {
   selectedSantri: Santri | null;
   onClose: () => void;
@@ -226,11 +272,23 @@ export default function SantriDetailModal({ selectedSantri, onClose, onUpdateSan
   }, [localSantri]);
 
   const listIzinResmi = useMemo(() => {
-    return activePermits.filter((p: any) => !p.isCabut);
+    return activePermits.filter((p: any) => !p.isCabut)
+      .sort((a: any, b: any) => {
+        const timeA = getDateTimestamp(a.tanggalMulai);
+        const timeB = getDateTimestamp(b.tanggalMulai);
+        if (timeB !== timeA) return timeB - timeA;
+        return (b.id || '').localeCompare(a.id || '');
+      });
   }, [activePermits]);
 
   const listKeluarIlegal = useMemo(() => {
-    return activePermits.filter((p: any) => p.isCabut);
+    return activePermits.filter((p: any) => p.isCabut)
+      .sort((a: any, b: any) => {
+        const timeA = getDateTimestamp(a.tanggalCabut || a.tanggalMulai);
+        const timeB = getDateTimestamp(b.tanggalCabut || b.tanggalMulai);
+        if (timeB !== timeA) return timeB - timeA;
+        return (b.id || '').localeCompare(a.id || '');
+      });
   }, [activePermits]);
 
   const roomInfo = useMemo(() => {
@@ -341,12 +399,19 @@ export default function SantriDetailModal({ selectedSantri, onClose, onUpdateSan
 
   const displayViolations = useMemo(() => {
     if (violations && violations.length > 0) {
-      return violations.map(v => ({
-        id: v.id,
-        tanggal: v.tanggal,
-        jenisPelanggaran: v.jenisPelanggaran,
-        poin: v.poin
-      }));
+      return [...violations]
+        .sort((a, b) => {
+          const timeA = new Date(a.tanggal).getTime() || 0;
+          const timeB = new Date(b.tanggal).getTime() || 0;
+          if (timeB !== timeA) return timeB - timeA;
+          return (b.id || '').localeCompare(a.id || '');
+        })
+        .map(v => ({
+          id: v.id,
+          tanggal: v.tanggal,
+          jenisPelanggaran: v.jenisPelanggaran,
+          poin: v.poin
+        }));
     }
     return [];
   }, [violations]);

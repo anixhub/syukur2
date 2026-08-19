@@ -406,13 +406,14 @@ function ActiveSantriIzinCard({ rec, santriList, handleReturnToPondok, onExtendD
       let diff = 0;
       let isOverdue = false;
 
-      if (rec.isCabut && rec.tanggalCabut) {
-        const cabutTime = new Date(rec.tanggalCabut).getTime();
+      if (rec.isCabut) {
+        const timeVal = rec.tanggalCabut || rec.tanggalMulai;
+        const cabutTime = parseSafeDate(timeVal)?.getTime() || (timeVal ? new Date(timeVal).getTime() : 0);
         const now = new Date().getTime();
-        diff = now - cabutTime; // Count UP since revocation
+        diff = Math.max(0, now - cabutTime); // Count UP since revocation/keluar ilegal
         isOverdue = true;
       } else {
-        const targetTime = new Date(rec.tanggalSelesai).getTime();
+        const targetTime = parseSafeDate(rec.tanggalSelesai)?.getTime() || (rec.tanggalSelesai ? new Date(rec.tanggalSelesai).getTime() : 0);
         const now = new Date().getTime();
         diff = targetTime - now;
         isOverdue = diff < 0;
@@ -431,14 +432,14 @@ function ActiveSantriIzinCard({ rec, santriList, handleReturnToPondok, onExtendD
     calculateTime();
     const interval = setInterval(calculateTime, 1000);
     return () => clearInterval(interval);
-  }, [rec.tanggalSelesai, rec.isCabut, rec.tanggalCabut]);
+  }, [rec.tanggalSelesai, rec.isCabut, rec.tanggalCabut, rec.tanggalMulai]);
 
   const { isOverdue, days, hours, minutes, seconds } = timeLeft;
 
   const pad = (num: number) => String(num).padStart(2, '0');
 
   const formattedTime = rec.isCabut
-    ? `Ilegal ${days} hari ${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
+    ? `Ilegal ${days > 0 ? `${days} hari ` : ''}${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
     : `${days > 0 ? `${days} Hari ` : ''}${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
 
   const sObj = santriList.find(x => rec.santriId ? x.id === rec.santriId : x.nama === rec.namaSantri);
@@ -798,8 +799,74 @@ function formatIndonesianDate(dateStr: string): string {
   return formattedDate;
 }
 
+function parseSafeDate(dateStr?: string | null): Date | null {
+  if (!dateStr || typeof dateStr !== 'string') return null;
+  const trimmed = dateStr.trim();
+  if (!trimmed) return null;
+
+  // Match YYYY-MM-DDTHH:mm:ss or YYYY-MM-DD HH:mm:ss or YYYY-MM-DD
+  const ymdWithTimeMatch = trimmed.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})(?:[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  if (ymdWithTimeMatch) {
+    const year = parseInt(ymdWithTimeMatch[1], 10);
+    const month = parseInt(ymdWithTimeMatch[2], 10) - 1;
+    const day = parseInt(ymdWithTimeMatch[3], 10);
+    const hour = ymdWithTimeMatch[4] !== undefined ? parseInt(ymdWithTimeMatch[4], 10) : 0;
+    const minute = ymdWithTimeMatch[5] !== undefined ? parseInt(ymdWithTimeMatch[5], 10) : 0;
+    const second = ymdWithTimeMatch[6] !== undefined ? parseInt(ymdWithTimeMatch[6], 10) : 0;
+    
+    // If it has timezone offset or 'Z' at the end, standard Date parser handles it better
+    if (trimmed.includes('Z') || /[+-]\d{2}:\d{2}$/.test(trimmed)) {
+      const d = new Date(trimmed);
+      if (!isNaN(d.getTime())) return d;
+    }
+    
+    const d = new Date(year, month, day, hour, minute, second);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  // Match DD-MM-YYYYTHH:mm:ss or DD-MM-YYYY HH:mm:ss or DD-MM-YYYY
+  const dmyWithTimeMatch = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  if (dmyWithTimeMatch) {
+    const day = parseInt(dmyWithTimeMatch[1], 10);
+    const month = parseInt(dmyWithTimeMatch[2], 10) - 1;
+    const year = parseInt(dmyWithTimeMatch[3], 10);
+    const hour = dmyWithTimeMatch[4] !== undefined ? parseInt(dmyWithTimeMatch[4], 10) : 0;
+    const minute = dmyWithTimeMatch[5] !== undefined ? parseInt(dmyWithTimeMatch[5], 10) : 0;
+    const second = dmyWithTimeMatch[6] !== undefined ? parseInt(dmyWithTimeMatch[6], 10) : 0;
+    const d = new Date(year, month, day, hour, minute, second);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  const d = new Date(trimmed);
+  if (!isNaN(d.getTime())) return d;
+
+  return null;
+}
+
+function getDateTimestamp(dateStr?: string | null): number {
+  const d = parseSafeDate(dateStr);
+  return d ? d.getTime() : 0;
+}
+
+function getNormalizedDateKey(dateStr?: string | null): string {
+  const d = parseSafeDate(dateStr);
+  if (d) {
+    return getYYYYMMDD(d);
+  }
+  if (!dateStr) return '';
+  return dateStr.split('T')[0].split(' ')[0];
+}
+
 function formatIndonesianDateOnly(dateStr: string): string {
   if (!dateStr) return '';
+  const d = parseSafeDate(dateStr);
+  if (d) {
+    const months = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+    return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+  }
   let partsT = dateStr.split('T');
   let actualDateStr = partsT[0];
   if (actualDateStr.includes(' ')) {
@@ -901,6 +968,21 @@ function DateTimePicker({
       setYear(y);
       setHour(h);
       setMinute(minPart);
+    } else if (value && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+      const parts = value.split(/[T\s]/);
+      const [y, m, d] = parts[0].split('-');
+      setDay(d);
+      setMonth(m);
+      setYear(y);
+      if (parts[1]) {
+        const [h, minPart] = parts[1].split(':');
+        setHour(h || '00');
+        setMinute(minPart || '00');
+      } else {
+        const now = new Date();
+        setHour(String(now.getHours()).padStart(2, '0'));
+        setMinute(String(now.getMinutes()).padStart(2, '0'));
+      }
     } else if (!value) {
       setDay('dd');
       setMonth('mm');
@@ -1876,14 +1958,19 @@ export default function KeamananView({
       return;
     }
 
+    const now = new Date();
+    const nowStr = getYYYYMMDDTHHMM(now);
+    const effectiveTanggalMulai = tanggalMulaiIzin || nowStr;
+    const effectiveTanggalCabut = isIlegal ? effectiveTanggalMulai : undefined;
+
     const newRecord: PerizinanRecord = {
       id: 'P-' + Math.random().toString(36).substr(2, 9).toUpperCase(),
       namaSantri: targetSantri.nama,
       kelas: targetSantri.kelas || 'Umum',
       kamar: targetSantri.kamar || 'Belum diatur',
       jenisIzin: isIlegal ? 'Lainnya' : (jenisIzin as any),
-      tanggalMulai: tanggalMulaiIzin,
-      tanggalSelesai: isIlegal ? tanggalMulaiIzin : tanggalSelesaiIzin,
+      tanggalMulai: effectiveTanggalMulai,
+      tanggalSelesai: isIlegal ? effectiveTanggalMulai : (tanggalSelesaiIzin || effectiveTanggalMulai),
       keterangan: isIlegal 
         ? (keteranganIzin.trim() || 'Keluar Ilegal / Kabur')
         : (jenisIzin.trim().toLowerCase().startsWith('izin') ? jenisIzin.trim() : 'Izin ' + jenisIzin.trim()),
@@ -1891,7 +1978,7 @@ export default function KeamananView({
       gender: targetSantri.gender,
       isCabut: isIlegal ? true : undefined,
       alasanCabut: isIlegal ? (keteranganIzin.trim() || 'Keluar Ilegal / Kabur') : undefined,
-      tanggalCabut: isIlegal ? tanggalMulaiIzin : undefined,
+      tanggalCabut: effectiveTanggalCabut,
       santriId: targetSantri.id,
       nis: targetSantri.nis
     };
@@ -1903,6 +1990,10 @@ export default function KeamananView({
       setSelectedSantriIdForIzin('');
       setKeteranganIzin('');
       setSearchSantriForIzin('');
+      const resetNow = new Date();
+      setTanggalMulaiIzin(getYYYYMMDDTHHMM(resetNow));
+      const resetOneHour = new Date(resetNow.getTime() + 60 * 60 * 1000);
+      setTanggalSelesaiIzin(getYYYYMMDDTHHMM(resetOneHour));
     } catch (err: any) {
       alert(`Gagal menyimpan data perizinan ke database: ${err.message}`);
     }
@@ -4800,10 +4891,12 @@ export default function KeamananView({
         }
       )
       .sort((a, b) => {
-        if (a.tanggal !== b.tanggal) {
-          return a.tanggal.localeCompare(b.tanggal);
+        const timeA = getDateTimestamp(a.tanggal);
+        const timeB = getDateTimestamp(b.tanggal);
+        if (timeA !== timeB) {
+          return timeA - timeB;
         }
-        return a.id.localeCompare(b.id);
+        return (a.id || '').localeCompare(b.id || '');
       });
       
     const idx = studentRecs.findIndex(r => r.id === rec.id);
@@ -4814,17 +4907,29 @@ export default function KeamananView({
   };
 
   const groupedRiwayatByDate = useMemo(() => {
-    const groups: { date: string; records: KeamananRecord[] }[] = [];
-    const sorted = [...filteredRiwayat].sort((a, b) => b.tanggal.localeCompare(a.tanggal));
+    const groups: { date: string; dateTimestamp: number; records: KeamananRecord[] }[] = [];
+    const sorted = [...filteredRiwayat].sort((a, b) => {
+      const timeA = getDateTimestamp(a.tanggal);
+      const timeB = getDateTimestamp(b.tanggal);
+      if (timeB !== timeA) {
+        return timeB - timeA; // Newest first (tanggal terbaru ke terlama)
+      }
+      return (b.id || '').localeCompare(a.id || '');
+    });
+
     sorted.forEach(rec => {
-      const datePart = rec.tanggal.split('T')[0].split(' ')[0];
+      const datePart = getNormalizedDateKey(rec.tanggal);
+      const timestamp = getDateTimestamp(rec.tanggal);
       let group = groups.find(g => g.date === datePart);
       if (!group) {
-        group = { date: datePart, records: [] };
+        group = { date: datePart, dateTimestamp: timestamp, records: [] };
         groups.push(group);
       }
       group.records.push(rec);
     });
+
+    groups.sort((a, b) => b.dateTimestamp - a.dateTimestamp);
+
     return groups;
   }, [filteredRiwayat, periodes, selectedPeriode]);
 
@@ -6343,6 +6448,10 @@ export default function KeamananView({
                   setSelectedSantriIdForIzin('');
                   setJenisIzin('');
                   setKeteranganIzin('');
+                  const now = new Date();
+                  setTanggalMulaiIzin(getYYYYMMDDTHHMM(now));
+                  const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
+                  setTanggalSelesaiIzin(getYYYYMMDDTHHMM(oneHourLater));
                 }}
                 className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                   perizinanMode === 'resmi'
@@ -6359,6 +6468,8 @@ export default function KeamananView({
                   setSelectedSantriIdForIzin('');
                   setJenisIzin('');
                   setKeteranganIzin('');
+                  const now = new Date();
+                  setTanggalMulaiIzin(getYYYYMMDDTHHMM(now));
                 }}
                 className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                   perizinanMode === 'ilegal'
@@ -6731,24 +6842,33 @@ export default function KeamananView({
 
                 {/* List of historical permissions */}
                 {(() => {
-                  const filteredHist = perizinanList.filter(rec => {
-                    const matchesGender = rec.gender === filterGender;
-                    const matchesType = perizinanMode === 'resmi' ? !rec.isCabut : rec.isCabut;
-                    const matchesSearch = !searchIzin.trim() || 
-                      (rec.namaSantri || '').toLowerCase().includes(searchIzin.toLowerCase()) ||
-                      (rec.keterangan || '').toLowerCase().includes(searchIzin.toLowerCase()) ||
-                      (rec.jenisIzin || '').toLowerCase().includes(searchIzin.toLowerCase());
-                    
-                    let matchesStatus = true;
-                    const isReturned = rec.status === 'Sudah Kembali';
-                    if (historyFilterStatus === 'keluar') {
-                      matchesStatus = !isReturned;
-                    } else if (historyFilterStatus === 'masuk') {
-                      matchesStatus = isReturned;
-                    }
-                    
-                    return matchesGender && matchesType && matchesSearch && matchesStatus;
-                  });
+                  const filteredHist = perizinanList
+                    .filter(rec => {
+                      const matchesGender = rec.gender === filterGender;
+                      const matchesType = perizinanMode === 'resmi' ? !rec.isCabut : rec.isCabut;
+                      const matchesSearch = !searchIzin.trim() || 
+                        (rec.namaSantri || '').toLowerCase().includes(searchIzin.toLowerCase()) ||
+                        (rec.keterangan || '').toLowerCase().includes(searchIzin.toLowerCase()) ||
+                        (rec.jenisIzin || '').toLowerCase().includes(searchIzin.toLowerCase());
+                      
+                      let matchesStatus = true;
+                      const isReturned = rec.status === 'Sudah Kembali';
+                      if (historyFilterStatus === 'keluar') {
+                        matchesStatus = !isReturned;
+                      } else if (historyFilterStatus === 'masuk') {
+                        matchesStatus = isReturned;
+                      }
+                      
+                      return matchesGender && matchesType && matchesSearch && matchesStatus;
+                    })
+                    .sort((a, b) => {
+                      const dateValA = a.isCabut ? (a.tanggalCabut || a.tanggalMulai) : a.tanggalMulai;
+                      const dateValB = b.isCabut ? (b.tanggalCabut || b.tanggalMulai) : b.tanggalMulai;
+                      const timeA = getDateTimestamp(dateValA);
+                      const timeB = getDateTimestamp(dateValB);
+                      if (timeB !== timeA) return timeB - timeA; // Newest first
+                      return (b.id || '').localeCompare(a.id || '');
+                    });
 
                   if (filteredHist.length === 0) {
                     return (
@@ -6764,22 +6884,25 @@ export default function KeamananView({
                     );
                   }
 
-                  // Grouping filteredHist by date portion
-                  const groups: { dateLabel: string; dateKey: string; items: PerizinanRecord[] }[] = [];
+                  // Grouping filteredHist by normalized date portion
+                  const groups: { dateLabel: string; dateKey: string; dateTimestamp: number; items: PerizinanRecord[] }[] = [];
                   filteredHist.forEach(rec => {
                     const dateVal = rec.isCabut 
                       ? (rec.tanggalCabut || rec.tanggalMulai) 
                       : rec.tanggalMulai;
                     const dateLabel = formatIndonesianDateOnly(dateVal);
-                    const dateKey = dateVal ? dateVal.substring(0, 10) : '';
+                    const dateKey = getNormalizedDateKey(dateVal);
+                    const timestamp = getDateTimestamp(dateVal);
                     
-                    const lastGroup = groups[groups.length - 1];
-                    if (lastGroup && lastGroup.dateLabel === dateLabel) {
-                      lastGroup.items.push(rec);
-                    } else {
-                      groups.push({ dateLabel, dateKey, items: [rec] });
+                    let group = groups.find(g => g.dateKey === dateKey);
+                    if (!group) {
+                      group = { dateLabel, dateKey, dateTimestamp: timestamp, items: [] };
+                      groups.push(group);
                     }
+                    group.items.push(rec);
                   });
+
+                  groups.sort((a, b) => b.dateTimestamp - a.dateTimestamp);
 
                   return (
                     <div id="history-scroll-container" className="h-[500px] overflow-y-auto bg-slate-50/40 space-y-3.5 p-2.5">
@@ -6838,14 +6961,23 @@ export default function KeamananView({
 
                 {/* Active out-of-pondok student list */}
                 {(() => {
-                  const activePermits = perizinanList.filter(rec => {
-                    const matchesGender = rec.gender === filterGender;
-                    const matchesType = perizinanMode === 'resmi' ? !rec.isCabut : rec.isCabut;
-                    const isActive = rec.status === 'Izin Aktif' && matchesType;
-                    const matchesSearch = !searchActiveIzin.trim() || 
-                      (rec.namaSantri || '').toLowerCase().includes(searchActiveIzin.toLowerCase());
-                    return matchesGender && isActive && matchesSearch;
-                  });
+                  const activePermits = perizinanList
+                    .filter(rec => {
+                      const matchesGender = rec.gender === filterGender;
+                      const matchesType = perizinanMode === 'resmi' ? !rec.isCabut : rec.isCabut;
+                      const isActive = rec.status === 'Izin Aktif' && matchesType;
+                      const matchesSearch = !searchActiveIzin.trim() || 
+                        (rec.namaSantri || '').toLowerCase().includes(searchActiveIzin.toLowerCase());
+                      return matchesGender && isActive && matchesSearch;
+                    })
+                    .sort((a, b) => {
+                      const dateValA = a.isCabut ? (a.tanggalCabut || a.tanggalMulai) : a.tanggalMulai;
+                      const dateValB = b.isCabut ? (b.tanggalCabut || b.tanggalMulai) : b.tanggalMulai;
+                      const timeA = getDateTimestamp(dateValA);
+                      const timeB = getDateTimestamp(dateValB);
+                      if (timeB !== timeA) return timeB - timeA; // Newest first
+                      return (b.id || '').localeCompare(a.id || '');
+                    });
 
                   if (activePermits.length === 0) {
                     return (
@@ -8833,7 +8965,14 @@ export default function KeamananView({
         {viewingHistorySantri && (() => {
           const student = viewingHistorySantri;
           const violations = keamananList.filter(rec => isRecordForStudent(rec, student))
-            .sort((a, b) => b.tanggal.localeCompare(a.tanggal));
+            .sort((a, b) => {
+              const timeA = getDateTimestamp(a.tanggal);
+              const timeB = getDateTimestamp(b.tanggal);
+              if (timeB !== timeA) {
+                return timeB - timeA; // Newest first
+              }
+              return (b.id || '').localeCompare(a.id || '');
+            });
           const stats = getStudentStats(student.nama, student.id);
 
           const getIcon = (title: string) => {
