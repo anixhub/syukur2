@@ -2,7 +2,7 @@ import React from 'react';
 import { motion } from 'motion/react';
 import { 
   School, Award, ArrowLeft, Printer, Pencil, Trash2, 
-  FileSpreadsheet, UserPlus, BookOpen, ChevronRight, Users, Sparkles
+  FileSpreadsheet, UserPlus, BookOpen, ChevronRight, Users, Sparkles, Download
 } from 'lucide-react';
 
 interface LembagaHubViewProps {
@@ -16,7 +16,8 @@ interface LembagaHubViewProps {
   isSelectionMode?: boolean;
   onBack: () => void;
   onSelectView: (view: 'data_induk' | 'calon_peserta_didik' | 'kelas' | 'lulusan') => void;
-  onPrint: () => void;
+  onPrint?: () => void;
+  onExport?: () => void;
   onEdit: () => void;
   onDelete: () => void;
   generate4LetterKode: (name: string) => string;
@@ -35,12 +36,14 @@ export const LembagaHubView: React.FC<LembagaHubViewProps> = ({
   onBack,
   onSelectView,
   onPrint,
+  onExport,
   onEdit,
   onDelete,
   generate4LetterKode,
   getLogoUrl,
 }) => {
   const realClassesCount = subClasses.filter(c => !c.isDefault && c.nama !== 'Calon Peserta Didik').length;
+  const handleExportAction = onExport || onPrint;
 
   return (
     <motion.div
@@ -77,16 +80,16 @@ export const LembagaHubView: React.FC<LembagaHubViewProps> = ({
             </span>
           </div>
 
-          {/* Lembaga Action Buttons (Cetak, Edit, Hapus) */}
+          {/* Lembaga Action Buttons (Export Data, Edit, Hapus) */}
           <div className="flex items-center gap-2">
             <button
               disabled={isSelectionMode}
-              onClick={onPrint}
+              onClick={handleExportAction}
               className="inline-flex items-center justify-center bg-white border border-slate-200 h-9 px-3 sm:px-3.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer shadow-3xs active:scale-95 transition-all disabled:opacity-40 gap-1.5"
-              title="Cetak Data Lembaga"
+              title="Ekspor Data Lembaga (Excel / PDF)"
             >
-              <Printer className="h-4 w-4 text-slate-600" />
-              <span className="hidden sm:inline">Cetak Unit</span>
+              <Download className="h-4 w-4 text-slate-600" />
+              <span className="hidden sm:inline">Export Data</span>
             </button>
             {canWriteCurrent && (
               <>

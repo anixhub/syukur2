@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { 
   ArrowLeft, Printer, Search, X, Filter, Users, User, FileSpreadsheet, Home,
-  ChevronRight, ExternalLink, Pencil
+  ChevronRight, ExternalLink, Pencil, Download
 } from 'lucide-react';
 import { Santri } from '../../types';
 import { renderSantriAvatar } from '../SekretarisHelper';
@@ -22,6 +22,7 @@ interface LembagaDataIndukViewProps {
   onStatusFilterChange: (st: string) => void;
   onBackToHub: () => void;
   onPrintPDF: () => void;
+  onExport?: () => void;
   onSelectStudentDetail: (s: Santri) => void;
   onUpdateSantri?: (s: Santri) => void;
   selectedGender: 'Putra' | 'Putri';
@@ -69,6 +70,7 @@ export const LembagaDataIndukView: React.FC<LembagaDataIndukViewProps> = ({
   onStatusFilterChange,
   onBackToHub,
   onPrintPDF,
+  onExport,
   onSelectStudentDetail,
   onUpdateSantri,
   selectedGender,
@@ -105,12 +107,12 @@ export const LembagaDataIndukView: React.FC<LembagaDataIndukViewProps> = ({
 
           <div className="flex items-center gap-2">
             <button
-              onClick={onPrintPDF}
+              onClick={onExport || onPrintPDF}
               className="inline-flex items-center justify-center bg-white border border-slate-200 h-9 px-3.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer shadow-3xs active:scale-95 transition-all gap-1.5"
-              title="Cetak Data Induk Santri"
+              title="Ekspor Data Induk Santri (Excel / PDF)"
             >
-              <Printer className="h-4 w-4 text-slate-600" />
-              <span>Cetak Data Induk</span>
+              <Download className="h-4 w-4 text-slate-600" />
+              <span>Export Data</span>
             </button>
           </div>
         </div>

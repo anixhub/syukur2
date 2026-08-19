@@ -19,6 +19,7 @@ import LembagaDataIndukView from './LembagaDataIndukView';
 import LembagaCalonView from './LembagaCalonView';
 import LembagaLulusanView from './LembagaLulusanView';
 import EditSantriKolomModal from './EditSantriKolomModal';
+import { ExportModal } from '../ExportModal';
 
 const MONTH_NAMES = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
@@ -128,6 +129,7 @@ export default function LembagaKelasSub({
   const [calonStatusFilter, setCalonStatusFilter] = useState<string>('Semua');
   const [lulusanSearch, setLulusanSearch] = useState<string>('');
   const [lulusanStatusFilter, setLulusanStatusFilter] = useState<string>('Semua');
+  const [isExportLembagaModalOpen, setIsExportLembagaModalOpen] = useState<boolean>(false);
 
   // Keep selectedLembaga in sync with the latest lembagasList or categoriesList when parent updates
   useEffect(() => {
@@ -2454,107 +2456,219 @@ export default function LembagaKelasSub({
     setBulkTransferLembagaId('');
   };
 
-  // Handle printing PDF / document for the selected institution (Lembaga)
-  const handlePrintLembagaPDF = () => {
-    if (!selectedLembaga) return;
-    const profile = getPesantrenProfile();
-    
-    // Get all students for this institution
-    const lembagaStudents = santriList.filter(s => {
-      if (s.gender !== selectedGender) return false;
-      return s.pendidikanInternal ? s.pendidikanInternal.split(',').map(x => x.trim()).includes(selectedLembaga.id) : false;
-    });
-
-    if (lembagaStudents.length === 0) {
-      alert(`Tidak ada data santri pada ${selectedLembaga.nama}.`);
-      return;
+  // Helper date formatting for export and printing
+  const formatTanggalIndo = (dateStr?: string) => {
+    if (!dateStr) return '-';
+    try {
+      let d: Date;
+      if (dateStr.includes('-')) {
+        const parts = dateStr.split('-');
+        if (parts[0].length === 4) {
+          d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+        } else {
+          d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+        }
+      } else {
+        d = new Date(dateStr);
+      }
+      if (isNaN(d.getTime())) return dateStr;
+      return d.toLocaleDateString('id-ID', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      });
+    } catch (e) {
+      return dateStr;
     }
-
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert('Gagal membuka jendela cetak. Pastikan pop-up dibolehkan di peramban Anda.');
-      return;
-    }
-
-    const dateStr = new Date().toLocaleDateString('id-ID', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric'
-    });
-
-    const rowsHtml = lembagaStudents.map((s, idx) => `
-      <tr>
-        <td style="text-align: center;">${idx + 1}</td>
-        <td>${s.nis || '-'}</td>
-        <td><strong>${s.nama}</strong></td>
-        <td>${s.gender || '-'}</td>
-        <td>${s.kelas || 'Calon Peserta Didik'}</td>
-        <td style="text-align: center;">${s.statusKeanggotaan || 'Aktif'}</td>
-      </tr>
-    `).join('');
-
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>DAFTAR SANTRI - ${selectedLembaga.nama.toUpperCase()}</title>
-        <style>
-          @page { size: A4 portrait; margin: 15mm; }
-          body { font-family: sans-serif; color: #1e293b; margin: 0; padding: 10px; font-size: 11px; }
-          .header { text-align: center; border-bottom: 2px solid #00693E; padding-bottom: 10px; margin-bottom: 15px; }
-          .header h1 { margin: 0; font-size: 18px; color: #00693E; font-weight: bold; }
-          .header p { margin: 3px 0 0; font-size: 11px; color: #64748b; }
-          .title { text-align: center; font-size: 14px; font-weight: bold; margin-bottom: 15px; text-transform: uppercase; }
-          .info { margin-bottom: 12px; font-size: 11px; }
-          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-          th, td { border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 10px; text-align: left; }
-          th { background-color: #f1f5f9; font-weight: bold; color: #334155; }
-          tr:nth-child(even) { background-color: #f8fafc; }
-          .footer { margin-top: 25px; text-align: right; font-size: 10px; color: #64748b; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h1>${profile.namaPesantren || 'PONDOK PESANTREN'}</h1>
-          <p>${profile.alamat || ''} ${(profile as any).kota ? ' - ' + (profile as any).kota : ''}</p>
-        </div>
-        <div class="title">DAFTAR SANTRI - ${selectedLembaga.nama}</div>
-        <div class="info">
-          <strong>Gender:</strong> Santri ${selectedGender} | <strong>Total Santri:</strong> ${lembagaStudents.length} Santri
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th style="width: 30px; text-align: center;">No</th>
-              <th style="width: 90px;">NIS</th>
-              <th>Nama Santri</th>
-              <th style="width: 60px;">Gender</th>
-              <th style="width: 120px;">Kelas</th>
-              <th style="width: 70px; text-align: center;">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rowsHtml}
-          </tbody>
-        </table>
-        <div class="footer">
-          Dicetak pada: ${dateStr}
-        </div>
-        <script>
-          window.onload = function() {
-            window.print();
-          };
-        </script>
-      </body>
-      </html>
-    `;
-
-    printWindow.document.write(html);
-    printWindow.document.close();
   };
 
-  // Handle printing PDF for Data Induk
-  const handlePrintDataIndukPDF = () => {
+  const getSantriAgeDisplay = (birthDateStr?: string) => {
+    const age = calculateRealtimeAge(birthDateStr);
+    return age !== null ? `${age} Thn` : '-';
+  };
+
+  // Handle exporting XML-based Excel file for Lembaga
+  const handleExportExcelLembaga = (customFileName?: string) => {
+    if (!selectedLembaga) return;
+    const studentsToExport = allStudentsOfLembaga;
+    if (studentsToExport.length === 0) {
+      alert(`Tidak ada data santri pada ${selectedLembaga.nama} untuk diekspor.`);
+      return;
+    }
+
+    const noStatistik = selectedLembaga.nomorStatistik || selectedLembaga.nomor_statistik || '-';
+    const npsn = selectedLembaga.npsn || '-';
+    const dateStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+
+    const headers = [
+      'NO',
+      'NISM',
+      'NISN',
+      'NAMA',
+      'TEMPAT LAHIR',
+      'TANGGAL LAHIR',
+      'UMUR',
+      'JENIS KELAMIN',
+      'NAMA AYAH',
+      'NAMA IBU',
+      'EMIS',
+      'VEVAL',
+      'STATUS KEAKTIFAN',
+      'KELAS MHD',
+      'SEMESTER'
+    ];
+
+    const rows = studentsToExport.map((s, idx) => [
+      idx + 1,
+      s.nism || '-',
+      s.nisn || '-',
+      s.nama || '-',
+      s.tempatLahir || '-',
+      formatTanggalIndo(s.tanggalLahir),
+      getSantriAgeDisplay(s.tanggalLahir),
+      s.gender === 'Putra' ? 'L' : s.gender === 'Putri' ? 'P' : (s.gender || '-'),
+      s.namaAyah || '-',
+      s.namaIbu || '-',
+      s.statusEmis || 'Belum',
+      s.statusVerval || (s.nisn && s.nisn.trim() !== '' ? 'Sukses' : 'Proses'),
+      s.statusKeanggotaan || 'Aktif',
+      s.kelasMhd || s.pendidikanInternal || s.indukMhd || '-',
+      s.semester || 'Semester 1'
+    ]);
+
+    const colWidths = [
+      35,  // NO
+      85,  // NISM
+      85,  // NISN
+      160, // NAMA
+      100, // TEMPAT LAHIR
+      90,  // TANGGAL LAHIR
+      55,  // UMUR
+      75,  // JENIS KELAMIN
+      120, // NAMA AYAH
+      120, // NAMA IBU
+      75,  // EMIS
+      75,  // VEVAL
+      100, // STATUS KEAKTIFAN
+      95,  // KELAS MHD
+      85   // SEMESTER
+    ];
+
+    const escapeXml = (str: any) => String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+
+    let xml = `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Center" ss:WrapText="1"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+   </Borders>
+   <Font ss:FontName="Segoe UI" x:Family="Swiss" ss:Size="10" ss:Color="#334155"/>
+   <Interior/>
+   <NumberFormat ss:Format="@"/>
+   <Protection/>
+  </Style>
+  <Style ss:ID="TitleStyle">
+   <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="13" ss:Bold="1" ss:Color="#00693E"/>
+  </Style>
+  <Style ss:ID="MetaRow">
+   <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Color="#475569"/>
+  </Style>
+  <Style ss:ID="Header">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#047857"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#047857"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#047857"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#047857"/>
+   </Borders>
+   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#047857" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="CenterCell">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+   </Borders>
+   <Font ss:FontName="Segoe UI" x:Family="Swiss" ss:Size="10" ss:Color="#334155"/>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="Data Santri">
+  <Table>`;
+
+    colWidths.forEach(width => {
+      xml += `\n   <Column ss:Width="${width}"/>`;
+    });
+
+    // Metadata header rows
+    xml += `\n   <Row ss:Height="24">
+    <Cell ss:StyleID="TitleStyle"><Data ss:Type="String">DATA SANTRI - ${escapeXml(selectedLembaga.nama.toUpperCase())} (${escapeXml(selectedGender.toUpperCase())})</Data></Cell>
+   </Row>`;
+
+    xml += `\n   <Row ss:Height="18">
+    <Cell ss:StyleID="MetaRow"><Data ss:Type="String">No. Statistik: ${escapeXml(noStatistik)}   |   NPSN: ${escapeXml(npsn)}   |   Total Santri: ${studentsToExport.length} Santri   |   Tanggal Ekspor: ${escapeXml(dateStr)}</Data></Cell>
+   </Row>`;
+
+    xml += `\n   <Row ss:Height="10"></Row>`;
+
+    // Table Column Headers
+    xml += `\n   <Row ss:Height="26">`;
+    headers.forEach(header => {
+      xml += `\n    <Cell ss:StyleID="Header"><Data ss:Type="String">${escapeXml(header)}</Data></Cell>`;
+    });
+    xml += `\n   </Row>`;
+
+    // Table Data Rows
+    rows.forEach(row => {
+      xml += `\n   <Row ss:Height="20">`;
+      row.forEach((cell, cellIdx) => {
+        const isCenter = [0, 5, 6, 7, 10, 11, 12, 14].includes(cellIdx);
+        const styleAttr = isCenter ? ' ss:StyleID="CenterCell"' : '';
+        xml += `\n    <Cell${styleAttr}><Data ss:Type="String">${escapeXml(cell)}</Data></Cell>`;
+      });
+      xml += `\n   </Row>`;
+    });
+
+    xml += `\n  </Table>
+ </Worksheet>
+</Workbook>`;
+
+    const defaultName = `Data_${selectedLembaga.nama.replace(/[^a-zA-Z0-9_-]/g, '_')}_${selectedGender}_${new Date().toISOString().split('T')[0]}.xls`;
+    const filename = customFileName
+      ? (customFileName.toLowerCase().endsWith('.xls') || customFileName.toLowerCase().endsWith('.xlsx') ? customFileName : `${customFileName}.xls`)
+      : defaultName;
+
+    const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Handle printing PDF for Lembaga
+  const handlePrintPDFLembaga = (customFileName?: string) => {
     if (!selectedLembaga) return;
     const profile = getPesantrenProfile();
     const studentsToPrint = allStudentsOfLembaga;
@@ -2567,42 +2681,55 @@ export default function LembagaKelasSub({
       alert('Gagal membuka jendela cetak. Pastikan pop-up dibolehkan di peramban Anda.');
       return;
     }
+    const noStatistik = selectedLembaga.nomorStatistik || selectedLembaga.nomor_statistik || '-';
+    const npsn = selectedLembaga.npsn || '-';
     const dateStr = new Date().toLocaleDateString('id-ID', {
       day: 'numeric',
       month: 'long',
       year: 'numeric'
     });
-    const isFormal = activeTab === 'Formal';
+
     const rowsHtml = studentsToPrint.map((s, idx) => `
       <tr>
         <td style="text-align: center;">${idx + 1}</td>
-        <td>${s.nis || '-'}</td>
+        <td style="font-family: monospace; font-size: 8.5px;">${s.nism || '-'}</td>
+        <td style="font-family: monospace; font-size: 8.5px;">${s.nisn || '-'}</td>
         <td><strong>${s.nama}</strong></td>
-        <td>${s.nik || '-'}</td>
-        <td>${s.nisn || '-'}</td>
-        <td>${s.indukMhd || s.indukWustho || s.indukUlya || '-'}</td>
-        ${isFormal ? `<td>${s.statusEmis || '-'}</td>` : `<td>${s.kamar || '-'}</td>`}
+        <td>${s.tempatLahir || '-'}</td>
+        <td style="font-family: monospace; font-size: 8.5px;">${formatTanggalIndo(s.tanggalLahir)}</td>
+        <td style="text-align: center;">${getSantriAgeDisplay(s.tanggalLahir)}</td>
+        <td style="text-align: center; font-weight: bold;">${s.gender === 'Putra' ? 'L' : s.gender === 'Putri' ? 'P' : (s.gender || '-')}</td>
+        <td>${s.namaAyah || '-'}</td>
+        <td>${s.namaIbu || '-'}</td>
+        <td style="text-align: center;">${s.statusEmis || 'Belum'}</td>
+        <td style="text-align: center;">${s.statusVerval || (s.nisn && s.nisn.trim() !== '' ? 'Sukses' : 'Proses')}</td>
         <td style="text-align: center;">${s.statusKeanggotaan || 'Aktif'}</td>
+        <td>${s.kelasMhd || s.pendidikanInternal || s.indukMhd || '-'}</td>
+        <td style="text-align: center;">${s.semester || 'Semester 1'}</td>
       </tr>
     `).join('');
+
     const html = `
       <!DOCTYPE html>
       <html>
       <head>
-        <title>DATA INDUK SANTRI - ${selectedLembaga.nama.toUpperCase()}</title>
+        <title>${customFileName || `DATA SANTRI - ${selectedLembaga.nama.toUpperCase()}`}</title>
         <style>
-          @page { size: A4 landscape; margin: 12mm; }
-          body { font-family: sans-serif; color: #1e293b; margin: 0; padding: 10px; font-size: 10px; }
-          .header { text-align: center; border-bottom: 2px solid #00693E; padding-bottom: 8px; margin-bottom: 12px; }
-          .header h1 { margin: 0; font-size: 16px; color: #00693E; font-weight: bold; }
-          .header p { margin: 2px 0 0; font-size: 10px; color: #64748b; }
-          .title { text-align: center; font-size: 13px; font-weight: bold; margin-bottom: 4px; text-transform: uppercase; }
-          .info { margin-bottom: 10px; font-size: 10px; display: flex; justify-content: space-between; }
-          table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-          th, td { border: 1px solid #cbd5e1; padding: 5px 6px; font-size: 9.5px; text-align: left; }
-          th { background-color: #f1f5f9; font-weight: bold; color: #334155; }
+          @page { size: A4 landscape; margin: 10mm; }
+          body { font-family: sans-serif; color: #1e293b; margin: 0; padding: 10px; font-size: 9px; }
+          .header { text-align: center; border-bottom: 2px solid #00693E; padding-bottom: 8px; margin-bottom: 10px; }
+          .header h1 { margin: 0; font-size: 16px; color: #00693E; font-weight: bold; text-transform: uppercase; }
+          .header p { margin: 2px 0 0; font-size: 9.5px; color: #64748b; }
+          .title { text-align: center; font-size: 13px; font-weight: bold; margin-bottom: 4px; text-transform: uppercase; color: #0f172a; }
+          .meta-box { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; margin-bottom: 10px; display: flex; justify-content: space-between; font-size: 9.5px; }
+          .meta-item { display: inline-block; margin-right: 15px; }
+          .meta-label { font-weight: bold; color: #64748b; }
+          .meta-val { font-weight: bold; color: #0f172a; font-family: monospace; }
+          table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+          th, td { border: 1px solid #cbd5e1; padding: 4.5px 5px; font-size: 8.5px; text-align: left; }
+          th { background-color: #f1f5f9; font-weight: bold; color: #334155; text-align: center; text-transform: uppercase; font-size: 8.5px; }
           tr:nth-child(even) { background-color: #f8fafc; }
-          .footer { margin-top: 20px; text-align: right; font-size: 9.5px; color: #64748b; }
+          .footer { margin-top: 15px; text-align: right; font-size: 8.5px; color: #64748b; }
         </style>
       </head>
       <body>
@@ -2610,22 +2737,36 @@ export default function LembagaKelasSub({
           <h1>${profile.namaPesantren || 'PONDOK PESANTREN'}</h1>
           <p>${profile.alamat || ''} ${(profile as any).kota ? ' - ' + (profile as any).kota : ''}</p>
         </div>
-        <div class="title">DATA INDUK SANTRI - ${selectedLembaga.nama.toUpperCase()}</div>
-        <div class="info">
-          <span><strong>Gender:</strong> Santri ${selectedGender} | <strong>Total Santri:</strong> ${studentsToPrint.length} Santri</span>
-          <span>Dicetak pada: ${dateStr}</span>
+        <div class="title">DATA SANTRI - ${selectedLembaga.nama.toUpperCase()} (${selectedGender.toUpperCase()})</div>
+        <div class="meta-box">
+          <div>
+            <span class="meta-item"><span class="meta-label">No. Statistik:</span> <span class="meta-val">${noStatistik}</span></span>
+            <span class="meta-item"><span class="meta-label">NPSN:</span> <span class="meta-val">${npsn}</span></span>
+            <span class="meta-item"><span class="meta-label">Gender:</span> <span>Santri ${selectedGender}</span></span>
+          </div>
+          <div>
+            <span class="meta-item"><span class="meta-label">Total Santri:</span> <strong>${studentsToPrint.length} Santri</strong></span>
+            <span class="meta-item"><span class="meta-label">Tanggal:</span> <span>${dateStr}</span></span>
+          </div>
         </div>
         <table>
           <thead>
             <tr>
-              <th style="width: 25px; text-align: center;">No</th>
-              <th style="width: 80px;">NIS</th>
-              <th>Nama Lengkap Santri</th>
-              <th style="width: 110px;">NIK</th>
-              <th style="width: 90px;">NISN</th>
-              <th style="width: 80px;">No. Induk</th>
-              ${isFormal ? '<th style="width: 80px;">EMIS</th>' : '<th style="width: 80px;">Kamar</th>'}
-              <th style="width: 70px; text-align: center;">Status</th>
+              <th style="width: 22px;">NO</th>
+              <th style="width: 65px;">NISM</th>
+              <th style="width: 65px;">NISN</th>
+              <th>NAMA</th>
+              <th style="width: 75px;">TEMPAT LAHIR</th>
+              <th style="width: 60px;">TGL LAHIR</th>
+              <th style="width: 35px;">UMUR</th>
+              <th style="width: 25px;">L/P</th>
+              <th style="width: 75px;">NAMA AYAH</th>
+              <th style="width: 75px;">NAMA IBU</th>
+              <th style="width: 50px;">EMIS</th>
+              <th style="width: 50px;">VEVAL</th>
+              <th style="width: 50px;">STATUS</th>
+              <th style="width: 65px;">KELAS MHD</th>
+              <th style="width: 55px;">SEMESTER</th>
             </tr>
           </thead>
           <tbody>
@@ -2633,7 +2774,7 @@ export default function LembagaKelasSub({
           </tbody>
         </table>
         <div class="footer">
-          Dicetak dari Sistem SMART SANTRI - Modul Pendidikan
+          Dicetak dari Sistem SMART SANTRI - Modul Lembaga Pendidikan &bull; ${dateStr}
         </div>
         <script>
           window.onload = function() { window.print(); };
@@ -2643,6 +2784,11 @@ export default function LembagaKelasSub({
     `;
     printWindow.document.write(html);
     printWindow.document.close();
+  };
+
+  // Handle printing PDF for Data Induk
+  const handlePrintDataIndukPDF = () => {
+    handlePrintPDFLembaga();
   };
 
   // Handle printing PDF for Calon Peserta Didik
@@ -3266,7 +3412,8 @@ export default function LembagaKelasSub({
                 setSelectedKelas(null);
               }
             }}
-            onPrint={handlePrintLembagaPDF}
+            onExport={() => setIsExportLembagaModalOpen(true)}
+            onPrint={() => setIsExportLembagaModalOpen(true)}
             onEdit={() => handleOpenLembagaModal(selectedLembaga)}
             onDelete={() => handleDeleteLembagaClick(selectedLembaga.id, selectedLembaga.nama)}
             generate4LetterKode={generate4LetterKode}
@@ -3287,7 +3434,8 @@ export default function LembagaKelasSub({
             statusFilter={dataIndukStatusFilter}
             onStatusFilterChange={setDataIndukStatusFilter}
             onBackToHub={() => setSelectedLembagaView('hub')}
-            onPrintPDF={handlePrintDataIndukPDF}
+            onExport={() => setIsExportLembagaModalOpen(true)}
+            onPrintPDF={() => setIsExportLembagaModalOpen(true)}
             onSelectStudentDetail={(s) => setSelectedSantriForDetail(s)}
             onUpdateSantri={onUpdateSantri}
             selectedGender={selectedGender}
@@ -3372,16 +3520,16 @@ export default function LembagaKelasSub({
                   </span>
                 </div>
 
-                {/* Lembaga Action Buttons (Cetak, Edit, Hapus) */}
+                {/* Lembaga Action Buttons (Export Data, Edit, Hapus) */}
                 <div className="flex items-center gap-2">
                   <button
                     disabled={isSelectionMode}
-                    onClick={handlePrintLembagaPDF}
+                    onClick={() => setIsExportLembagaModalOpen(true)}
                     className="inline-flex items-center justify-center bg-white border border-slate-200 h-9 px-3 sm:px-3.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer shadow-3xs active:scale-95 transition-all disabled:opacity-40 gap-1.5"
-                    title="Cetak Data Lembaga"
+                    title="Export Data Santri"
                   >
-                    <Printer className="h-4 w-4 text-slate-600" />
-                    <span className="hidden sm:inline">Cetak Unit</span>
+                    <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                    <span className="hidden sm:inline">Export Data</span>
                   </button>
                   {canWriteCurrent && (
                     <>
@@ -5990,6 +6138,25 @@ export default function LembagaKelasSub({
           onSave={(updated) => {
             onUpdateSantri?.(updated);
             setEditingSantriForKolom(null);
+          }}
+        />
+      )}
+
+      {/* Export Lembaga Data Modal */}
+      {selectedLembaga && (
+        <ExportModal
+          isOpen={isExportLembagaModalOpen}
+          onClose={() => setIsExportLembagaModalOpen(false)}
+          title={`Ekspor Data ${selectedLembaga.nama}`}
+          description={`Pilih format dokumen yang Anda butuhkan untuk mengunduh Excel (.xls) atau mencetak data santri ${selectedLembaga.nama} saat ini.`}
+          defaultFileName={`Data_${selectedLembaga.nama.replace(/[^a-zA-Z0-9_-]/g, '_')}_${selectedGender}_${new Date().toISOString().split('T')[0]}`}
+          onExportExcel={(fileName) => {
+            handleExportExcelLembaga(fileName);
+            setIsExportLembagaModalOpen(false);
+          }}
+          onPrintPDF={(fileName) => {
+            handlePrintPDFLembaga(fileName);
+            setIsExportLembagaModalOpen(false);
           }}
         />
       )}
