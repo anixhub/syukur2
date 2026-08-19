@@ -9,6 +9,7 @@ export interface Santri {
   tanggalMasuk: string;
 
   // Identitas Santri tambahan
+  nism?: string;
   nisn?: string;
   indukMhd?: string;
   indukWustho?: string;
@@ -50,6 +51,8 @@ export interface Santri {
   statusEmis?: 'Terdaftar' | 'Invalid' | 'Belum';
   statusVerval?: 'Sukses' | 'Proses';
   tahunLulus?: string;
+  semester?: string;
+  kelasMhd?: string;
 
   // Administrasi
   tanggalKeluar?: string;

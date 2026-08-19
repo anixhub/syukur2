@@ -18,6 +18,7 @@ import LembagaHubView from './LembagaHubView';
 import LembagaDataIndukView from './LembagaDataIndukView';
 import LembagaCalonView from './LembagaCalonView';
 import LembagaLulusanView from './LembagaLulusanView';
+import EditSantriKolomModal from './EditSantriKolomModal';
 
 const MONTH_NAMES = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
@@ -181,7 +182,7 @@ export default function LembagaKelasSub({
   const [currentPage, setCurrentPage] = useState(1);
   
   // Sorting states
-  const [sortField, setSortField] = useState<'nama' | 'nik' | 'nis' | 'nisn' | 'indukMhd' | 'indukWustho' | 'indukUlya' | 'statusKeanggotaan' | 'statusEmis' | 'statusVerval' | 'kamar' | null>(null);
+  const [sortField, setSortField] = useState<'nama' | 'nism' | 'nisn' | 'tempatLahir' | 'tanggalLahir' | 'gender' | 'namaAyah' | 'namaIbu' | 'statusKeanggotaan' | 'statusEmis' | 'statusVerval' | 'kelasMhd' | 'semester' | 'nik' | 'indukMhd' | 'indukWustho' | 'indukUlya' | 'kamar' | 'nis' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   // Scroll & Table navigation states
@@ -330,6 +331,9 @@ export default function LembagaKelasSub({
   // Class Delete Confirmation state
   const [classToDelete, setClassToDelete] = useState<{ id: string; name: string } | null>(null);
 
+  // Edit student column modal state
+  const [editingSantriForKolom, setEditingSantriForKolom] = useState<Santri | null>(null);
+
   // Batas Usia states for Calon Pelajar
   const [kelBatasUsiaHari, setKelBatasUsiaHari] = useState<number>(1);
   const [kelBatasUsiaBulan, setKelBatasUsiaBulan] = useState<number>(7);
@@ -374,7 +378,35 @@ export default function LembagaKelasSub({
     }
   };
 
-  const handleSort = (field: 'nama' | 'nik' | 'nis' | 'nisn' | 'indukMhd' | 'indukWustho' | 'indukUlya' | 'statusKeanggotaan' | 'statusEmis' | 'statusVerval' | 'kamar') => {
+  const calculateAge = (birthDateStr?: string): string => {
+    if (!birthDateStr) return '-';
+    try {
+      const birth = new Date(birthDateStr);
+      if (isNaN(birth.getTime())) return '-';
+      const today = new Date();
+      let age = today.getFullYear() - birth.getFullYear();
+      const m = today.getMonth() - birth.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
+        age--;
+      }
+      return age >= 0 ? `${age} Thn` : '-';
+    } catch {
+      return '-';
+    }
+  };
+
+  const formatTanggal = (dateStr?: string): string => {
+    if (!dateStr) return '-';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      return d.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const handleSort = (field: 'nama' | 'nism' | 'nisn' | 'tempatLahir' | 'tanggalLahir' | 'gender' | 'namaAyah' | 'namaIbu' | 'statusKeanggotaan' | 'statusEmis' | 'statusVerval' | 'kelasMhd' | 'semester' | 'nik' | 'indukMhd' | 'indukWustho' | 'indukUlya' | 'kamar') => {
     if (sortField === field) {
       setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
@@ -383,7 +415,7 @@ export default function LembagaKelasSub({
     }
   };
 
-  const renderSortableHeader = (label: string, field: 'nama' | 'nik' | 'nis' | 'nisn' | 'indukMhd' | 'indukWustho' | 'indukUlya' | 'statusKeanggotaan' | 'statusEmis' | 'statusVerval' | 'kamar', extraClass: string, justify: string = 'justify-start', styleOverride?: React.CSSProperties) => {
+  const renderSortableHeader = (label: string, field: 'nama' | 'nism' | 'nisn' | 'tempatLahir' | 'tanggalLahir' | 'gender' | 'namaAyah' | 'namaIbu' | 'statusKeanggotaan' | 'statusEmis' | 'statusVerval' | 'kelasMhd' | 'semester' | 'nik' | 'indukMhd' | 'indukWustho' | 'indukUlya' | 'kamar', extraClass: string, justify: string = 'justify-start', styleOverride?: React.CSSProperties) => {
     const isSorted = sortField === field;
     return (
       <th 
@@ -435,6 +467,7 @@ export default function LembagaKelasSub({
 
     return (
       <tr className="text-[11px] font-black uppercase tracking-wider text-slate-600 border-b border-slate-200 bg-slate-100 select-none">
+        {/* 1. NO */}
         <th style={getStyle()} className="sticky left-0 z-20 w-[42px] min-w-[42px] max-w-[42px] pl-2 pr-1 py-4 bg-slate-100 border-r border-slate-200 text-center font-black text-slate-600">
           {isSelectionMode ? (
             <button
@@ -462,24 +495,55 @@ export default function LembagaKelasSub({
               {!isAllSelected && isSomeSelected && <div className="h-2 w-2 bg-[#00693E] rounded-xs" />}
             </button>
           ) : (
-            "No"
+            "NO"
           )}
         </th>
-        {renderSortableHeader('Profil Santri', 'nama', 'sticky left-[42px] z-20 w-[200px] min-w-[200px] max-w-[200px] pl-2 py-4 bg-slate-100 border-r border-slate-200 relative', 'justify-start', getStyle())}
-        {activeTab === 'Formal' && renderSortableHeader('NIK', 'nik', 'w-[130px] min-w-[130px] pl-1 py-4 bg-slate-100', 'justify-start', getStyle())}
-        {renderSortableHeader('NISN', 'nisn', 'w-[110px] min-w-[110px] pl-1 py-4 bg-slate-100', 'justify-start', getStyle())}
-        {renderSortableHeader('Induk MHD', 'indukMhd', 'w-[110px] min-w-[110px] pl-1 py-4 bg-slate-100', 'justify-start', getStyle())}
-        {renderSortableHeader('Induk Wustho', 'indukWustho', 'w-[110px] min-w-[110px] pl-1 py-4 bg-slate-100', 'justify-start', getStyle())}
-        {renderSortableHeader('Induk Ulya', 'indukUlya', 'w-[110px] min-w-[110px] pl-1 py-4 bg-slate-100', 'justify-start', getStyle())}
-        {activeTab !== 'Formal' && renderSortableHeader('Status', 'statusKeanggotaan', 'w-[100px] min-w-[100px] pl-1 py-4 bg-slate-100', 'justify-start', getStyle())}
-        {activeTab === 'Formal' ? (
-          <>
-            {isCalonPelajarPage && renderSortableHeader('EMIS', 'statusEmis', 'w-[100px] min-w-[100px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
-            {!isCalonPelajarPage && renderSortableHeader('Verval', 'statusVerval', 'w-[100px] min-w-[100px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
-          </>
-        ) : (
-          renderSortableHeader('Kamar', 'kamar', 'w-[110px] min-w-[110px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())
-        )}
+
+        {/* 2. NISM */}
+        {renderSortableHeader('NISM', 'nism', 'w-[100px] min-w-[100px] pl-2 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 3. NISN */}
+        {renderSortableHeader('NISN', 'nisn', 'w-[110px] min-w-[110px] pl-2 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 4. NAMA (Sticky Left) */}
+        {renderSortableHeader('Nama Santri', 'nama', 'sticky left-[42px] z-20 w-[200px] min-w-[200px] max-w-[200px] pl-2 py-4 bg-slate-100 border-r border-slate-200 relative', 'justify-start', getStyle())}
+
+        {/* 5. TEMPAT LAHIR */}
+        {renderSortableHeader('Tempat Lahir', 'tempatLahir', 'w-[130px] min-w-[130px] pl-2 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 6. TANGGAL LAHIR */}
+        {renderSortableHeader('Tgl Lahir', 'tanggalLahir', 'w-[110px] min-w-[110px] pl-2 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 7. UMUR */}
+        <th style={getStyle()} className="w-[70px] min-w-[70px] px-2 py-4 bg-slate-100 border-r border-slate-200 text-center font-black text-slate-600">
+          UMUR
+        </th>
+
+        {/* 8. JENIS KELAMIN */}
+        {renderSortableHeader('L/P', 'gender', 'w-[60px] min-w-[60px] px-2 py-4 bg-slate-100 border-r border-slate-200 text-center', 'justify-center', getStyle())}
+
+        {/* 9. NAMA AYAH */}
+        {renderSortableHeader('Nama Ayah', 'namaAyah', 'w-[140px] min-w-[140px] pl-2 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 10. NAMA IBU */}
+        {renderSortableHeader('Nama Ibu', 'namaIbu', 'w-[140px] min-w-[140px] pl-2 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 11. EMIS */}
+        {renderSortableHeader('EMIS', 'statusEmis', 'w-[100px] min-w-[100px] px-2 py-4 bg-slate-100 border-r border-slate-200 text-center', 'justify-center', getStyle())}
+
+        {/* 12. VERVAL */}
+        {renderSortableHeader('Verval', 'statusVerval', 'w-[100px] min-w-[100px] px-2 py-4 bg-slate-100 border-r border-slate-200 text-center', 'justify-center', getStyle())}
+
+        {/* 13. STATUS KEAKTIFAN */}
+        {renderSortableHeader('Status', 'statusKeanggotaan', 'w-[100px] min-w-[100px] px-2 py-4 bg-slate-100 border-r border-slate-200 text-center', 'justify-center', getStyle())}
+
+        {/* 14. KELAS MHD */}
+        {renderSortableHeader('Kelas MHD', 'kelasMhd', 'w-[110px] min-w-[110px] pl-2 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 15. SEMESTER */}
+        {renderSortableHeader('Semester', 'semester', 'w-[100px] min-w-[100px] pl-2 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 16. AKSI (Sticky Right) */}
         <th style={getStyle()} className="sticky right-0 z-20 w-[56px] min-w-[56px] max-w-[56px] px-2 py-4 bg-slate-100 border-l border-slate-200 font-black text-slate-600 text-center shadow-[-2px_0_5px_rgba(0,0,0,0.03)]">
           <span>Aksi</span>
         </th>
@@ -1187,7 +1251,12 @@ export default function LembagaKelasSub({
         (s.nama || '').toLowerCase().includes(q) ||
         (s.nik && s.nik.toLowerCase().includes(q)) ||
         (s.nis && s.nis.toLowerCase().includes(q)) ||
+        (s.nism && s.nism.toLowerCase().includes(q)) ||
         (s.nisn && s.nisn.toLowerCase().includes(q)) ||
+        (s.tempatLahir && s.tempatLahir.toLowerCase().includes(q)) ||
+        (s.namaAyah && s.namaAyah.toLowerCase().includes(q)) ||
+        (s.namaIbu && s.namaIbu.toLowerCase().includes(q)) ||
+        (s.kelasMhd && s.kelasMhd.toLowerCase().includes(q)) ||
         (s.indukMhd && s.indukMhd.toLowerCase().includes(q)) ||
         (s.indukWustho && s.indukWustho.toLowerCase().includes(q)) ||
         (s.indukUlya && s.indukUlya.toLowerCase().includes(q))
@@ -1226,12 +1295,36 @@ export default function LembagaKelasSub({
     return [...searchedStudents].sort((a, b) => {
       if (!sortField) return 0;
       
-      let valA = a[sortField] || '';
-      let valB = b[sortField] || '';
+      let valA = (a as any)[sortField] || '';
+      let valB = (b as any)[sortField] || '';
       
       if (sortField === 'nik') {
         valA = a.nik || '';
         valB = b.nik || '';
+      } else if (sortField === 'nism') {
+        valA = a.nism || '';
+        valB = b.nism || '';
+      } else if (sortField === 'nisn') {
+        valA = a.nisn || '';
+        valB = b.nisn || '';
+      } else if (sortField === 'tempatLahir') {
+        valA = a.tempatLahir || '';
+        valB = b.tempatLahir || '';
+      } else if (sortField === 'tanggalLahir') {
+        valA = a.tanggalLahir || '';
+        valB = b.tanggalLahir || '';
+      } else if (sortField === 'namaAyah') {
+        valA = a.namaAyah || '';
+        valB = b.namaAyah || '';
+      } else if (sortField === 'namaIbu') {
+        valA = a.namaIbu || '';
+        valB = b.namaIbu || '';
+      } else if (sortField === 'kelasMhd') {
+        valA = a.kelasMhd || a.pendidikanInternal || a.indukMhd || '';
+        valB = b.kelasMhd || b.pendidikanInternal || b.indukMhd || '';
+      } else if (sortField === 'semester') {
+        valA = a.semester || 'Semester 1';
+        valB = b.semester || 'Semester 1';
       } else if (sortField === 'statusKeanggotaan') {
         valA = a.statusKeanggotaan || '';
         valB = b.statusKeanggotaan || '';
@@ -3196,6 +3289,7 @@ export default function LembagaKelasSub({
             onBackToHub={() => setSelectedLembagaView('hub')}
             onPrintPDF={handlePrintDataIndukPDF}
             onSelectStudentDetail={(s) => setSelectedSantriForDetail(s)}
+            onUpdateSantri={onUpdateSantri}
             selectedGender={selectedGender}
           />
         ) : selectedLembagaView === 'calon_peserta_didik' ? (
@@ -3212,6 +3306,7 @@ export default function LembagaKelasSub({
             onBackToHub={() => setSelectedLembagaView('hub')}
             onPrintPDF={handlePrintCalonPDF}
             onSelectStudentDetail={(s) => setSelectedSantriForDetail(s)}
+            onUpdateSantri={onUpdateSantri}
             selectedGender={selectedGender}
             canWriteCurrent={canWriteCurrent}
             onTransferStudent={handleTransferFromCalon}
@@ -3859,7 +3954,7 @@ export default function LembagaKelasSub({
                                 className="overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
                               >
                                 <table 
-                                  className="w-full text-left border-collapse min-w-[1050px]"
+                                  className="w-full text-left border-collapse min-w-[1450px]"
                                   style={{
                                     width: floatingTableWidth ? `${floatingTableWidth}px` : '100%',
                                     minWidth: floatingTableWidth ? `${floatingTableWidth}px` : '100%',
@@ -3881,7 +3976,7 @@ export default function LembagaKelasSub({
                             onScroll={handleTableScroll}
                             className="overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
                           >
-                            <table className="w-full text-left border-collapse min-w-[1050px]">
+                            <table className="w-full text-left border-collapse min-w-[1450px]">
                               {/* Table Header - 100% Solid Background */}
                               <thead style={{ visibility: isScrolled ? 'hidden' : 'visible' }}>
                                 {renderTableHeadContents(false)}
@@ -3891,7 +3986,7 @@ export default function LembagaKelasSub({
                               <tbody className="divide-y divide-slate-100">
                                 {filteredStudents.length === 0 ? (
                                   <tr>
-                                    <td colSpan={7} className="py-16 text-center text-slate-400 font-medium text-xs">
+                                    <td colSpan={16} className="py-16 text-center text-slate-400 font-medium text-xs">
                                       <div className="flex flex-col items-center justify-center gap-2.5">
                                         <p className="italic">Belum ada santri terdaftar di kelas/kelompok ini.</p>
                                         {canWriteCurrent && (
@@ -3933,8 +4028,8 @@ export default function LembagaKelasSub({
                                       isSelectionMode ? 'cursor-pointer' : ''
                                     } ${rowBgClass}`}
                                   >
-                                    {/* No or Checkbox Column */}
-                                    <td className={`sticky left-0 z-10 w-[42px] min-w-[42px] max-w-[42px] text-center pl-2 pr-1 py-4.5 select-none transition-colors ${stickyBg}`}>
+                                    {/* 1. NO or Checkbox Column */}
+                                    <td className={`sticky left-0 z-10 w-[42px] min-w-[42px] max-w-[42px] text-center pl-2 pr-1 py-3.5 select-none transition-colors border-r border-slate-100 ${stickyBg}`}>
                                       {isSelectionMode ? (
                                         <input
                                           type="checkbox"
@@ -3948,8 +4043,18 @@ export default function LembagaKelasSub({
                                       )}
                                     </td>
 
-                                    {/* Nama Lengkap with Avatar & NIS (Profil) */}
-                                    <td className={`sticky left-[42px] z-10 w-[200px] min-w-[200px] max-w-[200px] pl-2 py-3.5 transition-colors border-r border-slate-100 ${stickyBg}`}>
+                                    {/* 2. NISM */}
+                                    <td className="w-[100px] min-w-[100px] font-mono font-bold text-slate-700 truncate px-2.5 py-3.5 border-r border-slate-100">
+                                      {s.nism ? s.nism : <span className="text-slate-300">-</span>}
+                                    </td>
+
+                                    {/* 3. NISN */}
+                                    <td className="w-[110px] min-w-[110px] font-mono font-bold text-slate-600 truncate px-2.5 py-3.5 border-r border-slate-100">
+                                      {s.nisn || <span className="text-slate-300">-</span>}
+                                    </td>
+
+                                    {/* 4. NAMA (Sticky Left) */}
+                                    <td className={`sticky left-[42px] z-10 w-[200px] min-w-[200px] max-w-[200px] pl-2 pr-2 py-3 transition-colors border-r border-slate-100 ${stickyBg}`}>
                                       <div className="flex items-center gap-2.5 min-w-0">
                                         {renderStudentAvatar(s)}
                                         <div className="min-w-0 flex-1">
@@ -3972,25 +4077,7 @@ export default function LembagaKelasSub({
                                             </span>
                                           </div>
 
-                                          {/* Baris 2: NIS & Status */}
-                                          <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
-                                            <span className="text-[10px] text-slate-400 font-mono font-medium truncate">
-                                              {s.nis || '-'}
-                                            </span>
-                                            {activeTab === 'Formal' && (
-                                              <span className={`inline-flex items-center px-1.5 py-0.2 rounded-full text-[8px] font-black uppercase tracking-wide shrink-0 ${
-                                                (s.statusKeanggotaan || 'Aktif') === 'Aktif'
-                                                  ? 'bg-[#E6F4EA] text-[#137333]'
-                                                  : s.statusKeanggotaan === 'Alumni'
-                                                    ? 'bg-purple-100 text-purple-800 border border-purple-200/80'
-                                                    : 'bg-slate-100 text-slate-500'
-                                              }`}>
-                                                {s.statusKeanggotaan || 'Aktif'}
-                                              </span>
-                                            )}
-                                          </div>
-
-                                          {/* Baris 3: Alamat */}
+                                          {/* Baris 2: Alamat */}
                                           {(s.desa || s.kecamatan || s.kabupaten) && (
                                             <div 
                                               className="text-[9px] text-slate-400 font-extrabold uppercase truncate mt-0.5" 
@@ -4003,143 +4090,143 @@ export default function LembagaKelasSub({
                                       </div>
                                     </td>
 
-                                    {/* NIK (Khusus Pendidikan Formal) */}
-                                    {activeTab === 'Formal' && (
-                                      <td className="w-[130px] min-w-[130px] font-mono font-bold text-slate-600 truncate pl-1 py-4.5">
-                                        {s.nik || <span className="text-slate-300">-</span>}
-                                      </td>
-                                    )}
-
-                                    {/* NISN */}
-                                    <td className="w-[110px] min-w-[110px] font-mono font-bold text-slate-600 truncate pl-1 py-4.5">
-                                      {s.nisn || <span className="text-slate-300">-</span>}
+                                    {/* 5. TEMPAT LAHIR */}
+                                    <td className="w-[130px] min-w-[130px] text-slate-700 font-medium truncate px-2.5 py-3.5 border-r border-slate-100" title={s.tempatLahir}>
+                                      {s.tempatLahir || <span className="text-slate-300">-</span>}
                                     </td>
 
-                                    {/* Induk MHD */}
-                                    <td className="w-[110px] min-w-[110px] font-mono font-bold text-slate-400 truncate pl-1 py-4.5">
-                                      {s.indukMhd || <span className="text-slate-300">-</span>}
+                                    {/* 6. TANGGAL LAHIR */}
+                                    <td className="w-[110px] min-w-[110px] text-slate-600 font-mono font-medium truncate px-2.5 py-3.5 border-r border-slate-100">
+                                      {formatTanggal(s.tanggalLahir)}
                                     </td>
 
-                                    {/* Induk Wustho */}
-                                    <td className="w-[110px] min-w-[110px] font-mono font-bold text-slate-400 truncate pl-1 py-4.5">
-                                      {s.indukWustho || <span className="text-slate-300">-</span>}
+                                    {/* 7. UMUR */}
+                                    <td className="w-[70px] min-w-[70px] text-center font-bold text-slate-700 px-2 py-3.5 border-r border-slate-100">
+                                      {calculateAge(s.tanggalLahir)}
                                     </td>
 
-                                    {/* Induk Ulya */}
-                                    <td className="w-[110px] min-w-[110px] font-mono font-bold text-slate-400 truncate pl-1 py-4.5">
-                                      {s.indukUlya || <span className="text-slate-300">-</span>}
+                                    {/* 8. JENIS KELAMIN */}
+                                    <td className="w-[60px] min-w-[60px] text-center px-2 py-3.5 border-r border-slate-100">
+                                      <span className={`inline-flex items-center justify-center h-5 w-5 rounded-full text-[10px] font-black ${
+                                        s.gender === 'Putra' ? 'bg-indigo-50 text-indigo-700' : 'bg-rose-50 text-rose-700'
+                                      }`}>
+                                        {s.gender === 'Putra' ? 'L' : s.gender === 'Putri' ? 'P' : (s.gender || '-')}
+                                      </span>
                                     </td>
 
-                                    {/* Status (Non-Formal) */}
-                                    {activeTab !== 'Formal' && (
-                                      <td className="w-[100px] min-w-[100px] font-semibold pl-1 py-4.5">
-                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide ${
-                                          s.statusKeanggotaan === 'Aktif'
-                                            ? 'bg-[#E6F4EA] text-[#137333]'
-                                            : 'bg-slate-100 text-slate-500'
-                                        }`}>
-                                          {s.statusKeanggotaan || 'Aktif'}
-                                        </span>
-                                      </td>
-                                    )}
+                                    {/* 9. NAMA AYAH */}
+                                    <td className="w-[140px] min-w-[140px] text-slate-700 font-medium truncate px-2.5 py-3.5 border-r border-slate-100" title={s.namaAyah}>
+                                      {s.namaAyah || <span className="text-slate-300">-</span>}
+                                    </td>
 
-                                    {/* EMIS / Verval / Kamar Column */}
-                                    {activeTab === 'Formal' ? (
-                                      <>
-                                        {/* EMIS Column */}
-                                        {isCalonPelajarPage && (
-                                      <td className="w-[100px] min-w-[100px] pl-1 py-4.5 relative">
-                                        <div className="relative inline-block text-left">
-                                          <button
-                                            disabled={!canWriteCurrent}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              if (activeEmisDropdownId === s.id) {
-                                                setActiveEmisDropdownId(null);
-                                                setEmisDropdownPos(null);
-                                              } else {
-                                                const rect = e.currentTarget.getBoundingClientRect();
-                                                const spaceBelow = window.innerHeight - rect.bottom;
-                                                const spaceAbove = rect.top;
-                                                const isUpward = spaceBelow < 180 && spaceAbove > spaceBelow;
+                                    {/* 10. NAMA IBU */}
+                                    <td className="w-[140px] min-w-[140px] text-slate-700 font-medium truncate px-2.5 py-3.5 border-r border-slate-100" title={s.namaIbu}>
+                                      {s.namaIbu || <span className="text-slate-300">-</span>}
+                                    </td>
 
-                                                setEmisDropdownPos({
-                                                  top: isUpward ? rect.top - 6 : rect.bottom + 6,
-                                                  left: Math.max(10, Math.min(window.innerWidth - 150, rect.left)),
-                                                  isUpward
-                                                });
-                                                setActiveEmisDropdownId(s.id);
-                                                setActiveVervalDropdownId(null);
-                                                setVervalDropdownPos(null);
-                                              }
-                                            }}
-                                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide transition-colors cursor-pointer shadow-2xs ${
-  s.statusEmis === 'Terdaftar'
-    ? 'bg-[#E6F4EA] text-[#137333] hover:bg-emerald-100'
-    : s.statusEmis === 'Invalid'
-    ? 'bg-rose-50 text-rose-700 hover:bg-rose-100'
-    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-}`}
-                                          >
-                                            <span>{s.statusEmis || 'Belum'}</span>
-                                            <ChevronsUpDown className="h-3 w-3 opacity-60 shrink-0" />
-                                          </button>
-                                        </div>
-                                      </td>
-                                    )}
+                                    {/* 11. EMIS */}
+                                    <td className="w-[100px] min-w-[100px] text-center px-2 py-3.5 border-r border-slate-100 relative">
+                                      <div className="relative inline-block text-left">
+                                        <button
+                                          disabled={!canWriteCurrent}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (activeEmisDropdownId === s.id) {
+                                              setActiveEmisDropdownId(null);
+                                              setEmisDropdownPos(null);
+                                            } else {
+                                              const rect = e.currentTarget.getBoundingClientRect();
+                                              const spaceBelow = window.innerHeight - rect.bottom;
+                                              const spaceAbove = rect.top;
+                                              const isUpward = spaceBelow < 180 && spaceAbove > spaceBelow;
 
-                                    {/* Verval Column */}
-                                    {!isCalonPelajarPage && (
-                                      <td className="w-[100px] min-w-[100px] pl-1 py-4.5 relative">
-                                        <div className="relative inline-block text-left">
-                                          <button
-                                            disabled={!canWriteCurrent}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              if (activeVervalDropdownId === s.id) {
-                                                setActiveVervalDropdownId(null);
-                                                setVervalDropdownPos(null);
-                                              } else {
-                                                const rect = e.currentTarget.getBoundingClientRect();
-                                                const spaceBelow = window.innerHeight - rect.bottom;
-                                                const spaceAbove = rect.top;
-                                                const isUpward = spaceBelow < 180 && spaceAbove > spaceBelow;
+                                              setEmisDropdownPos({
+                                                top: isUpward ? rect.top - 6 : rect.bottom + 6,
+                                                left: Math.max(10, Math.min(window.innerWidth - 150, rect.left)),
+                                                isUpward
+                                              });
+                                              setActiveEmisDropdownId(s.id);
+                                              setActiveVervalDropdownId(null);
+                                              setVervalDropdownPos(null);
+                                            }
+                                          }}
+                                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide transition-colors cursor-pointer shadow-2xs ${
+                                            s.statusEmis === 'Terdaftar'
+                                              ? 'bg-[#E6F4EA] text-[#137333] hover:bg-emerald-100'
+                                              : s.statusEmis === 'Invalid'
+                                              ? 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+                                              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                          }`}
+                                        >
+                                          <span>{s.statusEmis || 'Belum'}</span>
+                                          <ChevronsUpDown className="h-3 w-3 opacity-60 shrink-0" />
+                                        </button>
+                                      </div>
+                                    </td>
 
-                                                setVervalDropdownPos({
-                                                  top: isUpward ? rect.top - 6 : rect.bottom + 6,
-                                                  left: Math.max(10, Math.min(window.innerWidth - 140, rect.left)),
-                                                  isUpward
-                                                });
-                                                setActiveVervalDropdownId(s.id);
-                                                setActiveEmisDropdownId(null);
-                                                setEmisDropdownPos(null);
-                                              }
-                                            }}
-                                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide transition-colors cursor-pointer shadow-2xs ${
-                                              (s.statusVerval || (isNisnValid ? 'Sukses' : 'Proses')) === 'Sukses'
-                                                ? 'bg-[#E6F4EA] text-[#137333] hover:bg-emerald-200'
-                                                : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
-                                            }`}
-                                          >
-                                            <span>{s.statusVerval || (isNisnValid ? 'Sukses' : 'Proses')}</span>
-                                            <ChevronsUpDown className="h-3 w-3 opacity-60 shrink-0" />
-                                          </button>
-                                        </div>
-                                      </td>
-                                    )}
-                                  </>
-                                ) : (
-                                  /* Kamar Column */
-                                  <td className="w-[110px] min-w-[110px] pl-3 py-4.5 font-bold text-slate-700 truncate">
-                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100/80 text-slate-700 text-xs font-bold border border-slate-200/60">
-                                      <Home className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                                      <span className="truncate">{s.kamar || '-'}</span>
-                                    </span>
-                                  </td>
-                                )}
+                                    {/* 12. VERVAL */}
+                                    <td className="w-[100px] min-w-[100px] text-center px-2 py-3.5 border-r border-slate-100 relative">
+                                      <div className="relative inline-block text-left">
+                                        <button
+                                          disabled={!canWriteCurrent}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (activeVervalDropdownId === s.id) {
+                                              setActiveVervalDropdownId(null);
+                                              setVervalDropdownPos(null);
+                                            } else {
+                                              const rect = e.currentTarget.getBoundingClientRect();
+                                              const spaceBelow = window.innerHeight - rect.bottom;
+                                              const spaceAbove = rect.top;
+                                              const isUpward = spaceBelow < 180 && spaceAbove > spaceBelow;
 
-                                {/* Aksi Column (Sticky Right) */}
-                                    <td className={`sticky right-0 z-10 w-[56px] min-w-[56px] max-w-[56px] text-center px-2 py-4.5 transition-colors border-l border-slate-200 shadow-[-2px_0_5px_rgba(0,0,0,0.03)] ${stickyBg}`}>
+                                              setVervalDropdownPos({
+                                                top: isUpward ? rect.top - 6 : rect.bottom + 6,
+                                                left: Math.max(10, Math.min(window.innerWidth - 140, rect.left)),
+                                                isUpward
+                                              });
+                                              setActiveVervalDropdownId(s.id);
+                                              setActiveEmisDropdownId(null);
+                                              setEmisDropdownPos(null);
+                                            }
+                                          }}
+                                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide transition-colors cursor-pointer shadow-2xs ${
+                                            (s.statusVerval || (isNisnValid ? 'Sukses' : 'Proses')) === 'Sukses'
+                                              ? 'bg-[#E6F4EA] text-[#137333] hover:bg-emerald-200'
+                                              : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+                                          }`}
+                                        >
+                                          <span>{s.statusVerval || (isNisnValid ? 'Sukses' : 'Proses')}</span>
+                                          <ChevronsUpDown className="h-3 w-3 opacity-60 shrink-0" />
+                                        </button>
+                                      </div>
+                                    </td>
+
+                                    {/* 13. STATUS KEAKTIFAN */}
+                                    <td className="w-[100px] min-w-[100px] text-center px-2 py-3.5 border-r border-slate-100">
+                                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide ${
+                                        (s.statusKeanggotaan || 'Aktif') === 'Aktif'
+                                          ? 'bg-[#E6F4EA] text-[#137333]'
+                                          : s.statusKeanggotaan === 'Alumni'
+                                          ? 'bg-purple-100 text-purple-800'
+                                          : 'bg-slate-100 text-slate-500'
+                                      }`}>
+                                        {s.statusKeanggotaan || 'Aktif'}
+                                      </span>
+                                    </td>
+
+                                    {/* 14. KELAS MHD */}
+                                    <td className="w-[110px] min-w-[110px] text-slate-700 font-medium truncate px-2.5 py-3.5 border-r border-slate-100">
+                                      {s.kelasMhd || s.pendidikanInternal || s.indukMhd || <span className="text-slate-300">-</span>}
+                                    </td>
+
+                                    {/* 15. SEMESTER */}
+                                    <td className="w-[100px] min-w-[100px] text-slate-700 font-medium truncate px-2.5 py-3.5 border-r border-slate-100">
+                                      {s.semester || 'Semester 1'}
+                                    </td>
+
+                                    {/* 16. Aksi Column (Sticky Right) */}
+                                    <td className={`sticky right-0 z-10 w-[56px] min-w-[56px] max-w-[56px] text-center px-2 py-3.5 transition-colors border-l border-slate-200 shadow-[-2px_0_5px_rgba(0,0,0,0.03)] ${stickyBg}`}>
                                       <div className="relative inline-block text-left" onClick={(e) => e.stopPropagation()}>
                                         <button
                                           disabled={isSelectionMode}
@@ -5690,6 +5777,17 @@ export default function LembagaKelasSub({
                   <>
                     <button
                       onClick={() => {
+                        setEditingSantriForKolom(s);
+                        setActiveActionStudentId(null);
+                        setStudentDropdownPos(null);
+                      }}
+                      className="w-full text-left px-3 py-1.5 hover:bg-emerald-50 hover:text-emerald-700 transition-colors cursor-pointer flex items-center gap-1.5 text-emerald-700 font-bold border-b border-slate-100"
+                    >
+                      <Pencil className="h-3 w-3 text-emerald-600" />
+                      <span>Edit Data</span>
+                    </button>
+                    <button
+                      onClick={() => {
                         setSelectedSantriForDetail(s);
                         setActiveActionStudentId(null);
                         setStudentDropdownPos(null);
@@ -5882,6 +5980,19 @@ export default function LembagaKelasSub({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Edit Santri Kolom Modal */}
+      {editingSantriForKolom && (
+        <EditSantriKolomModal
+          isOpen={Boolean(editingSantriForKolom)}
+          onClose={() => setEditingSantriForKolom(null)}
+          santri={editingSantriForKolom}
+          onSave={(updated) => {
+            onUpdateSantri?.(updated);
+            setEditingSantriForKolom(null);
+          }}
+        />
+      )}
 
     </div>
   );

@@ -993,7 +993,10 @@ export default function SantriDetailModal({ selectedSantri, onClose, onUpdateSan
                   </h4>
                   <div className="space-y-2">
                     {[
+                      { label: 'NISM', val: localSantri.nism || '-' },
                       { label: 'NISN', val: localSantri.nisn || '-' },
+                      { label: 'KELAS MHD', val: localSantri.kelasMhd || localSantri.indukMhd || '-' },
+                      { label: 'SEMESTER', val: localSantri.semester || 'Semester 1' },
                       { label: 'INDUK MHD', val: localSantri.indukMhd || '-' },
                       { label: 'INDUK WUSTHO', val: localSantri.indukWustho || '-' },
                       { label: 'INDUK ULYA', val: localSantri.indukUlya || '-' },

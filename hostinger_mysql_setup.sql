@@ -29,6 +29,7 @@ SET FOREIGN_KEY_CHECKS = 0;
 CREATE TABLE IF NOT EXISTS `santri` (
   `id` VARCHAR(50) NOT NULL PRIMARY KEY,
   `nis` VARCHAR(20) UNIQUE,
+  `nism` VARCHAR(30),
   `nama` VARCHAR(100) NOT NULL,
   `kelas` TEXT,
   `kamar` TEXT,
@@ -39,6 +40,9 @@ CREATE TABLE IF NOT EXISTS `santri` (
   `induk_mhd` VARCHAR(30),
   `induk_wustho` VARCHAR(30),
   `induk_ulya` VARCHAR(30),
+  `kelas_mhd` VARCHAR(50),
+  `semester` VARCHAR(20) DEFAULT 'Semester 1',
+  `tahun_lulus` VARCHAR(20),
   `nik` CHAR(16),
   `no_kk` CHAR(16),
   `tempat_lahir` VARCHAR(50),

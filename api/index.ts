@@ -1268,6 +1268,7 @@ async function ensureTableExists(table: string, pool: mysql.Pool) {
     } else if (table === 'santri') {
       try {
         const santriCols = [
+          'nism', 'semester', 'kelas_mhd', 'tahun_lulus',
           'induk_mhd', 'induk_wustho', 'induk_ulya',
           'nisn', 'nik', 'no_kk', 'tempat_lahir', 'tanggal_lahir',
           'anak_ke', 'dari_bersaudara', 'nama_ayah', 'nik_ayah',

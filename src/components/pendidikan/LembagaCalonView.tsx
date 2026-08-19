@@ -3,10 +3,11 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ArrowLeft, Printer, Search, X, UserPlus, Users, ExternalLink,
-  ChevronUp, ChevronDown, ChevronsUpDown, MoreVertical, ArrowLeftRight, UserMinus, Eye
+  ChevronUp, ChevronDown, ChevronsUpDown, MoreVertical, ArrowLeftRight, UserMinus, Eye, Pencil
 } from 'lucide-react';
 import { Santri, Lembaga } from '../../types';
 import { renderSantriAvatar } from '../SekretarisHelper';
+import EditSantriKolomModal from './EditSantriKolomModal';
 
 interface LembagaCalonViewProps {
   selectedLembaga: Lembaga;
@@ -20,12 +21,41 @@ interface LembagaCalonViewProps {
   onBackToHub: () => void;
   onPrintPDF: () => void;
   onSelectStudentDetail: (s: Santri) => void;
+  onUpdateSantri?: (s: Santri) => void;
   selectedGender: 'Putra' | 'Putri';
   canWriteCurrent?: boolean;
   onUpdateEmisStatus?: (studentId: string, newStatus: 'Terdaftar' | 'Belum' | 'Invalid') => void;
   onTransferStudent?: (s: Santri) => void;
   onRemoveStudent?: (s: Santri) => void;
 }
+
+const calculateAge = (birthDateString?: string) => {
+  if (!birthDateString) return '-';
+  const birth = new Date(birthDateString);
+  if (isNaN(birth.getTime())) return '-';
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const m = today.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
+    age--;
+  }
+  return age >= 0 ? `${age} Thn` : '-';
+};
+
+const formatTanggal = (dateStr?: string) => {
+  if (!dateStr) return '-';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString('id-ID', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+  } catch (e) {
+    return dateStr;
+  }
+};
 
 export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
   selectedLembaga,
@@ -39,6 +69,7 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
   onBackToHub,
   onPrintPDF,
   onSelectStudentDetail,
+  onUpdateSantri,
   selectedGender,
   canWriteCurrent = true,
   onUpdateEmisStatus,
@@ -47,6 +78,7 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
 }) => {
   const isFormal = activeTab === 'Formal';
   const [membershipFilter, setMembershipFilter] = useState<string>('Semua');
+  const [editingSantri, setEditingSantri] = useState<Santri | null>(null);
 
   // Sorting state
   const [sortField, setSortField] = useState<'nama' | 'nik' | 'nis' | 'nisn' | 'induk' | 'statusEmis' | 'statusVerval' | 'statusKeanggotaan'>('nama');
@@ -329,31 +361,33 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
         {/* Table */}
         <div className="rounded-2xl border border-slate-200/80 overflow-hidden shadow-3xs">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[920px]">
+            <table className="w-full text-left border-collapse min-w-[1300px]">
               <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-black text-slate-600 uppercase tracking-wider">
-                  <th className="w-12 py-3.5 px-3 text-center">No</th>
-                  {renderSortHeader('NIS', 'nis', 'w-28')}
-                  {renderSortHeader('Nama Calon Santri', 'nama')}
-                  {isFormal && renderSortHeader('NIK', 'nik', 'w-36')}
-                  {renderSortHeader('NISN', 'nisn', 'w-32')}
-                  {renderSortHeader(getIndukLabel(), 'induk', 'w-32')}
-                  {isFormal && (
-                    <>
-                      {renderSortHeader('EMIS', 'statusEmis', 'w-28 text-center', 'center')}
-                      {renderSortHeader('Verval', 'statusVerval', 'w-24 text-center', 'center')}
-                    </>
-                  )}
-                  {renderSortHeader('Status', 'statusKeanggotaan', 'w-24 text-center', 'center')}
-                  <th className="sticky right-0 z-10 w-[56px] min-w-[56px] max-w-[56px] py-3.5 px-2 text-center bg-slate-50 border-l border-slate-200 shadow-[-2px_0_5px_rgba(0,0,0,0.03)]">
-                    Aksi
+                <tr className="bg-slate-100 border-b border-slate-200 text-[11px] font-black text-slate-700 uppercase tracking-wider select-none">
+                  <th className="w-10 py-3.5 px-2 text-center sticky left-0 z-20 bg-slate-100 border-r border-slate-200">NO</th>
+                  <th className="w-28 py-3.5 px-3 border-r border-slate-200">{renderSortHeader('NISM', 'nis')}</th>
+                  <th className="w-28 py-3.5 px-3 border-r border-slate-200">{renderSortHeader('NISN', 'nisn')}</th>
+                  <th className="w-52 py-3.5 px-3 border-r border-slate-200">{renderSortHeader('NAMA', 'nama')}</th>
+                  <th className="w-32 py-3.5 px-3 border-r border-slate-200">TEMPAT LAHIR</th>
+                  <th className="w-28 py-3.5 px-3 border-r border-slate-200">TGL LAHIR</th>
+                  <th className="w-16 py-3.5 px-2 text-center border-r border-slate-200">UMUR</th>
+                  <th className="w-16 py-3.5 px-2 text-center border-r border-slate-200">L/P</th>
+                  <th className="w-36 py-3.5 px-3 border-r border-slate-200">NAMA AYAH</th>
+                  <th className="w-36 py-3.5 px-3 border-r border-slate-200">NAMA IBU</th>
+                  <th className="w-24 py-3.5 px-2 text-center border-r border-slate-200">{renderSortHeader('EMIS', 'statusEmis', '', 'center')}</th>
+                  <th className="w-24 py-3.5 px-2 text-center border-r border-slate-200">{renderSortHeader('VERVAL', 'statusVerval', '', 'center')}</th>
+                  <th className="w-24 py-3.5 px-2 text-center border-r border-slate-200">{renderSortHeader('STATUS', 'statusKeanggotaan', '', 'center')}</th>
+                  <th className="w-28 py-3.5 px-3 border-r border-slate-200">KELAS MHD</th>
+                  <th className="w-28 py-3.5 px-3 border-r border-slate-200">SEMESTER</th>
+                  <th className="sticky right-0 z-20 w-16 py-3.5 px-2 text-center bg-slate-100 border-l border-slate-200 shadow-[-2px_0_5px_rgba(0,0,0,0.03)]">
+                    AKSI
                   </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
                 {displayStudents.length === 0 ? (
                   <tr>
-                    <td colSpan={isFormal ? 10 : 7} className="py-16 text-center text-slate-400 font-medium">
+                    <td colSpan={16} className="py-16 text-center text-slate-400 font-medium">
                       <div className="flex flex-col items-center justify-center gap-2">
                         <UserPlus className="h-8 w-8 text-slate-300" />
                         <p className="font-bold text-slate-600">Tidak ada calon santri</p>
@@ -367,23 +401,38 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
                   </tr>
                 ) : (
                   displayStudents.map((s, idx) => {
-                    const indukVal = getIndukNumber(s);
                     const isNisnValid = !!(s.nisn && s.nisn.trim() !== '');
+                    const ageStr = calculateAge(s.tanggalLahir);
+                    const genderCode = s.gender === 'Putra' ? 'L' : s.gender === 'Putri' ? 'P' : (s.gender || '-');
+                    const nismVal = s.nism || '-';
+                    const kelasMhdVal = s.kelasMhd || s.pendidikanInternal || s.indukMhd || '-';
+                    const semesterVal = s.semester || 'Semester 1';
+                    const isVervalSukses = (s.statusVerval || (isNisnValid ? 'Sukses' : 'Proses')) === 'Sukses';
 
                     return (
                       <tr 
                         key={s.id || idx}
                         className="hover:bg-slate-50/80 transition-colors group"
                       >
-                        <td className="py-3.5 px-3 text-center font-bold text-slate-400">
+                        {/* 1. NO */}
+                        <td className="py-3 px-2 text-center font-bold text-slate-400 sticky left-0 z-10 bg-white group-hover:bg-slate-50 border-r border-slate-100">
                           {idx + 1}
                         </td>
-                        <td className="py-3.5 px-3 font-mono font-bold text-slate-600">
-                          {s.nis || '-'}
+
+                        {/* 2. NISM */}
+                        <td className="py-3 px-3 font-mono font-bold text-slate-700 border-r border-slate-100">
+                          {s.nism ? nismVal : <span className="text-slate-300">-</span>}
                         </td>
-                        <td className="py-3.5 px-3">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-slate-200">
+
+                        {/* 3. NISN */}
+                        <td className="py-3 px-3 font-mono font-bold text-slate-600 border-r border-slate-100">
+                          {s.nisn || <span className="text-slate-300">-</span>}
+                        </td>
+
+                        {/* 4. NAMA */}
+                        <td className="py-3 px-3 border-r border-slate-100">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-7 h-7 rounded-full overflow-hidden shrink-0 border border-slate-200">
                               {renderSantriAvatar(s, 'w-full h-full object-cover')}
                             </div>
                             <div className="min-w-0">
@@ -395,68 +444,99 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
                                 {s.nama}
                               </span>
                               {(s.desa || s.kecamatan || s.kabupaten) && (
-                                <span className="text-[10px] text-slate-400 font-semibold truncate block">
-                                  {[s.desa, s.kecamatan, s.kabupaten].filter(Boolean).join(', ')}
+                                <span className="text-[9px] text-slate-400 font-semibold truncate block uppercase">
+                                  {[s.desa, s.kecamatan].filter(Boolean).join(', ')}
                                 </span>
                               )}
                             </div>
                           </div>
                         </td>
-                        {isFormal && (
-                          <td className="py-3.5 px-3 font-mono font-bold text-slate-600">
-                            {s.nik || <span className="text-slate-300">-</span>}
-                          </td>
-                        )}
-                        <td className="py-3.5 px-3 font-mono font-bold text-slate-600">
-                          {s.nisn || <span className="text-slate-300">-</span>}
+
+                        {/* 5. TEMPAT LAHIR */}
+                        <td className="py-3 px-3 text-slate-700 font-medium border-r border-slate-100">
+                          {s.tempatLahir || <span className="text-slate-300">-</span>}
                         </td>
-                        <td className="py-3.5 px-3 font-mono font-bold text-slate-500">
-                          {indukVal || <span className="text-slate-300">-</span>}
+
+                        {/* 6. TANGGAL LAHIR */}
+                        <td className="py-3 px-3 font-mono font-medium text-slate-600 border-r border-slate-100">
+                          {formatTanggal(s.tanggalLahir)}
                         </td>
-                        {isFormal && (
-                          <>
-                            <td className="py-3.5 px-3 text-center">
-                              {onUpdateEmisStatus && canWriteCurrent ? (
-                                <select
-                                  value={s.statusEmis || 'Belum'}
-                                  onChange={(e) => onUpdateEmisStatus(s.id, e.target.value as any)}
-                                  className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide border cursor-pointer ${
-                                    s.statusEmis === 'Terdaftar'
-                                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                      : s.statusEmis === 'Invalid'
-                                      ? 'bg-rose-50 text-rose-800 border-rose-200'
-                                      : 'bg-slate-100 text-slate-600 border-slate-200'
-                                  }`}
-                                >
-                                  <option value="Terdaftar">Terdaftar</option>
-                                  <option value="Belum">Belum</option>
-                                  <option value="Invalid">Invalid</option>
-                                </select>
-                              ) : (
-                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide ${
-                                  s.statusEmis === 'Terdaftar'
-                                    ? 'bg-emerald-100 text-emerald-800'
-                                    : s.statusEmis === 'Invalid'
-                                    ? 'bg-rose-100 text-rose-800'
-                                    : 'bg-slate-100 text-slate-600'
-                                }`}>
-                                  {s.statusEmis || 'Belum'}
-                                </span>
-                              )}
-                            </td>
-                            <td className="py-3.5 px-3 text-center">
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide ${
-                                (s.statusVerval || (isNisnValid ? 'Sukses' : 'Proses')) === 'Sukses'
-                                  ? 'bg-[#E6F4EA] text-[#137333]'
-                                  : 'bg-rose-50 text-rose-700'
-                              }`}>
-                                {s.statusVerval || (isNisnValid ? 'Sukses' : 'Proses')}
-                              </span>
-                            </td>
-                          </>
-                        )}
-                        <td className="py-3.5 px-3 text-center">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide ${
+
+                        {/* 7. UMUR */}
+                        <td className="py-3 px-2 text-center font-bold text-slate-600 border-r border-slate-100">
+                          <span className={ageStr !== '-' ? "px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px]" : "text-slate-300"}>
+                            {ageStr}
+                          </span>
+                        </td>
+
+                        {/* 8. JENIS KELAMIN */}
+                        <td className="py-3 px-2 text-center font-bold border-r border-slate-100">
+                          <span className={`inline-flex items-center justify-center w-5 h-5 rounded-md text-[10px] font-black ${
+                            genderCode === 'L' 
+                              ? 'bg-blue-50 text-blue-700 border border-blue-200/60' 
+                              : genderCode === 'P' 
+                                ? 'bg-pink-50 text-pink-700 border border-pink-200/60'
+                                : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            {genderCode}
+                          </span>
+                        </td>
+
+                        {/* 9. NAMA AYAH */}
+                        <td className="py-3 px-3 text-slate-700 font-medium truncate max-w-[140px] border-r border-slate-100" title={s.namaAyah}>
+                          {s.namaAyah || <span className="text-slate-300">-</span>}
+                        </td>
+
+                        {/* 10. NAMA IBU */}
+                        <td className="py-3 px-3 text-slate-700 font-medium truncate max-w-[140px] border-r border-slate-100" title={s.namaIbu}>
+                          {s.namaIbu || <span className="text-slate-300">-</span>}
+                        </td>
+
+                        {/* 11. EMIS */}
+                        <td className="py-3 px-2 text-center border-r border-slate-100">
+                          {onUpdateEmisStatus && canWriteCurrent ? (
+                            <select
+                              value={s.statusEmis || 'Belum'}
+                              onChange={(e) => onUpdateEmisStatus(s.id, e.target.value as any)}
+                              className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide border cursor-pointer ${
+                                s.statusEmis === 'Terdaftar'
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                  : s.statusEmis === 'Invalid'
+                                  ? 'bg-rose-50 text-rose-800 border-rose-200'
+                                  : 'bg-slate-100 text-slate-600 border-slate-200'
+                              }`}
+                            >
+                              <option value="Terdaftar">Terdaftar</option>
+                              <option value="Belum">Belum</option>
+                              <option value="Invalid">Invalid</option>
+                            </select>
+                          ) : (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide ${
+                              s.statusEmis === 'Terdaftar'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : s.statusEmis === 'Invalid'
+                                ? 'bg-rose-100 text-rose-800'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}>
+                              {s.statusEmis || 'Belum'}
+                            </span>
+                          )}
+                        </td>
+
+                        {/* 12. VERVAL */}
+                        <td className="py-3 px-2 text-center border-r border-slate-100">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide ${
+                            isVervalSukses
+                              ? 'bg-[#E6F4EA] text-[#137333]'
+                              : 'bg-rose-50 text-rose-700'
+                          }`}>
+                            {s.statusVerval || (isNisnValid ? 'Sukses' : 'Proses')}
+                          </span>
+                        </td>
+
+                        {/* 13. STATUS KEAKTIFAN */}
+                        <td className="py-3 px-2 text-center border-r border-slate-100">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide ${
                             s.statusKeanggotaan === 'Aktif' || !s.statusKeanggotaan
                               ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
                               : s.statusKeanggotaan === 'Alumni'
@@ -467,8 +547,20 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
                           </span>
                         </td>
 
+                        {/* 14. KELAS MHD */}
+                        <td className="py-3 px-3 font-semibold text-slate-700 border-r border-slate-100">
+                          {kelasMhdVal}
+                        </td>
+
+                        {/* 15. SEMESTER */}
+                        <td className="py-3 px-3 font-semibold text-slate-700 border-r border-slate-100">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-bold">
+                            {semesterVal}
+                          </span>
+                        </td>
+
                         {/* Standardized Aksi Column matching LembagaKelasSub */}
-                        <td className="sticky right-0 z-10 w-[56px] min-w-[56px] max-w-[56px] text-center px-2 py-3.5 transition-colors border-l border-slate-200 shadow-[-2px_0_5px_rgba(0,0,0,0.03)] bg-white group-hover:bg-slate-50">
+                        <td className="sticky right-0 z-10 w-16 text-center px-2 py-3 transition-colors border-l border-slate-200 shadow-[-2px_0_5px_rgba(0,0,0,0.03)] bg-white group-hover:bg-slate-50">
                           <div className="relative inline-block text-left" onClick={(e) => e.stopPropagation()}>
                             <button
                               onClick={(e) => {
@@ -536,6 +628,17 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
                 >
                   <button
                     onClick={() => {
+                      setEditingSantri(s);
+                      setActiveActionStudentId(null);
+                      setActionDropdownPos(null);
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-emerald-50 hover:text-emerald-700 transition-colors cursor-pointer flex items-center gap-2 text-emerald-700 font-bold border-b border-slate-100"
+                  >
+                    <Pencil className="h-3.5 w-3.5 text-emerald-600" />
+                    <span>Edit Data</span>
+                  </button>
+                  <button
+                    onClick={() => {
                       onSelectStudentDetail(s);
                       setActiveActionStudentId(null);
                       setActionDropdownPos(null);
@@ -577,6 +680,19 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
           })()}
         </AnimatePresence>,
         document.body
+      )}
+
+      {/* Edit Santri Kolom Modal */}
+      {editingSantri && (
+        <EditSantriKolomModal
+          isOpen={Boolean(editingSantri)}
+          onClose={() => setEditingSantri(null)}
+          santri={editingSantri}
+          onSave={(updated) => {
+            onUpdateSantri?.(updated);
+            setEditingSantri(null);
+          }}
+        />
       )}
     </motion.div>
   );
