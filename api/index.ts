@@ -1180,7 +1180,13 @@ async function ensureTableExists(table: string, pool: mysql.Pool) {
             \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
           ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         `);
-        const cols = ['santri_id', 'nama_santri', 'alasan', 'status', 'tgl_keluar', 'tgl_kembali'];
+        const cols = [
+          'santri_id', 'nama_santri', 'alasan', 'status', 'tgl_keluar', 'tgl_kembali',
+          'namaSantri', 'kelas', 'kamar', 'jenisIzin', 'jenis_izin', 'tanggalMulai', 'tanggal_mulai',
+          'tanggalSelesai', 'tanggal_selesai', 'keterangan', 'gender', 'isCabut', 'is_cabut',
+          'tanggalCabut', 'tanggal_cabut', 'alasanCabut', 'alasan_cabut', 'santriId', 'nis',
+          'tanggalKembali', 'tanggal_kembali'
+        ];
         for (const col of cols) {
           try {
             await pool.query(`ALTER TABLE \`perizinan\` ADD COLUMN \`${col}\` LONGTEXT NULL`);

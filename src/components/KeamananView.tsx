@@ -115,23 +115,34 @@ function RiwayatIzinRow({ rec, santriList }: RiwayatIzinRowProps) {
     seconds: number;
   }>({ isOverdue: false, days: 0, hours: 0, minutes: 0, seconds: 0 });
 
-  const isReturned = rec.status === 'Sudah Kembali';
+  const isReturned = rec.status === 'Sudah Kembali' || rec.status === 'Keluar Selesai';
+  const isIlegal = isPerizinanIlegalOrCabut(rec);
 
   useEffect(() => {
     if (isReturned) return;
 
     const calculateTime = () => {
-      const targetTime = new Date(rec.tanggalSelesai).getTime();
-      const now = new Date().getTime();
-      const diff = targetTime - now;
+      const now = Date.now();
+      let diff = 0;
+      let isOverdue = false;
 
-      const isOverdue = diff < 0;
+      if (isIlegal) {
+        const startTime = getPerizinanStartTime(rec);
+        // Durasi sejak keluar ilegal (selalu menghitung maju)
+        diff = Math.max(0, now - startTime);
+        isOverdue = true;
+      } else {
+        const targetTime = getPerizinanEndTime(rec);
+        diff = targetTime - now;
+        isOverdue = diff < 0;
+      }
+
       const absDiff = Math.abs(diff);
-
-      const seconds = Math.floor((absDiff / 1000) % 60);
-      const minutes = Math.floor((absDiff / 1000 / 60) % 60);
-      const hours = Math.floor((absDiff / (1000 * 60 * 60)) % 24);
-      const days = Math.floor(absDiff / (1000 * 60 * 60 * 24));
+      const totalSeconds = Math.floor(absDiff / 1000);
+      const seconds = totalSeconds % 60;
+      const minutes = Math.floor(totalSeconds / 60) % 60;
+      const hours = Math.floor(totalSeconds / 3600) % 24;
+      const days = Math.floor(totalSeconds / 86400);
 
       setTimeLeft({ isOverdue, days, hours, minutes, seconds });
     };
@@ -139,32 +150,34 @@ function RiwayatIzinRow({ rec, santriList }: RiwayatIzinRowProps) {
     calculateTime();
     const interval = setInterval(calculateTime, 1000);
     return () => clearInterval(interval);
-  }, [rec.tanggalSelesai, isReturned]);
+  }, [rec.tanggalSelesai, rec.tanggalMulai, rec.tanggalCabut, rec.isCabut, rec.status, isReturned, isIlegal]);
 
   const { isOverdue, days, hours, minutes, seconds } = timeLeft;
   const pad = (num: number) => String(num).padStart(2, '0');
-  const formattedTime = `${days > 0 ? `${days} Hari ` : ''}${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+  const formattedTime = isIlegal
+    ? `${days > 0 ? `${days} hari ` : ''}${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
+    : `${days > 0 ? `${days} Hari ` : ''}${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
 
   const sObj = santriList.find(x => rec.santriId ? x.id === rec.santriId : x.nama === rec.namaSantri);
 
   let durationStr = '';
-  if (rec.isCabut && rec.tanggalKembali) {
-    const startStr = rec.tanggalCabut || rec.tanggalMulai;
-    if (startStr) {
-      const startTime = new Date(startStr).getTime();
-      const endTime = new Date(rec.tanggalKembali).getTime();
-      const diffMs = Math.max(0, endTime - startTime);
-      
-      const minutesCount = Math.floor((diffMs / 1000 / 60) % 60);
-      const hoursCount = Math.floor((diffMs / (1000 * 60 * 60)) % 24);
-      const daysCount = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (isReturned && (rec.tanggalKembali || (rec as any).tgl_kembali)) {
+    const startTime = getPerizinanStartTime(rec);
+    const endStr = rec.tanggalKembali || (rec as any).tgl_kembali;
+    const endD = parseSafeDate(endStr);
+    const endTime = endD ? endD.getTime() : (endStr ? new Date(endStr).getTime() : Date.now());
+    const diffMs = Math.max(0, endTime - startTime);
+    
+    const totalSeconds = Math.floor(diffMs / 1000);
+    const minutesCount = Math.floor(totalSeconds / 60) % 60;
+    const hoursCount = Math.floor(totalSeconds / 3600) % 24;
+    const daysCount = Math.floor(totalSeconds / 86400);
 
-      const durationParts = [];
-      if (daysCount > 0) durationParts.push(`${daysCount} hari`);
-      if (hoursCount > 0) durationParts.push(`${hoursCount} jam`);
-      if (minutesCount > 0 || durationParts.length === 0) durationParts.push(`${minutesCount} menit`);
-      durationStr = durationParts.join(' ');
-    }
+    const durationParts = [];
+    if (daysCount > 0) durationParts.push(`${daysCount} hari`);
+    if (hoursCount > 0) durationParts.push(`${hoursCount} jam`);
+    if (minutesCount > 0 || durationParts.length === 0) durationParts.push(`${minutesCount} menit`);
+    durationStr = durationParts.join(' ');
   }
 
   return (
@@ -386,6 +399,8 @@ interface ActiveSantriIzinCardProps {
 }
 
 function ActiveSantriIzinCard({ rec, santriList, handleReturnToPondok, onExtendDuration, onDeletePerizinan, onRevokeIzin, canWriteCurrent = true }: ActiveSantriIzinCardProps) {
+  const isIlegal = isPerizinanIlegalOrCabut(rec);
+
   const [timeLeft, setTimeLeft] = useState<{
     isOverdue: boolean;
     days: number;
@@ -405,26 +420,26 @@ function ActiveSantriIzinCard({ rec, santriList, handleReturnToPondok, onExtendD
     const calculateTime = () => {
       let diff = 0;
       let isOverdue = false;
+      const now = Date.now();
 
-      if (rec.isCabut) {
-        const timeVal = rec.tanggalCabut || rec.tanggalMulai;
-        const cabutTime = parseSafeDate(timeVal)?.getTime() || (timeVal ? new Date(timeVal).getTime() : 0);
-        const now = new Date().getTime();
-        diff = Math.max(0, now - cabutTime); // Count UP since revocation/keluar ilegal
+      if (isIlegal) {
+        const startTime = getPerizinanStartTime(rec);
+        // Durasi sejak santri keluar ilegal (menghitung maju / count up)
+        diff = Math.max(0, now - startTime);
         isOverdue = true;
       } else {
-        const targetTime = parseSafeDate(rec.tanggalSelesai)?.getTime() || (rec.tanggalSelesai ? new Date(rec.tanggalSelesai).getTime() : 0);
-        const now = new Date().getTime();
+        const targetTime = getPerizinanEndTime(rec);
         diff = targetTime - now;
         isOverdue = diff < 0;
       }
 
       const absDiff = Math.abs(diff);
 
-      const seconds = Math.floor((absDiff / 1000) % 60);
-      const minutes = Math.floor((absDiff / 1000 / 60) % 60);
-      const hours = Math.floor((absDiff / (1000 * 60 * 60)) % 24);
-      const days = Math.floor(absDiff / (1000 * 60 * 60 * 24));
+      const totalSeconds = Math.floor(absDiff / 1000);
+      const seconds = totalSeconds % 60;
+      const minutes = Math.floor(totalSeconds / 60) % 60;
+      const hours = Math.floor(totalSeconds / 3600) % 24;
+      const days = Math.floor(totalSeconds / 86400);
 
       setTimeLeft({ isOverdue, days, hours, minutes, seconds });
     };
@@ -432,14 +447,14 @@ function ActiveSantriIzinCard({ rec, santriList, handleReturnToPondok, onExtendD
     calculateTime();
     const interval = setInterval(calculateTime, 1000);
     return () => clearInterval(interval);
-  }, [rec.tanggalSelesai, rec.isCabut, rec.tanggalCabut, rec.tanggalMulai]);
+  }, [rec.tanggalSelesai, rec.isCabut, rec.tanggalCabut, rec.tanggalMulai, (rec as any).tanggal_cabut, (rec as any).tanggal_mulai, (rec as any).is_cabut, isIlegal]);
 
   const { isOverdue, days, hours, minutes, seconds } = timeLeft;
 
   const pad = (num: number) => String(num).padStart(2, '0');
 
-  const formattedTime = rec.isCabut
-    ? `Ilegal ${days > 0 ? `${days} hari ` : ''}${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
+  const formattedTime = isIlegal
+    ? `${days > 0 ? `${days} hari ` : ''}${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
     : `${days > 0 ? `${days} Hari ` : ''}${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
 
   const sObj = santriList.find(x => rec.santriId ? x.id === rec.santriId : x.nama === rec.namaSantri);
@@ -472,7 +487,7 @@ function ActiveSantriIzinCard({ rec, santriList, handleReturnToPondok, onExtendD
   return (
     <div 
       className={`p-4 border rounded-xl flex flex-col justify-between gap-3 shadow-xs transition-all hover:shadow-sm ${
-        isOverdue || rec.isCabut
+        isOverdue || isIlegal
           ? 'bg-rose-50/40 border-rose-200' 
           : 'bg-slate-50/50 border-slate-200'
       }`}
@@ -494,7 +509,7 @@ function ActiveSantriIzinCard({ rec, santriList, handleReturnToPondok, onExtendD
           <div className="flex-1 min-w-0 text-left">
             <div className="flex items-start justify-between gap-2">
               <h4 className="text-xs font-extrabold text-slate-800 truncate">{rec.namaSantri}</h4>
-              {rec.isCabut ? (
+              {isIlegal ? (
                 <span className="text-[10px] font-mono font-black bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full border border-rose-200 flex items-center gap-1 shrink-0 animate-pulse">
                   <AlertTriangle className="h-3.5 w-3.5 text-rose-500 shrink-0" />
                   <span>{formattedTime}</span>
@@ -544,10 +559,22 @@ function ActiveSantriIzinCard({ rec, santriList, handleReturnToPondok, onExtendD
             transition={{ duration: 0.18, ease: "easeInOut" }}
             className="space-y-3 overflow-hidden pt-1"
           >
-            {rec.isCabut ? (
-              <div className="p-2.5 bg-rose-50/50 border border-rose-200 rounded-lg space-y-1 text-left">
-                <p className="text-[9px] text-rose-600 font-extrabold tracking-wider uppercase">Keterangan</p>
-                <p className="text-[11px] text-slate-755 font-bold leading-relaxed">{rec.alasanCabut || '-'}</p>
+            {isIlegal ? (
+              <div className="p-2.5 bg-rose-50/50 border border-rose-200 rounded-lg space-y-1.5 text-left">
+                <p className="text-[9px] text-rose-600 font-extrabold tracking-wider uppercase">Keterangan Keluar Ilegal</p>
+                <p className="text-[11px] text-slate-750 font-bold leading-relaxed">{rec.alasanCabut || rec.keterangan || '-'}</p>
+                <div className="pt-2 border-t border-rose-200/60 grid grid-cols-2 gap-2 text-[10px]">
+                  <div>
+                    <span className="text-[9px] text-slate-400 block font-bold uppercase tracking-wider">Waktu Keluar</span>
+                    <span className="text-slate-700 font-bold">{formatIndonesianDate(rec.tanggalCabut || rec.tanggalMulai)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-slate-400 block font-bold uppercase tracking-wider">Durasi di Luar</span>
+                    <span className="text-rose-700 font-bold font-mono">
+                      {days > 0 ? `${days} hari ` : ''}{hours} jam {minutes} menit {seconds} detik
+                    </span>
+                  </div>
+                </div>
               </div>
             ) : (
               <>
@@ -799,10 +826,35 @@ function formatIndonesianDate(dateStr: string): string {
   return formattedDate;
 }
 
+function isPerizinanIlegalOrCabut(rec?: Partial<PerizinanRecord> | any): boolean {
+  if (!rec) return false;
+  return Boolean(
+    rec.isCabut || 
+    rec.is_cabut === 1 || 
+    rec.is_cabut === true || 
+    rec.status === 'Izin Dicabut' ||
+    (rec.keterangan && typeof rec.keterangan === 'string' && rec.keterangan.toLowerCase().includes('ilegal')) ||
+    (rec.alasanCabut && typeof rec.alasanCabut === 'string' && rec.alasanCabut.trim() !== '') ||
+    (rec.alasan_cabut && typeof rec.alasan_cabut === 'string' && rec.alasan_cabut.trim() !== '')
+  );
+}
+
 function parseSafeDate(dateStr?: string | null): Date | null {
   if (!dateStr || typeof dateStr !== 'string') return null;
   const trimmed = dateStr.trim();
   if (!trimmed) return null;
+
+  // Match numeric string timestamps
+  if (/^\d{10,}$/.test(trimmed)) {
+    const d = new Date(parseInt(trimmed, 10));
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  // If it has timezone offset or 'Z' at the end, standard Date parser handles it better
+  if (trimmed.includes('Z') || /[+-]\d{2}:\d{2}$/.test(trimmed)) {
+    const d = new Date(trimmed);
+    if (!isNaN(d.getTime())) return d;
+  }
 
   // Match YYYY-MM-DDTHH:mm:ss or YYYY-MM-DD HH:mm:ss or YYYY-MM-DD
   const ymdWithTimeMatch = trimmed.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})(?:[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
@@ -813,12 +865,6 @@ function parseSafeDate(dateStr?: string | null): Date | null {
     const hour = ymdWithTimeMatch[4] !== undefined ? parseInt(ymdWithTimeMatch[4], 10) : 0;
     const minute = ymdWithTimeMatch[5] !== undefined ? parseInt(ymdWithTimeMatch[5], 10) : 0;
     const second = ymdWithTimeMatch[6] !== undefined ? parseInt(ymdWithTimeMatch[6], 10) : 0;
-    
-    // If it has timezone offset or 'Z' at the end, standard Date parser handles it better
-    if (trimmed.includes('Z') || /[+-]\d{2}:\d{2}$/.test(trimmed)) {
-      const d = new Date(trimmed);
-      if (!isNaN(d.getTime())) return d;
-    }
     
     const d = new Date(year, month, day, hour, minute, second);
     if (!isNaN(d.getTime())) return d;
@@ -841,6 +887,37 @@ function parseSafeDate(dateStr?: string | null): Date | null {
   if (!isNaN(d.getTime())) return d;
 
   return null;
+}
+
+function getPerizinanStartTime(rec?: Partial<PerizinanRecord> | any): number {
+  if (!rec) return Date.now();
+  const rawStr = rec.tanggalCabut || rec.tanggal_cabut || rec.tanggalMulai || rec.tanggal_mulai || rec.tgl_keluar || rec.createdAt || rec.created_at;
+  if (rawStr) {
+    const d = parseSafeDate(rawStr);
+    if (d && !isNaN(d.getTime()) && d.getTime() > 0) {
+      return d.getTime();
+    }
+  }
+  const numMatch = rec.id ? String(rec.id).match(/\d{10,}/) : null;
+  if (numMatch) {
+    const ts = parseInt(numMatch[0], 10);
+    if (ts > 1000000000000 && ts <= Date.now()) {
+      return ts;
+    }
+  }
+  return Date.now();
+}
+
+function getPerizinanEndTime(rec?: Partial<PerizinanRecord> | any): number {
+  if (!rec) return Date.now();
+  const rawStr = rec.tanggalSelesai || rec.tanggal_selesai || rec.tgl_kembali;
+  if (rawStr) {
+    const d = parseSafeDate(rawStr);
+    if (d && !isNaN(d.getTime()) && d.getTime() > 0) {
+      return d.getTime();
+    }
+  }
+  return getPerizinanStartTime(rec) + (60 * 60 * 1000);
 }
 
 function getDateTimestamp(dateStr?: string | null): number {
@@ -2007,15 +2084,16 @@ export default function KeamananView({
     let returnKeterangan = `Kembali ke Pondok dari Izin ${originalRec.jenisIzin}`;
     let returnExtra: Partial<PerizinanRecord> = {};
 
-    if (originalRec.isCabut) {
-      const startTime = new Date(originalRec.tanggalCabut || originalRec.tanggalMulai).getTime();
-      const endTime = new Date().getTime();
+    const isIlegal = isPerizinanIlegalOrCabut(originalRec);
+    if (isIlegal) {
+      const startTime = getPerizinanStartTime(originalRec);
+      const endTime = Date.now();
       const diffMs = Math.max(0, endTime - startTime);
       
-      const seconds = Math.floor((diffMs / 1000) % 60);
-      const minutes = Math.floor((diffMs / 1000 / 60) % 60);
-      const hours = Math.floor((diffMs / (1000 * 60 * 60)) % 24);
-      const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      const totalSeconds = Math.floor(diffMs / 1000);
+      const minutes = Math.floor(totalSeconds / 60) % 60;
+      const hours = Math.floor(totalSeconds / 3600) % 24;
+      const days = Math.floor(totalSeconds / 86400);
 
       const durationParts = [];
       if (days > 0) durationParts.push(`${days} hari`);
@@ -2026,8 +2104,8 @@ export default function KeamananView({
       returnKeterangan = `Kembali ke Pondok (Keterangan: Keluar ilegal selama ${durationStr})`;
       returnExtra = {
         isCabut: true,
-        alasanCabut: originalRec.alasanCabut,
-        tanggalCabut: originalRec.tanggalCabut
+        alasanCabut: originalRec.alasanCabut || originalRec.keterangan,
+        tanggalCabut: originalRec.tanggalCabut || originalRec.tanggalMulai
       };
     }
     
