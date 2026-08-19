@@ -13,7 +13,7 @@ import {
 import { BirthDatePicker } from './BirthDatePicker';
 import { SearchableSelect } from './SearchableSelect';
 import { uploadFileToStorage, fetchTableData } from '../../lib/api';
-import { formatBigDigit, processUploadedFile, parseCatatanInvalid, formatCatatanWithInvalid, parseCatatanInvalidParts, formatCatatanParts } from '../../lib/utils';
+import { formatBigDigit, processUploadedFile, parseCatatanInvalid, formatCatatanWithInvalid, parseCatatanInvalidParts, formatCatatanParts, isMatchLembagaStrict } from '../../lib/utils';
 
 function escapeHtml(str: string): string {
   if (!str) return '';
@@ -419,6 +419,7 @@ const initialFormState = {
   // Identitas
   nama: '',
   nis: '',
+  nism: '',
   nisn: '',
   indukMhd: '',
   indukWustho: '',
@@ -563,13 +564,14 @@ export default function SantriFormModal({
     if (!santri) return { formalLembagaId: '', formalClassId: 'calon' };
     const formalLembagas = lembagas.filter(l => getLembagaJenis(l) === 'Formal');
 
-    if (santri.pendidikanFormal) {
+    if (santri.pendidikanFormal && santri.pendidikanFormal.trim() !== '' && santri.pendidikanFormal !== '-' && santri.pendidikanFormal !== 'TIDAK TERDAFTAR' && santri.pendidikanFormal !== 'Belum / Non-Formal') {
       const parts = santri.pendidikanFormal.split(' - ');
       const lemName = parts[0]?.trim();
       const clsName = parts[1]?.trim();
 
       if (lemName) {
         const matchLem = formalLembagas.find(l => 
+          isMatchLembagaStrict(l, lemName) ||
           l.nama.toLowerCase() === lemName.toLowerCase() ||
           (l.kode && l.kode.toLowerCase() === lemName.toLowerCase())
         );
@@ -590,15 +592,17 @@ export default function SantriFormModal({
     if (santri.kelas) {
       const santriClasses = santri.kelas.split(',').map(x => x.trim()).filter(Boolean);
       for (const cName of santriClasses) {
-        const matchCls = kelas.find(k => k.nama.trim().toLowerCase() === cName.toLowerCase());
+        const lowerC = cName.toLowerCase();
+        // Ignore generic classes so they do not falsely map to the first institution in the table
+        if (lowerC === 'calon peserta didik' || lowerC === 'calon pelajar' || lowerC === 'tanpa kelas') {
+          continue;
+        }
+        const matchCls = kelas.find(k => k.nama.trim().toLowerCase() === lowerC);
         if (matchCls) {
           const lemId = getLemId(matchCls);
           const matchLem = formalLembagas.find(l => String(l.id) === lemId);
           if (matchLem) {
-            const matchClassId = (cName.toLowerCase() === 'calon peserta didik' || cName.toLowerCase() === 'calon pelajar')
-              ? 'calon'
-              : String(matchCls.id);
-            return { formalLembagaId: String(matchLem.id), formalClassId: matchClassId };
+            return { formalLembagaId: String(matchLem.id), formalClassId: String(matchCls.id) };
           }
         }
       }
@@ -919,6 +923,7 @@ export default function SantriFormModal({
         setForm({
           nama: editingSantri.nama || '',
           nis: editingSantri.nis || '',
+          nism: editingSantri.nism || '',
           nisn: formatBigDigit(editingSantri.nisn),
           indukMhd: editingSantri.indukMhd || '',
           indukWustho: editingSantri.indukWustho || '',
@@ -1443,6 +1448,7 @@ export default function SantriFormModal({
     const entry: Santri = {
       id: editingSantri ? editingSantri.id : `S${Date.now()}`,
       nis: generatedNis,
+      nism: form.nism && form.nism.trim() !== '' ? form.nism.trim() : undefined,
       nama: form.nama,
       kelas: finalKelasString,
       kamar: form.kamar,
@@ -2194,6 +2200,18 @@ export default function SantriFormModal({
                               *Harap atur tanggal masuk terlebih dahulu untuk men-generate NIS.
                             </p>
                           )}
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">NISM (Nomor Induk Siswa Madrasah)</label>
+                          <input
+                            type="text"
+                            id="nism-input"
+                            value={form.nism || ''}
+                            onChange={(e) => setForm(prev => ({ ...prev, nism: e.target.value }))}
+                            placeholder="Nomor Induk Madrasah (opsional / manual)"
+                            className="select-text w-full rounded-xl border border-slate-200 bg-white p-3 text-sm outline-none focus:border-emerald-500 font-mono"
+                          />
                         </div>
 
                         <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4 border-t border-slate-100 pt-3">
