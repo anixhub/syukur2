@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Save, User, Hash, Calendar, Heart, ShieldCheck, BookOpen, Layers } from 'lucide-react';
+import { X, Save, User, Hash, Calendar, Heart, ShieldCheck, BookOpen, Layers, Sparkles } from 'lucide-react';
 import { Santri } from '../../types';
+import { getSantriTahunMasuk } from '../../lib/nismHelper';
 
 interface EditSantriKolomModalProps {
   isOpen: boolean;
@@ -19,7 +20,11 @@ export const EditSantriKolomModal: React.FC<EditSantriKolomModalProps> = ({
   if (!isOpen || !santri) return null;
 
   const [formData, setFormData] = useState({
-    nism: santri.nism || '',
+    nism: santri.nism || santri.indukWustho || santri.indukUlya || santri.indukMhd || '',
+    indukWustho: santri.indukWustho || '',
+    indukUlya: santri.indukUlya || '',
+    indukMhd: santri.indukMhd || '',
+    tahunMasuk: santri.tahunMasuk || getSantriTahunMasuk(santri) || '',
     nisn: santri.nisn || '',
     nama: santri.nama || '',
     tempatLahir: santri.tempatLahir || '',
@@ -40,9 +45,14 @@ export const EditSantriKolomModal: React.FC<EditSantriKolomModalProps> = ({
     e.preventDefault();
     setIsSubmitting(true);
 
+    const cleanNism = formData.nism.trim();
     const updated: Santri = {
       ...santri,
-      nism: formData.nism.trim(),
+      nism: cleanNism,
+      indukWustho: formData.indukWustho.trim() || (cleanNism.length === 22 && santri.pendidikanFormal?.toLowerCase().includes('wustho') ? cleanNism : santri.indukWustho),
+      indukUlya: formData.indukUlya.trim() || (cleanNism.length === 22 && santri.pendidikanFormal?.toLowerCase().includes('ulya') ? cleanNism : santri.indukUlya),
+      indukMhd: formData.indukMhd.trim() || santri.indukMhd,
+      tahunMasuk: formData.tahunMasuk.trim(),
       nisn: formData.nisn.trim(),
       nama: formData.nama.trim(),
       tempatLahir: formData.tempatLahir.trim(),
@@ -104,19 +114,34 @@ export const EditSantriKolomModal: React.FC<EditSantriKolomModalProps> = ({
                   <Hash className="h-4 w-4 text-emerald-600" />
                   <span>Identitas & Nomor Pokok</span>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
-                      NISM (Nomor Induk Santri Madrasah)
+                      NISM (22 Digit)
                     </label>
                     <input
                       type="text"
                       value={formData.nism}
                       onChange={(e) => setFormData({ ...formData, nism: e.target.value })}
-                      placeholder="Masukkan NISM manual..."
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none font-semibold text-slate-800"
+                      placeholder="Contoh: 5112350700010000240001"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none font-mono font-semibold text-slate-800 text-xs"
                     />
-                    <p className="text-[10px] text-slate-400 mt-1">Kosongkan jika belum memiliki NISM</p>
+                    <p className="text-[10px] text-slate-400 mt-1">NISM / No. Induk Madrasah</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
+                      Tahun Masuk (4 Digit)
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.tahunMasuk}
+                      onChange={(e) => setFormData({ ...formData, tahunMasuk: e.target.value })}
+                      placeholder="Contoh: 2024"
+                      maxLength={4}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none font-mono font-semibold text-slate-800 text-xs"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">Pacuan 2 digit tahun pada NISM</p>
                   </div>
 
                   <div>
@@ -129,11 +154,11 @@ export const EditSantriKolomModal: React.FC<EditSantriKolomModalProps> = ({
                       onChange={(e) => setFormData({ ...formData, nisn: e.target.value })}
                       placeholder="10 Digit NISN..."
                       maxLength={15}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none font-semibold text-slate-800"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none font-semibold text-slate-800 text-xs"
                     />
                   </div>
 
-                  <div className="sm:col-span-2">
+                  <div className="sm:col-span-3">
                     <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
                       Nama Lengkap Santri *
                     </label>

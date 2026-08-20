@@ -1,13 +1,26 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ArrowLeft, Download, Printer, Search, X, UserPlus, Users, ExternalLink,
-  ChevronUp, ChevronDown, ChevronsUpDown, MoreVertical, ArrowLeftRight, UserMinus, Eye, Pencil
+  ChevronUp, ChevronDown, ChevronsUpDown, MoreVertical, ArrowLeftRight, UserMinus, Eye, Pencil,
+  Sparkles, Check, ChevronLeft, ChevronsLeft, ChevronsRight, ChevronRight, Calendar
 } from 'lucide-react';
 import { Santri, Lembaga } from '../../types';
 import { renderSantriAvatar } from '../SekretarisHelper';
 import EditSantriKolomModal from './EditSantriKolomModal';
+import { NismGenerateDialog } from './NismGenerateDialog';
+import { 
+  getNismFieldKeyForLembaga,
+  getSantriNismForLembaga,
+  getSantriTahunMasuk,
+  formatTanggalMasukDMY,
+  parseTanggalMasukToYear,
+  generate22DigitNism,
+  getNextSequenceForSantri,
+  updateSantriNismAndTahunMasuk,
+  batchGenerateNismForStudents
+} from '../../lib/nismHelper';
 
 interface LembagaCalonViewProps {
   selectedLembaga: Lembaga;
@@ -81,45 +94,105 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
   const isFormal = activeTab === 'Formal';
   const [membershipFilter, setMembershipFilter] = useState<string>('Semua');
   const [editingSantri, setEditingSantri] = useState<Santri | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Pagination state
+  const [pageSize, setPageSize] = useState<number>(20);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+
+  // NISM Modal State
+  const [nismModalState, setNismModalState] = useState<{
+    isOpen: boolean;
+    targetSantri?: Santri | null;
+  }>({
+    isOpen: false,
+    targetSantri: null
+  });
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
 
   // Sorting state
   const [sortField, setSortField] = useState<'nama' | 'nik' | 'nis' | 'nisn' | 'induk' | 'statusEmis' | 'statusVerval' | 'statusKeanggotaan'>('nama');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
-  // Action Dropdown State (Matching LembagaKelasSub)
+  // Action Dropdown State
   const [activeActionStudentId, setActiveActionStudentId] = useState<string | null>(null);
   const [actionDropdownPos, setActionDropdownPos] = useState<{ top: number; left: number } | null>(null);
 
-  const getIndukNumber = (s: Santri) => {
-    const lemNama = (selectedLembaga?.nama || '').toLowerCase();
-    const lemKode = (selectedLembaga?.kode || '').toLowerCase();
+  // Reset pagination on filter or search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter, membershipFilter, pageSize]);
 
-    if (lemNama.includes('wustho') || lemKode.includes('wustho') || lemKode === 'spmw') {
-      return s.indukWustho || s.indukMhd || s.indukUlya || '';
-    }
-    if (lemNama.includes('ulya') || lemKode.includes('ulya') || lemKode === 'spmu') {
-      return s.indukUlya || s.indukWustho || s.indukMhd || '';
-    }
-    return s.indukMhd || s.indukWustho || s.indukUlya || '';
+  const nismFieldKey = getNismFieldKeyForLembaga(selectedLembaga);
+  const nismLabelSub = nismFieldKey === 'indukWustho' 
+    ? 'Induk Wustho' 
+    : nismFieldKey === 'indukUlya' 
+    ? 'Induk Ulya' 
+    : nismFieldKey === 'indukMhd' 
+    ? 'Induk MHD' 
+    : '22 Digit';
+
+  const handleOpenSingleGenerate = (s: Santri) => {
+    setNismModalState({
+      isOpen: true,
+      targetSantri: s
+    });
   };
 
-  const getIndukLabel = () => {
-    const lemNama = (selectedLembaga?.nama || '').toLowerCase();
-    const lemKode = (selectedLembaga?.kode || '').toLowerCase();
-
-    if (lemNama.includes('wustho') || lemKode.includes('wustho') || lemKode === 'spmw') {
-      return 'Induk Wustho';
-    }
-    if (lemNama.includes('ulya') || lemKode.includes('ulya') || lemKode === 'spmu') {
-      return 'Induk Ulya';
-    }
-    if (lemNama.includes('mhd') || lemNama.includes('madin') || lemNama.includes('diniyyah')) {
-      return 'Induk MHD';
-    }
-    return 'No. Induk';
+  const handleOpenBatchGenerate = () => {
+    setNismModalState({
+      isOpen: true,
+      targetSantri: null
+    });
   };
 
-  const handleSort = (field: 'nama' | 'nik' | 'nis' | 'nisn' | 'induk' | 'statusEmis' | 'statusVerval' | 'statusKeanggotaan') => {
+  const handleConfirmGenerate = ({
+    tanggalMasukDMY,
+    applyDateToAll,
+    overwriteExisting,
+    targetSantri
+  }: {
+    tanggalMasukDMY: string;
+    applyDateToAll: boolean;
+    overwriteExisting: boolean;
+    targetSantri?: Santri | null;
+  }) => {
+    if (!onUpdateSantri) return;
+
+    if (targetSantri) {
+      const year = parseTanggalMasukToYear(tanggalMasukDMY);
+      const seq = getNextSequenceForSantri(targetSantri, students, selectedLembaga, year);
+      const newNism = generate22DigitNism(targetSantri, selectedLembaga, seq, year);
+      const updated = updateSantriNismAndTahunMasuk(targetSantri, newNism, year, selectedLembaga, tanggalMasukDMY);
+      onUpdateSantri(updated);
+      showToast(`NISM (${nismLabelSub}) ${targetSantri.nama} berhasil di-generate: ${newNism}`);
+    } else {
+      const { updatedStudents, countGenerated } = batchGenerateNismForStudents(
+        students,
+        selectedLembaga,
+        overwriteExisting,
+        tanggalMasukDMY,
+        applyDateToAll
+      );
+      updatedStudents.forEach(st => onUpdateSantri(st));
+      showToast(`Berhasil men-generate ${countGenerated} NISM calon santri dengan tanggal masuk ${tanggalMasukDMY}.`);
+    }
+  };
+
+  const handleUpdateNismInline = (s: Santri, val: string) => {
+    if (!onUpdateSantri) return;
+    const currentVal = getSantriNismForLembaga(s, selectedLembaga);
+    if (val.trim() === currentVal) return;
+    const updated = updateSantriNismAndTahunMasuk(s, val.trim(), s.tahunMasuk, selectedLembaga);
+    onUpdateSantri(updated);
+    showToast(`NISM ${s.nama} diperbarui.`);
+  };
+
+  const handleSort = (field: typeof sortField) => {
     if (sortField === field) {
       setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
@@ -128,32 +201,18 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
     }
   };
 
-  // Stats calculation
-  const stats = useMemo(() => {
-    let terdaftar = 0;
-    let belum = 0;
-    let invalid = 0;
-
-    students.forEach(s => {
-      if (s.statusEmis === 'Terdaftar') terdaftar++;
-      else if (s.statusEmis === 'Invalid') invalid++;
-      else belum++;
-    });
-
-    return { terdaftar, belum, invalid };
-  }, [students]);
-
-  // Filtered and sorted students
-  const displayStudents = useMemo(() => {
+  const filteredAndSortedStudents = useMemo(() => {
     let result = [...students];
 
+    // Filter by membership
     if (membershipFilter !== 'Semua') {
       result = result.filter(s => (s.statusKeanggotaan || 'Aktif') === membershipFilter);
     }
 
+    // Sort
     result.sort((a, b) => {
-      let valA: string = '';
-      let valB: string = '';
+      let valA = '';
+      let valB = '';
 
       switch (sortField) {
         case 'nama':
@@ -173,8 +232,8 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
           valB = b.nisn || '';
           break;
         case 'induk':
-          valA = getIndukNumber(a);
-          valB = getIndukNumber(b);
+          valA = getSantriNismForLembaga(a, selectedLembaga) || '';
+          valB = getSantriNismForLembaga(b, selectedLembaga) || '';
           break;
         case 'statusEmis':
           valA = a.statusEmis || 'Belum';
@@ -190,55 +249,72 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
           break;
       }
 
-      return sortDirection === 'asc'
-        ? valA.localeCompare(valB, 'id', { sensitivity: 'base', numeric: true })
-        : valB.localeCompare(valA, 'id', { sensitivity: 'base', numeric: true });
+      const comparison = valA.localeCompare(valB, 'id-ID', { numeric: true, sensitivity: 'base' });
+      return sortDirection === 'asc' ? comparison : -comparison;
     });
 
     return result;
   }, [students, membershipFilter, sortField, sortDirection, selectedLembaga]);
 
-  const renderSortHeader = (
-    label: string, 
-    field: 'nama' | 'nik' | 'nis' | 'nisn' | 'induk' | 'statusEmis' | 'statusVerval' | 'statusKeanggotaan',
-    className: string = '',
-    align: 'left' | 'center' | 'right' = 'left'
-  ) => {
+  // Pagination calculations
+  const totalItems = filteredAndSortedStudents.length;
+  const totalPages = Math.ceil(totalItems / pageSize) || 1;
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, totalItems);
+  const displayStudents = useMemo(() => {
+    return filteredAndSortedStudents.slice(startIndex, endIndex);
+  }, [filteredAndSortedStudents, startIndex, endIndex]);
+
+  // EMIS Stats calculation
+  const stats = useMemo(() => {
+    const terdaftar = students.filter(s => s.statusEmis === 'Terdaftar').length;
+    const invalid = students.filter(s => s.statusEmis === 'Invalid').length;
+    const belum = students.length - terdaftar - invalid;
+    return { terdaftar, invalid, belum };
+  }, [students]);
+
+  const renderSortHeader = (label: string, field: typeof sortField, extraClass = '', align: 'left' | 'center' = 'left') => {
     const isCurrent = sortField === field;
     return (
-      <th 
+      <div 
         onClick={() => handleSort(field)}
-        className={`py-3.5 px-3 select-none cursor-pointer hover:bg-slate-100 transition-colors ${className}`}
+        className={`flex items-center gap-1 cursor-pointer select-none group/sort ${align === 'center' ? 'justify-center' : 'justify-start'} ${extraClass}`}
       >
-        <div className={`flex items-center gap-1.5 ${align === 'center' ? 'justify-center' : align === 'right' ? 'justify-end' : 'justify-start'}`}>
-          <span className="truncate">{label}</span>
-          <span className="shrink-0 text-slate-400">
-            {isCurrent ? (
-              sortDirection === 'asc' ? <ChevronUp className="h-3.5 w-3.5 text-amber-700" /> : <ChevronDown className="h-3.5 w-3.5 text-amber-700" />
-            ) : (
-              <ChevronsUpDown className="h-3 w-3 opacity-40" />
-            )}
-          </span>
-        </div>
-      </th>
+        <span className={isCurrent ? 'text-amber-800 font-black' : 'group-hover/sort:text-slate-900'}>{label}</span>
+        <span className="text-slate-400 group-hover/sort:text-slate-600">
+          {isCurrent ? (
+            sortDirection === 'asc' ? <ChevronUp className="h-3 w-3 text-amber-700 stroke-[3]" /> : <ChevronDown className="h-3 w-3 text-amber-700 stroke-[3]" />
+          ) : (
+            <ChevronsUpDown className="h-3 w-3 opacity-30 group-hover/sort:opacity-100" />
+          )}
+        </span>
+      </div>
     );
   };
 
   return (
     <motion.div
-      key="calon-view"
+      key="calon-peserta-didik-view"
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
       className="flex flex-col gap-6 animate-fade-in"
     >
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-2.5 rounded-2xl shadow-xl text-xs font-bold flex items-center gap-2 animate-bounce">
+          <Sparkles className="h-4 w-4 text-amber-400" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       {/* Header Card */}
       <div className="w-full bg-white border border-slate-100 rounded-3xl p-5 sm:p-7 shadow-xs relative">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 mb-4 border-b border-slate-100/90">
           <div className="flex flex-wrap items-center gap-3">
             <button
               onClick={onBackToHub}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-[#00693E] transition-all font-bold text-xs shadow-3xs cursor-pointer active:scale-95 shrink-0"
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-amber-800 transition-all font-bold text-xs shadow-3xs cursor-pointer active:scale-95 shrink-0"
               title="Kembali ke Menu Lembaga"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -253,6 +329,15 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={handleOpenBatchGenerate}
+              className="inline-flex items-center justify-center bg-emerald-600 hover:bg-emerald-700 text-white h-9 px-3.5 rounded-xl text-xs font-bold cursor-pointer shadow-3xs active:scale-95 transition-all gap-1.5"
+              title="Generate Otomatis NISM 22 Digit untuk Calon Santri"
+            >
+              <Sparkles className="h-4 w-4 text-emerald-100" />
+              <span>Generate NISM</span>
+            </button>
+
             <button
               onClick={onExport || onPrintPDF}
               className="inline-flex items-center justify-center bg-white border border-slate-200 h-9 px-3.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer shadow-3xs active:scale-95 transition-all gap-1.5"
@@ -314,7 +399,7 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
-              placeholder="Cari nama calon santri, NIS, NIK, NISN, atau no. induk..."
+              placeholder="Cari nama calon santri, NIS, NIK, NISN, NISM, atau Wali..."
               className="w-full h-10.5 pl-10 pr-10 bg-slate-50 border border-slate-200/80 rounded-2xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 transition-all shadow-3xs"
             />
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -363,11 +448,18 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
         {/* Table */}
         <div className="rounded-2xl border border-slate-200/80 overflow-hidden shadow-3xs">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[1300px]">
+            <table className="w-full text-left border-collapse min-w-[1400px]">
               <thead>
                 <tr className="bg-slate-100 border-b border-slate-200 text-[11px] font-black text-slate-700 uppercase tracking-wider select-none">
                   <th className="w-10 py-3.5 px-2 text-center sticky left-0 z-20 bg-slate-100 border-r border-slate-200">NO</th>
-                  <th className="w-28 py-3.5 px-3 border-r border-slate-200">{renderSortHeader('NISM', 'nis')}</th>
+                  <th className="w-56 py-3.5 px-3 border-r border-slate-200">
+                    <div className="flex items-center justify-between">
+                      <span>NISM (22 DIGIT)</span>
+                      <span className="text-[9px] font-extrabold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/60 lowercase font-mono">
+                        {nismLabelSub}
+                      </span>
+                    </div>
+                  </th>
                   <th className="w-28 py-3.5 px-3 border-r border-slate-200">{renderSortHeader('NISN', 'nisn')}</th>
                   <th className="w-52 py-3.5 px-3 border-r border-slate-200">{renderSortHeader('NAMA', 'nama')}</th>
                   <th className="w-32 py-3.5 px-3 border-r border-slate-200">TEMPAT LAHIR</th>
@@ -403,10 +495,11 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
                   </tr>
                 ) : (
                   displayStudents.map((s, idx) => {
+                    const rowNumber = startIndex + idx + 1;
                     const isNisnValid = !!(s.nisn && s.nisn.trim() !== '');
                     const ageStr = calculateAge(s.tanggalLahir);
                     const genderCode = s.gender === 'Putra' ? 'L' : s.gender === 'Putri' ? 'P' : (s.gender || '-');
-                    const nismVal = s.nism || '-';
+                    const nismVal = getSantriNismForLembaga(s, selectedLembaga);
                     const kelasMhdVal = s.kelasMhd || s.pendidikanInternal || s.indukMhd || '-';
                     const semesterVal = s.semester || 'Semester 1';
                     const isVervalSukses = (s.statusVerval || (isNisnValid ? 'Sukses' : 'Proses')) === 'Sukses';
@@ -418,12 +511,35 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
                       >
                         {/* 1. NO */}
                         <td className="py-3 px-2 text-center font-bold text-slate-400 sticky left-0 z-10 bg-white group-hover:bg-slate-50 border-r border-slate-100">
-                          {idx + 1}
+                          {rowNumber}
                         </td>
 
-                        {/* 2. NISM */}
-                        <td className="py-3 px-3 font-mono font-bold text-slate-700 border-r border-slate-100">
-                          {s.nism ? nismVal : <span className="text-slate-300">-</span>}
+                        {/* 2. NISM (with inline edit & generate button) */}
+                        <td className="py-2.5 px-2 font-mono font-bold text-slate-700 border-r border-slate-100">
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              defaultValue={nismVal}
+                              key={`nism-${s.id}-${nismVal}`}
+                              onBlur={(e) => handleUpdateNismInline(s, e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  (e.target as HTMLInputElement).blur();
+                                }
+                              }}
+                              placeholder="22 Digit NISM..."
+                              className="flex-1 font-mono text-[11px] font-bold text-slate-800 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-200 focus:border-amber-500 rounded px-1.5 py-1 outline-none transition-all"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleOpenSingleGenerate(s)}
+                              title="Generate 22-Digit NISM Otomatis"
+                              className="px-1.5 py-1 rounded-md bg-amber-50 hover:bg-amber-100 active:scale-95 text-amber-800 text-[10px] font-black tracking-tight border border-amber-200/80 flex items-center gap-1 shrink-0 transition-all cursor-pointer shadow-3xs"
+                            >
+                              <Sparkles className="h-3 w-3 text-amber-600" />
+                              <span>Gen</span>
+                            </button>
+                          </div>
                         </td>
 
                         {/* 3. NISN */}
@@ -431,7 +547,7 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
                           {s.nisn || <span className="text-slate-300">-</span>}
                         </td>
 
-                        {/* 4. NAMA */}
+                        {/* 5. NAMA */}
                         <td className="py-3 px-3 border-r border-slate-100">
                           <div className="flex items-center gap-2.5 min-w-0">
                             <div className="w-7 h-7 rounded-full overflow-hidden shrink-0 border border-slate-200">
@@ -440,7 +556,7 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
                             <div className="min-w-0">
                               <span 
                                 onClick={() => onSelectStudentDetail(s)}
-                                className="font-extrabold text-slate-800 hover:text-amber-700 cursor-pointer hover:underline truncate block"
+                                className="font-extrabold text-slate-800 hover:text-amber-800 cursor-pointer hover:underline truncate block"
                                 title={s.nama}
                               >
                                 {s.nama}
@@ -454,24 +570,24 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
                           </div>
                         </td>
 
-                        {/* 5. TEMPAT LAHIR */}
+                        {/* 6. TEMPAT LAHIR */}
                         <td className="py-3 px-3 text-slate-700 font-medium border-r border-slate-100">
                           {s.tempatLahir || <span className="text-slate-300">-</span>}
                         </td>
 
-                        {/* 6. TANGGAL LAHIR */}
+                        {/* 7. TANGGAL LAHIR */}
                         <td className="py-3 px-3 font-mono font-medium text-slate-600 border-r border-slate-100">
                           {formatTanggal(s.tanggalLahir)}
                         </td>
 
-                        {/* 7. UMUR */}
+                        {/* 8. UMUR */}
                         <td className="py-3 px-2 text-center font-bold text-slate-600 border-r border-slate-100">
                           <span className={ageStr !== '-' ? "px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px]" : "text-slate-300"}>
                             {ageStr}
                           </span>
                         </td>
 
-                        {/* 8. JENIS KELAMIN */}
+                        {/* 9. JENIS KELAMIN */}
                         <td className="py-3 px-2 text-center font-bold border-r border-slate-100">
                           <span className={`inline-flex items-center justify-center w-5 h-5 rounded-md text-[10px] font-black ${
                             genderCode === 'L' 
@@ -484,59 +600,41 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
                           </span>
                         </td>
 
-                        {/* 9. NAMA AYAH */}
+                        {/* 10. NAMA AYAH */}
                         <td className="py-3 px-3 text-slate-700 font-medium truncate max-w-[140px] border-r border-slate-100" title={s.namaAyah}>
                           {s.namaAyah || <span className="text-slate-300">-</span>}
                         </td>
 
-                        {/* 10. NAMA IBU */}
+                        {/* 11. NAMA IBU */}
                         <td className="py-3 px-3 text-slate-700 font-medium truncate max-w-[140px] border-r border-slate-100" title={s.namaIbu}>
                           {s.namaIbu || <span className="text-slate-300">-</span>}
                         </td>
 
-                        {/* 11. EMIS */}
+                        {/* 12. EMIS */}
                         <td className="py-3 px-2 text-center border-r border-slate-100">
-                          {onUpdateEmisStatus && canWriteCurrent ? (
-                            <select
-                              value={s.statusEmis || 'Belum'}
-                              onChange={(e) => onUpdateEmisStatus(s.id, e.target.value as any)}
-                              className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide border cursor-pointer ${
-                                s.statusEmis === 'Terdaftar'
-                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                  : s.statusEmis === 'Invalid'
-                                  ? 'bg-rose-50 text-rose-800 border-rose-200'
-                                  : 'bg-slate-100 text-slate-600 border-slate-200'
-                              }`}
-                            >
-                              <option value="Terdaftar">Terdaftar</option>
-                              <option value="Belum">Belum</option>
-                              <option value="Invalid">Invalid</option>
-                            </select>
-                          ) : (
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide ${
-                              s.statusEmis === 'Terdaftar'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : s.statusEmis === 'Invalid'
-                                ? 'bg-rose-100 text-rose-800'
-                                : 'bg-slate-100 text-slate-600'
-                            }`}>
-                              {s.statusEmis || 'Belum'}
-                            </span>
-                          )}
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide ${
+                            s.statusEmis === 'Terdaftar'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : s.statusEmis === 'Invalid'
+                              ? 'bg-rose-100 text-rose-800'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            {s.statusEmis || 'Belum'}
+                          </span>
                         </td>
 
-                        {/* 12. VERVAL */}
+                        {/* 13. VERVAL */}
                         <td className="py-3 px-2 text-center border-r border-slate-100">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide ${
                             isVervalSukses
                               ? 'bg-[#E6F4EA] text-[#137333]'
-                              : 'bg-rose-50 text-rose-700'
+                              : 'bg-amber-50 text-amber-800 border border-amber-200/60'
                           }`}>
-                            {s.statusVerval || (isNisnValid ? 'Sukses' : 'Proses')}
+                            {isVervalSukses ? 'Sukses' : 'Proses'}
                           </span>
                         </td>
 
-                        {/* 13. STATUS KEAKTIFAN */}
+                        {/* 14. STATUS KEAKTIFAN */}
                         <td className="py-3 px-2 text-center border-r border-slate-100">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide ${
                             s.statusKeanggotaan === 'Aktif' || !s.statusKeanggotaan
@@ -549,46 +647,34 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
                           </span>
                         </td>
 
-                        {/* 14. KELAS MHD */}
+                        {/* 15. KELAS MHD */}
                         <td className="py-3 px-3 font-semibold text-slate-700 border-r border-slate-100">
                           {kelasMhdVal}
                         </td>
 
-                        {/* 15. SEMESTER */}
+                        {/* 16. SEMESTER */}
                         <td className="py-3 px-3 font-semibold text-slate-700 border-r border-slate-100">
                           <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-bold">
                             {semesterVal}
                           </span>
                         </td>
 
-                        {/* Standardized Aksi Column matching LembagaKelasSub */}
-                        <td className="sticky right-0 z-10 w-16 text-center px-2 py-3 transition-colors border-l border-slate-200 shadow-[-2px_0_5px_rgba(0,0,0,0.03)] bg-white group-hover:bg-slate-50">
-                          <div className="relative inline-block text-left" onClick={(e) => e.stopPropagation()}>
+                        {/* 17. AKSI */}
+                        <td className="py-3 px-2 text-center sticky right-0 z-10 bg-white group-hover:bg-slate-50 border-l border-slate-100 shadow-[-2px_0_5px_rgba(0,0,0,0.03)]">
+                          <div className="flex items-center justify-center">
                             <button
+                              type="button"
                               onClick={(e) => {
+                                e.stopPropagation();
                                 const rect = e.currentTarget.getBoundingClientRect();
-                                const dropdownWidth = 140;
-                                const dropdownHeight = 140;
-                                let top = rect.bottom;
-                                if (top + dropdownHeight > window.innerHeight) {
-                                  top = rect.top - dropdownHeight;
-                                }
-                                let left = rect.right - dropdownWidth;
-                                if (left < 8) left = 8;
-                                if (left + dropdownWidth > window.innerWidth - 8) {
-                                  left = window.innerWidth - dropdownWidth - 8;
-                                }
-
-                                if (activeActionStudentId === s.id) {
-                                  setActiveActionStudentId(null);
-                                  setActionDropdownPos(null);
-                                } else {
-                                  setActiveActionStudentId(s.id);
-                                  setActionDropdownPos({ top, left });
-                                }
+                                setActionDropdownPos({
+                                  top: rect.bottom + 4,
+                                  left: Math.max(10, rect.right - 144)
+                                });
+                                setActiveActionStudentId(activeActionStudentId === s.id ? null : s.id);
                               }}
-                              className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
-                              title="Menu Aksi"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                              title="Pilihan Aksi"
                             >
                               <MoreVertical className="h-4 w-4" />
                             </button>
@@ -602,9 +688,94 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
             </table>
           </div>
         </div>
+
+        {/* Pagination Footer */}
+        {totalItems > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between border-t border-slate-100 pt-4 text-xs text-slate-500 font-medium gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <span className="hidden sm:inline font-display">Baris per Halaman:</span>
+              <span title="Baris per Halaman"><Eye className="h-4 w-4 text-slate-400 sm:hidden shrink-0" /></span>
+              <div className="relative shrink-0">
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="appearance-none rounded-xl border border-slate-200 bg-white pl-3.5 pr-8 py-1.5 text-xs font-bold text-slate-700 focus:border-amber-500 focus:outline-none cursor-pointer shadow-3xs"
+                >
+                  {[20, 50, 100, 500].map(sz => (
+                    <option key={sz} value={sz}>{sz === 500 ? 'Semua (500)' : sz}</option>
+                  ))}
+                </select>
+                <span className="absolute inset-y-0 right-0 flex items-center pr-2.5 pointer-events-none text-slate-400">
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </span>
+              </div>
+              <span className="text-slate-600">
+                Menampilkan <b>{totalItems > 0 ? startIndex + 1 : 0}</b> - <b>{endIndex}</b> dari <b>{totalItems}</b> calon santri
+              </span>
+            </div>
+
+            {/* Page Navigation */}
+            <div className="flex items-center gap-1 sm:gap-1.5 select-none">
+              <button
+                type="button"
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage(1)}
+                className={`h-8 w-8 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 transition-all ${
+                  currentPage <= 1 ? 'opacity-40 cursor-not-allowed' : 'hover:text-slate-800 cursor-pointer active:scale-95'
+                }`}
+                title="Halaman Pertama"
+              >
+                <ChevronsLeft className="h-4 w-4" />
+              </button>
+
+              <button
+                type="button"
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                className={`h-8 w-8 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 transition-all ${
+                  currentPage <= 1 ? 'opacity-40 cursor-not-allowed' : 'hover:text-slate-800 cursor-pointer active:scale-95'
+                }`}
+                title="Halaman Sebelumnya"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+
+              <div className="px-2 font-bold text-slate-700 text-xs">
+                Halaman {currentPage} / {totalPages}
+              </div>
+
+              <button
+                type="button"
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                className={`h-8 w-8 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 transition-all ${
+                  currentPage >= totalPages ? 'opacity-40 cursor-not-allowed' : 'hover:text-slate-800 cursor-pointer active:scale-95'
+                }`}
+                title="Halaman Berikutnya"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+
+              <button
+                type="button"
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage(totalPages)}
+                className={`h-8 w-8 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 transition-all ${
+                  currentPage >= totalPages ? 'opacity-40 cursor-not-allowed' : 'hover:text-slate-800 cursor-pointer active:scale-95'
+                }`}
+                title="Halaman Terakhir"
+              >
+                <ChevronsRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Floating Fixed Action Dropdown (Matching LembagaKelasSub) */}
+      {/* Floating Fixed Action Dropdown */}
       {typeof document !== 'undefined' && createPortal(
         <AnimatePresence>
           {activeActionStudentId && actionDropdownPos && (() => {
@@ -626,7 +797,7 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
                     left: `${actionDropdownPos.left}px`,
                     zIndex: 9999
                   }}
-                  className="w-36 bg-white border border-slate-200 rounded-xl shadow-xl py-1 text-[11px] font-bold text-slate-700 text-left overflow-hidden"
+                  className="w-40 bg-white border border-slate-200 rounded-xl shadow-xl py-1 text-[11px] font-bold text-slate-700 text-left overflow-hidden"
                 >
                   <button
                     onClick={() => {
@@ -649,6 +820,17 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
                   >
                     <Eye className="h-3.5 w-3.5 text-slate-400" />
                     <span>Detail</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleOpenSingleGenerate(s);
+                      setActiveActionStudentId(null);
+                      setActionDropdownPos(null);
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-amber-50 hover:text-amber-700 transition-colors cursor-pointer flex items-center gap-2 text-amber-700 font-bold"
+                  >
+                    <Sparkles className="h-3.5 w-3.5 text-amber-600" />
+                    <span>Generate NISM</span>
                   </button>
                   {onTransferStudent && (
                     <button
@@ -684,6 +866,16 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
         document.body
       )}
 
+      {/* NISM Generate Dialog */}
+      <NismGenerateDialog
+        isOpen={nismModalState.isOpen}
+        onClose={() => setNismModalState({ isOpen: false, targetSantri: null })}
+        targetSantri={nismModalState.targetSantri}
+        students={students}
+        selectedLembaga={selectedLembaga}
+        onConfirm={handleConfirmGenerate}
+      />
+
       {/* Edit Santri Kolom Modal */}
       {editingSantri && (
         <EditSantriKolomModal
@@ -691,7 +883,10 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
           onClose={() => setEditingSantri(null)}
           santri={editingSantri}
           onSave={(updated) => {
-            onUpdateSantri?.(updated);
+            if (onUpdateSantri) {
+              onUpdateSantri(updated);
+              showToast(`Data santri ${updated.nama} berhasil diperbarui.`);
+            }
             setEditingSantri(null);
           }}
         />

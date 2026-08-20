@@ -235,129 +235,122 @@ export default function App() {
   const [humasList, setHumasList] = useState<HumasAgenda[]>([]);
   const [pendidikanList, setPendidikanList] = useState<KelasPendidikan[]>([]);
   
+  // Track loaded modules to fetch on demand
+  const loadedModulesRef = React.useRef<Set<string>>(new Set());
+
   // Track newly added or modified santri to prevent initial load from overwriting them while async requests are pending
   const pendingOperations = React.useRef<Map<string, { data: Santri; timestamp: number }>>(new Map());
   // Track recently deleted santri IDs to prevent realtime listeners from re-inserting them
   const deletedSantriIds = React.useRef<Map<string, number>>(new Map());
  
-  // On mount, load data once from Supabase and set up automatic WebSockets Supabase Realtime listener
-  React.useEffect(() => {
-    const cleanSantri = (s: any) => {
-      let updated = { ...s };
-      const unifiedStatus = s.statusKeanggotaan || s.status || 'Aktif';
-      updated.statusKeanggotaan = unifiedStatus as any;
-      if (s.kelas === 'VII Tsanawiyah A') {
-        updated.kelas = 'Tanpa Kelas';
-      }
-      if (s.kamar === 'Al-Ghazali 01' || s.kamar === 'Al Ghazali 01') {
-        updated.kamar = 'Tanpa Kamar';
-      }
-      if (s.nik !== undefined && s.nik !== null) updated.nik = formatBigDigit(s.nik);
-      if (s.nisn !== undefined && s.nisn !== null) updated.nisn = formatBigDigit(s.nisn);
-      if (s.noKk !== undefined && s.noKk !== null) updated.noKk = formatBigDigit(s.noKk);
-      if (s.nikAyah !== undefined && s.nikAyah !== null) updated.nikAyah = formatBigDigit(s.nikAyah);
-      if (s.nikIbu !== undefined && s.nikIbu !== null) updated.nikIbu = formatBigDigit(s.nikIbu);
-      if (s.noHp !== undefined && s.noHp !== null) updated.noHp = formatBigDigit(s.noHp);
-      return updated;
-    };
+  // Load core santri data
+  const loadSantriData = React.useCallback(() => {
+    fetchTableData<Santri>('santri', 'smartsantri_santriList', [])
+      .then(list => {
+        let hasDummy = false;
+        const cleaned = list.map(s => {
+          let updated = { ...s };
+          const unifiedStatus = s.statusKeanggotaan || (s as any).status || 'Aktif';
+          updated.statusKeanggotaan = unifiedStatus as any;
 
-    const loadAllData = () => {
-      fetchTableData<Santri>('santri', 'smartsantri_santriList', [])
-        .then(list => {
-          let hasDummy = false;
-          const cleaned = list.map(s => {
-            let updated = { ...s };
-            // Ensure statusKeanggotaan is always set
-            const unifiedStatus = s.statusKeanggotaan || (s as any).status || 'Aktif';
-            updated.statusKeanggotaan = unifiedStatus as any;
-
-            if (s.kelas === 'VII Tsanawiyah A') {
-              hasDummy = true;
-              updated.kelas = 'Tanpa Kelas';
-            }
-            if (updated.kelas && updated.kelas.toLowerCase().includes('calon pelajar')) {
-              hasDummy = true;
-              updated.kelas = updated.kelas.replace(/calon pelajar/gi, 'Calon Peserta Didik');
-              updateTableRow('santri', 'smartsantri_santriList', updated.id, updated).catch(() => {});
-            }
-            if (s.kamar === 'Al-Ghazali 01' || s.kamar === 'Al Ghazali 01') {
-              hasDummy = true;
-              updated.kamar = 'Tanpa Kamar';
-            }
-            return updated;
-          });
-
-          setSantriList((prev) => {
-            const now = Date.now();
-            // Clean up operations older than 15 seconds
-            for (const [id, op] of pendingOperations.current.entries()) {
-              if (now - op.timestamp > 15000) {
-                pendingOperations.current.delete(id);
-              }
-            }
-            // Clean up deleted items older than 60 seconds
-            for (const [id, time] of deletedSantriIds.current.entries()) {
-              if (now - time > 60000) {
-                deletedSantriIds.current.delete(id);
-              }
-            }
-
-            // Map server's cleaned list, overriding any items with active pending updates
-            const updatedCleaned = cleaned
-              .filter(item => !deletedSantriIds.current.has(item.id))
-              .map(item => {
-                const pending = pendingOperations.current.get(item.id);
-                if (pending) {
-                  return pending.data;
-                }
-                return item;
-              });
-
-            // Find pending items that are not yet in the cleaned list (such as brand new ones)
-            const brandNewPending = Array.from(pendingOperations.current.values())
-              .filter((op: { data: Santri; timestamp: number }) => !deletedSantriIds.current.has(op.data.id) && !cleaned.some(c => c.id === op.data.id))
-              .map((op: { data: Santri; timestamp: number }) => op.data);
-
-            const resultList = [...brandNewPending, ...updatedCleaned];
-            if (JSON.stringify(prev) === JSON.stringify(resultList)) {
-              return prev;
-            }
-            return resultList;
-          });
-
-          if (hasDummy) {
-            list.forEach(async (s) => {
-              if (s.kelas === 'VII Tsanawiyah A' || s.kamar === 'Al-Ghazali 01' || s.kamar === 'Al Ghazali 01') {
-                try {
-                  const updatedKamar = s.kamar === 'Al-Ghazali 01' || s.kamar === 'Al Ghazali 01' ? 'Tanpa Kamar' : s.kamar;
-                  const updatedKelas = s.kelas === 'VII Tsanawiyah A' ? 'Tanpa Kelas' : s.kelas;
-                  await updateTableRow('santri', 'smartsantri_santriList', s.id, { ...s, kelas: updatedKelas, kamar: updatedKamar });
-                } catch (e) {
-                  console.error('Failed to update dummy class/room in DB:', e);
-                }
-              }
-            });
+          if (s.kelas === 'VII Tsanawiyah A') {
+            hasDummy = true;
+            updated.kelas = 'Tanpa Kelas';
           }
+          if (updated.kelas && updated.kelas.toLowerCase().includes('calon pelajar')) {
+            hasDummy = true;
+            updated.kelas = updated.kelas.replace(/calon pelajar/gi, 'Calon Peserta Didik');
+            updateTableRow('santri', 'smartsantri_santriList', updated.id, updated).catch(() => {});
+          }
+          if (s.kamar === 'Al-Ghazali 01' || s.kamar === 'Al Ghazali 01') {
+            hasDummy = true;
+            updated.kamar = 'Tanpa Kamar';
+          }
+          if (s.nik !== undefined && s.nik !== null) updated.nik = formatBigDigit(s.nik);
+          if (s.nisn !== undefined && s.nisn !== null) updated.nisn = formatBigDigit(s.nisn);
+          if (s.noKk !== undefined && s.noKk !== null) updated.noKk = formatBigDigit(s.noKk);
+          if (s.nikAyah !== undefined && s.nikAyah !== null) updated.nikAyah = formatBigDigit(s.nikAyah);
+          if (s.nikIbu !== undefined && s.nikIbu !== null) updated.nikIbu = formatBigDigit(s.nikIbu);
+          if (s.noHp !== undefined && s.noHp !== null) updated.noHp = formatBigDigit(s.noHp);
+          return updated;
         });
 
+        setSantriList((prev) => {
+          const now = Date.now();
+          for (const [id, op] of pendingOperations.current.entries()) {
+            if (now - op.timestamp > 15000) {
+              pendingOperations.current.delete(id);
+            }
+          }
+          for (const [id, time] of deletedSantriIds.current.entries()) {
+            if (now - time > 60000) {
+              deletedSantriIds.current.delete(id);
+            }
+          }
+
+          const updatedCleaned = cleaned
+            .filter(item => !deletedSantriIds.current.has(item.id))
+            .map(item => {
+              const pending = pendingOperations.current.get(item.id);
+              if (pending) {
+                return pending.data;
+              }
+              return item;
+            });
+
+          const brandNewPending = Array.from(pendingOperations.current.values())
+            .filter((op: { data: Santri; timestamp: number }) => !deletedSantriIds.current.has(op.data.id) && !cleaned.some(c => c.id === op.data.id))
+            .map((op: { data: Santri; timestamp: number }) => op.data);
+
+          const resultList = [...brandNewPending, ...updatedCleaned];
+          if (JSON.stringify(prev) === JSON.stringify(resultList)) {
+            return prev;
+          }
+          return resultList;
+        });
+
+        if (hasDummy) {
+          list.forEach(async (s) => {
+            if (s.kelas === 'VII Tsanawiyah A' || s.kamar === 'Al-Ghazali 01' || s.kamar === 'Al Ghazali 01') {
+              try {
+                const updatedKamar = s.kamar === 'Al-Ghazali 01' || s.kamar === 'Al Ghazali 01' ? 'Tanpa Kamar' : s.kamar;
+                const updatedKelas = s.kelas === 'VII Tsanawiyah A' ? 'Tanpa Kelas' : s.kelas;
+                await updateTableRow('santri', 'smartsantri_santriList', s.id, { ...s, kelas: updatedKelas, kamar: updatedKamar });
+              } catch (e) {
+                console.error('Failed to update dummy class/room in DB:', e);
+              }
+            }
+          });
+        }
+      });
+  }, []);
+
+  // Lazy load module data on demand when selected
+  React.useEffect(() => {
+    if (!loadedModulesRef.current.has('santri')) {
+      loadedModulesRef.current.add('santri');
+      loadSantriData();
+    }
+
+    if (activeModule === 'bendahara' && !loadedModulesRef.current.has('bendahara')) {
+      loadedModulesRef.current.add('bendahara');
       fetchTableData<BendaharaRecord>('bendahara', 'smartsantri_bendaharaList', [])
         .then(data => {
           setBendaharaList(prev => JSON.stringify(prev) === JSON.stringify(data) ? prev : data);
         });
+    }
 
+    if (activeModule === 'keamanan' && !loadedModulesRef.current.has('keamanan')) {
+      loadedModulesRef.current.add('keamanan');
       fetchTableData<KeamananRecord>('keamanan', 'smartsantri_keamananList', [])
         .then(data => {
           setKeamananList(prev => JSON.stringify(prev) === JSON.stringify(data) ? prev : data);
         });
-    };
+    }
+  }, [activeModule, loadSantriData]);
 
-    loadAllData();
-
-    // Polling fallback every 60 seconds (WebSocket provides instant real-time sync)
-    const appPollInterval = setInterval(() => {
-      loadAllData();
-    }, 60000);
-
+  // Realtime subscriptions
+  React.useEffect(() => {
     // Subscribe to WebSocket realtime changes from server
     const unsubscribeWs = subscribeRealtimeChanges((payload: any) => {
       if (payload.event === 'db_change' || payload.type === 'db_change' || payload.action === 'db_change') {
@@ -410,30 +403,16 @@ export default function App() {
               return [camelData, ...prev];
             });
           }
-        } else {
-          loadAllData();
+        } else if (payload.table === 'santri') {
+          loadSantriData();
         }
-      } else if (payload.action === 'truncate_all' || !payload.data) {
-        loadAllData();
       }
     });
 
-    // Re-fetch immediately when screen/tab regains focus or visibility
-    const handleFocusOrVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        loadAllData();
-      }
-    };
-    window.addEventListener('focus', handleFocusOrVisibility);
-    document.addEventListener('visibilitychange', handleFocusOrVisibility);
-
     return () => {
-      clearInterval(appPollInterval);
       unsubscribeWs();
-      window.removeEventListener('focus', handleFocusOrVisibility);
-      document.removeEventListener('visibilitychange', handleFocusOrVisibility);
     };
-  }, []);
+  }, [loadSantriData]);
 
   // Route newly logged-in users to their corresponding view immediately
   React.useEffect(() => {

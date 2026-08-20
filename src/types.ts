@@ -9,6 +9,9 @@ export interface Santri {
   tanggalMasuk: string;
 
   // Identitas Santri tambahan
+  tahunMasuk?: string;
+  tanggalMasukLembaga?: string;
+  tahunMasukLembaga?: string;
   nism?: string;
   nisn?: string;
   indukMhd?: string;

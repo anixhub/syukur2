@@ -20,6 +20,7 @@ import LembagaCalonView from './LembagaCalonView';
 import LembagaLulusanView from './LembagaLulusanView';
 import EditSantriKolomModal from './EditSantriKolomModal';
 import { ExportModal } from '../ExportModal';
+import { getSantriNismForLembaga, getSantriTahunMasuk, formatTanggalMasukDMY } from '../../lib/nismHelper';
 
 const MONTH_NAMES = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
@@ -502,7 +503,7 @@ export default function LembagaKelasSub({
         </th>
 
         {/* 2. NISM */}
-        {renderSortableHeader('NISM', 'nism', 'w-[100px] min-w-[100px] pl-2 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+        {renderSortableHeader('NISM', 'nism', 'w-[140px] min-w-[140px] pl-2 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
 
         {/* 3. NISN */}
         {renderSortableHeader('NISN', 'nisn', 'w-[110px] min-w-[110px] pl-2 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
@@ -2565,6 +2566,7 @@ export default function LembagaKelasSub({
     const headers = [
       'NO',
       'NISM',
+      'THN MASUK',
       'NISN',
       'NAMA',
       'TEMPAT LAHIR',
@@ -2582,7 +2584,8 @@ export default function LembagaKelasSub({
 
     const rows = studentsToExport.map((s, idx) => [
       idx + 1,
-      s.nism || '-',
+      getSantriNismForLembaga(s, selectedLembaga) || '-',
+      s.tahunMasuk || getSantriTahunMasuk(s) || '-',
       s.nisn || '-',
       s.nama || '-',
       s.tempatLahir || '-',
@@ -2600,7 +2603,8 @@ export default function LembagaKelasSub({
 
     const colWidths = [
       35,  // NO
-      85,  // NISM
+      110, // NISM
+      65,  // THN MASUK
       85,  // NISN
       160, // NAMA
       100, // TEMPAT LAHIR
@@ -2755,7 +2759,8 @@ export default function LembagaKelasSub({
     const rowsHtml = studentsToPrint.map((s, idx) => `
       <tr>
         <td style="text-align: center;">${idx + 1}</td>
-        <td style="font-family: monospace; font-size: 8.5px;">${s.nism || '-'}</td>
+        <td style="font-family: monospace; font-size: 8.5px;">${getSantriNismForLembaga(s, selectedLembaga) || '-'}</td>
+        <td style="font-family: monospace; font-size: 8.5px; text-align: center;">${s.tahunMasuk || getSantriTahunMasuk(s) || '-'}</td>
         <td style="font-family: monospace; font-size: 8.5px;">${s.nisn || '-'}</td>
         <td><strong>${s.nama}</strong></td>
         <td>${s.tempatLahir || '-'}</td>
@@ -2816,7 +2821,8 @@ export default function LembagaKelasSub({
           <thead>
             <tr>
               <th style="width: 22px;">NO</th>
-              <th style="width: 65px;">NISM</th>
+              <th style="width: 80px;">NISM</th>
+              <th style="width: 45px;">THN MASUK</th>
               <th style="width: 65px;">NISN</th>
               <th>NAMA</th>
               <th style="width: 75px;">TEMPAT LAHIR</th>
@@ -4029,7 +4035,7 @@ export default function LembagaKelasSub({
                               <tbody className="divide-y divide-slate-100">
                                 {filteredStudents.length === 0 ? (
                                   <tr>
-                                    <td colSpan={16} className="py-16 text-center text-slate-400 font-medium text-xs">
+                                    <td colSpan={15} className="py-16 text-center text-slate-400 font-medium text-xs">
                                       <div className="flex flex-col items-center justify-center gap-2.5">
                                         <p className="italic">Belum ada santri terdaftar di kelas/kelompok ini.</p>
                                         {canWriteCurrent && (
@@ -4087,8 +4093,8 @@ export default function LembagaKelasSub({
                                     </td>
 
                                     {/* 2. NISM */}
-                                    <td className="w-[100px] min-w-[100px] font-mono font-bold text-slate-700 truncate px-2.5 py-3.5 border-r border-slate-100">
-                                      {s.nism ? s.nism : <span className="text-slate-300">-</span>}
+                                    <td className="w-[140px] min-w-[140px] font-mono font-bold text-slate-700 truncate px-2.5 py-3.5 border-r border-slate-100">
+                                      {getSantriNismForLembaga(s, selectedLembaga) || <span className="text-slate-300">-</span>}
                                     </td>
 
                                     {/* 3. NISN */}

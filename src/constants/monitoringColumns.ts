@@ -8,6 +8,7 @@ export interface ColumnConfig {
 
 export const ALL_COLUMNS: ColumnConfig[] = [
   { key: 'nis', label: 'NIS', description: 'Nomor Induk Santri' },
+  { key: 'tahunMasuk', label: 'Tahun Masuk', description: 'Tahun Masuk / Didaftarkan' },
   { key: 'gender', label: 'Gender', description: 'Jenis Kelamin' },
   { key: 'nik', label: 'NIK', description: 'Nomor Induk Kependudukan' },
   { key: 'nisn', label: 'NISN', description: 'Nomor Induk Siswa Nasional' },

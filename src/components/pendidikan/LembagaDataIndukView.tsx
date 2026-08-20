@@ -1,12 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { 
-  ArrowLeft, Printer, Search, X, Filter, Users, User, FileSpreadsheet, Home,
-  ChevronRight, ExternalLink, Pencil, Download
+  ArrowLeft, Search, X, Users, FileSpreadsheet,
+  ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight,
+  ExternalLink, Pencil, Download, Sparkles, Eye, ChevronDown, Calendar
 } from 'lucide-react';
 import { Santri } from '../../types';
 import { renderSantriAvatar } from '../SekretarisHelper';
 import EditSantriKolomModal from './EditSantriKolomModal';
+import { NismGenerateDialog } from './NismGenerateDialog';
+import { 
+  getNismFieldKeyForLembaga,
+  getSantriNismForLembaga,
+  getSantriTahunMasuk,
+  formatTanggalMasukDMY,
+  parseTanggalMasukToYear,
+  generate22DigitNism,
+  getNextSequenceForSantri,
+  updateSantriNismAndTahunMasuk,
+  batchGenerateNismForStudents
+} from '../../lib/nismHelper';
 
 interface LembagaDataIndukViewProps {
   selectedLembaga: any;
@@ -76,6 +89,106 @@ export const LembagaDataIndukView: React.FC<LembagaDataIndukViewProps> = ({
   selectedGender,
 }) => {
   const [editingSantri, setEditingSantri] = useState<Santri | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Pagination states
+  const [pageSize, setPageSize] = useState<number>(20);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+
+  // NISM Generate Dialog state
+  const [nismModalState, setNismModalState] = useState<{
+    isOpen: boolean;
+    targetSantri?: Santri | null;
+  }>({
+    isOpen: false,
+    targetSantri: null
+  });
+
+  // Reset page when filters or search change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, classFilter, statusFilter, pageSize]);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const nismFieldKey = getNismFieldKeyForLembaga(selectedLembaga);
+  const nismLabelSub = nismFieldKey === 'indukWustho' 
+    ? 'Induk Wustho' 
+    : nismFieldKey === 'indukUlya' 
+    ? 'Induk Ulya' 
+    : nismFieldKey === 'indukMhd' 
+    ? 'Induk MHD' 
+    : '22 Digit';
+
+  // Pagination calculations
+  const totalItems = students.length;
+  const totalPages = Math.ceil(totalItems / pageSize) || 1;
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, totalItems);
+  const displayedStudents = useMemo(() => {
+    return students.slice(startIndex, endIndex);
+  }, [students, startIndex, endIndex]);
+
+  const handleOpenSingleGenerate = (s: Santri) => {
+    setNismModalState({
+      isOpen: true,
+      targetSantri: s
+    });
+  };
+
+  const handleOpenBatchGenerate = () => {
+    setNismModalState({
+      isOpen: true,
+      targetSantri: null
+    });
+  };
+
+  const handleConfirmGenerate = ({
+    tanggalMasukDMY,
+    applyDateToAll,
+    overwriteExisting,
+    targetSantri
+  }: {
+    tanggalMasukDMY: string;
+    applyDateToAll: boolean;
+    overwriteExisting: boolean;
+    targetSantri?: Santri | null;
+  }) => {
+    if (!onUpdateSantri) return;
+
+    if (targetSantri) {
+      // Single student generate
+      const year = parseTanggalMasukToYear(tanggalMasukDMY);
+      const seq = getNextSequenceForSantri(targetSantri, students, selectedLembaga, year);
+      const newNism = generate22DigitNism(targetSantri, selectedLembaga, seq, year);
+      const updated = updateSantriNismAndTahunMasuk(targetSantri, newNism, year, selectedLembaga, tanggalMasukDMY);
+      onUpdateSantri(updated);
+      showToast(`NISM ${targetSantri.nama} berhasil di-generate: ${newNism}`);
+    } else {
+      // Batch generate
+      const { updatedStudents, countGenerated } = batchGenerateNismForStudents(
+        students,
+        selectedLembaga,
+        overwriteExisting,
+        tanggalMasukDMY,
+        applyDateToAll
+      );
+      updatedStudents.forEach(st => onUpdateSantri(st));
+      showToast(`Berhasil men-generate ${countGenerated} NISM santri dengan tanggal masuk ${tanggalMasukDMY}.`);
+    }
+  };
+
+  const handleUpdateNismInline = (s: Santri, val: string) => {
+    if (!onUpdateSantri) return;
+    const currentVal = getSantriNismForLembaga(s, selectedLembaga);
+    if (val.trim() === currentVal) return;
+    const updated = updateSantriNismAndTahunMasuk(s, val.trim(), s.tahunMasuk, selectedLembaga);
+    onUpdateSantri(updated);
+    showToast(`NISM ${s.nama} diperbarui.`);
+  };
 
   return (
     <motion.div
@@ -85,6 +198,14 @@ export const LembagaDataIndukView: React.FC<LembagaDataIndukViewProps> = ({
       exit={{ opacity: 0, y: -10 }}
       className="flex flex-col gap-6 animate-fade-in"
     >
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-2.5 rounded-2xl shadow-xl text-xs font-bold flex items-center gap-2 animate-bounce">
+          <Sparkles className="h-4 w-4 text-amber-400" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       {/* Header Card */}
       <div className="w-full bg-white border border-slate-100 rounded-3xl p-5 sm:p-7 shadow-xs relative">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 mb-4 border-b border-slate-100/90">
@@ -106,6 +227,15 @@ export const LembagaDataIndukView: React.FC<LembagaDataIndukViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={handleOpenBatchGenerate}
+              className="inline-flex items-center justify-center bg-emerald-600 hover:bg-emerald-700 text-white h-9 px-3.5 rounded-xl text-xs font-bold cursor-pointer shadow-3xs active:scale-95 transition-all gap-1.5"
+              title="Generate Otomatis NISM 22 Digit untuk Santri"
+            >
+              <Sparkles className="h-4 w-4 text-emerald-100" />
+              <span>Generate NISM</span>
+            </button>
+
             <button
               onClick={onExport || onPrintPDF}
               className="inline-flex items-center justify-center bg-white border border-slate-200 h-9 px-3.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer shadow-3xs active:scale-95 transition-all gap-1.5"
@@ -195,14 +325,21 @@ export const LembagaDataIndukView: React.FC<LembagaDataIndukViewProps> = ({
           </div>
         </div>
 
-        {/* Data Induk Table with all requested columns: NO, NISM, NISN, NAMA, TEMPAT LAHIR, TANGGAL LAHIR, UMUR, JENIS KELAMIN, NAMA AYAH, NAMA IBU, EMIS, VERVAL, STATUS KEAKTIFAN, KELAS MHD, SEMESTER */}
+        {/* Data Induk Table */}
         <div className="rounded-2xl border border-slate-200/80 overflow-hidden shadow-3xs">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[1300px]">
+            <table className="w-full text-left border-collapse min-w-[1400px]">
               <thead>
                 <tr className="bg-slate-100 border-b border-slate-200 text-[11px] font-black text-slate-700 uppercase tracking-wider select-none">
                   <th className="w-10 py-3.5 px-2 text-center sticky left-0 z-20 bg-slate-100 border-r border-slate-200">NO</th>
-                  <th className="w-28 py-3.5 px-3 border-r border-slate-200">NISM</th>
+                  <th className="w-56 py-3.5 px-3 border-r border-slate-200">
+                    <div className="flex items-center justify-between">
+                      <span>NISM (22 DIGIT)</span>
+                      <span className="text-[9px] font-extrabold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/60 lowercase font-mono">
+                        {nismLabelSub}
+                      </span>
+                    </div>
+                  </th>
                   <th className="w-28 py-3.5 px-3 border-r border-slate-200">NISN</th>
                   <th className="w-52 py-3.5 px-3 border-r border-slate-200">NAMA</th>
                   <th className="w-32 py-3.5 px-3 border-r border-slate-200">TEMPAT LAHIR</th>
@@ -220,7 +357,7 @@ export const LembagaDataIndukView: React.FC<LembagaDataIndukViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
-                {students.length === 0 ? (
+                {displayedStudents.length === 0 ? (
                   <tr>
                     <td colSpan={16} className="py-16 text-center text-slate-400 font-medium">
                       <div className="flex flex-col items-center justify-center gap-2">
@@ -231,10 +368,11 @@ export const LembagaDataIndukView: React.FC<LembagaDataIndukViewProps> = ({
                     </td>
                   </tr>
                 ) : (
-                  students.map((s, idx) => {
+                  displayedStudents.map((s, idx) => {
+                    const rowNumber = startIndex + idx + 1;
                     const ageStr = calculateAge(s.tanggalLahir);
                     const genderCode = s.gender === 'Putra' ? 'L' : s.gender === 'Putri' ? 'P' : (s.gender || '-');
-                    const nismVal = s.nism || '-';
+                    const nismVal = getSantriNismForLembaga(s, selectedLembaga);
                     const kelasMhdVal = s.kelasMhd || s.pendidikanInternal || s.indukMhd || '-';
                     const semesterVal = s.semester || 'Semester 1';
                     const isVervalSukses = (s.statusVerval || (s.nisn ? 'Sukses' : 'Proses')) === 'Sukses';
@@ -246,12 +384,35 @@ export const LembagaDataIndukView: React.FC<LembagaDataIndukViewProps> = ({
                       >
                         {/* 1. NO */}
                         <td className="py-3 px-2 text-center font-bold text-slate-400 sticky left-0 z-10 bg-white group-hover:bg-slate-50 border-r border-slate-100">
-                          {idx + 1}
+                          {rowNumber}
                         </td>
 
-                        {/* 2. NISM */}
-                        <td className="py-3 px-3 font-mono font-bold text-slate-700 border-r border-slate-100">
-                          {s.nism ? nismVal : <span className="text-slate-300">-</span>}
+                        {/* 2. NISM (with inline edit & generate button) */}
+                        <td className="py-2.5 px-2 font-mono font-bold text-slate-700 border-r border-slate-100">
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              defaultValue={nismVal}
+                              key={`nism-${s.id}-${nismVal}`}
+                              onBlur={(e) => handleUpdateNismInline(s, e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  (e.target as HTMLInputElement).blur();
+                                }
+                              }}
+                              placeholder="22 Digit NISM..."
+                              className="flex-1 font-mono text-[11px] font-bold text-slate-800 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-200 focus:border-emerald-500 rounded px-1.5 py-1 outline-none transition-all"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleOpenSingleGenerate(s)}
+                              title="Generate 22-Digit NISM Otomatis"
+                              className="px-1.5 py-1 rounded-md bg-emerald-50 hover:bg-emerald-100 active:scale-95 text-emerald-800 text-[10px] font-black tracking-tight border border-emerald-200/80 flex items-center gap-1 shrink-0 transition-all cursor-pointer shadow-3xs"
+                            >
+                              <Sparkles className="h-3 w-3 text-emerald-600" />
+                              <span>Gen</span>
+                            </button>
+                          </div>
                         </td>
 
                         {/* 3. NISN */}
@@ -259,7 +420,7 @@ export const LembagaDataIndukView: React.FC<LembagaDataIndukViewProps> = ({
                           {s.nisn || <span className="text-slate-300">-</span>}
                         </td>
 
-                        {/* 4. NAMA */}
+                        {/* 5. NAMA */}
                         <td className="py-3 px-3 border-r border-slate-100">
                           <div className="flex items-center gap-2.5 min-w-0">
                             <div className="w-7 h-7 rounded-full overflow-hidden shrink-0 border border-slate-200">
@@ -282,24 +443,24 @@ export const LembagaDataIndukView: React.FC<LembagaDataIndukViewProps> = ({
                           </div>
                         </td>
 
-                        {/* 5. TEMPAT LAHIR */}
+                        {/* 6. TEMPAT LAHIR */}
                         <td className="py-3 px-3 text-slate-700 font-medium border-r border-slate-100">
                           {s.tempatLahir || <span className="text-slate-300">-</span>}
                         </td>
 
-                        {/* 6. TANGGAL LAHIR */}
+                        {/* 7. TANGGAL LAHIR */}
                         <td className="py-3 px-3 font-mono font-medium text-slate-600 border-r border-slate-100">
                           {formatTanggal(s.tanggalLahir)}
                         </td>
 
-                        {/* 7. UMUR */}
+                        {/* 8. UMUR */}
                         <td className="py-3 px-2 text-center font-bold text-slate-600 border-r border-slate-100">
                           <span className={ageStr !== '-' ? "px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px]" : "text-slate-300"}>
                             {ageStr}
                           </span>
                         </td>
 
-                        {/* 8. JENIS KELAMIN */}
+                        {/* 9. JENIS KELAMIN */}
                         <td className="py-3 px-2 text-center font-bold border-r border-slate-100">
                           <span className={`inline-flex items-center justify-center w-5 h-5 rounded-md text-[10px] font-black ${
                             genderCode === 'L' 
@@ -312,17 +473,17 @@ export const LembagaDataIndukView: React.FC<LembagaDataIndukViewProps> = ({
                           </span>
                         </td>
 
-                        {/* 9. NAMA AYAH */}
+                        {/* 10. NAMA AYAH */}
                         <td className="py-3 px-3 text-slate-700 font-medium truncate max-w-[140px] border-r border-slate-100" title={s.namaAyah}>
                           {s.namaAyah || <span className="text-slate-300">-</span>}
                         </td>
 
-                        {/* 10. NAMA IBU */}
+                        {/* 11. NAMA IBU */}
                         <td className="py-3 px-3 text-slate-700 font-medium truncate max-w-[140px] border-r border-slate-100" title={s.namaIbu}>
                           {s.namaIbu || <span className="text-slate-300">-</span>}
                         </td>
 
-                        {/* 11. EMIS */}
+                        {/* 12. EMIS */}
                         <td className="py-3 px-2 text-center border-r border-slate-100">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide ${
                             s.statusEmis === 'Terdaftar'
@@ -335,7 +496,7 @@ export const LembagaDataIndukView: React.FC<LembagaDataIndukViewProps> = ({
                           </span>
                         </td>
 
-                        {/* 12. VERVAL */}
+                        {/* 13. VERVAL */}
                         <td className="py-3 px-2 text-center border-r border-slate-100">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide ${
                             isVervalSukses
@@ -346,7 +507,7 @@ export const LembagaDataIndukView: React.FC<LembagaDataIndukViewProps> = ({
                           </span>
                         </td>
 
-                        {/* 13. STATUS KEAKTIFAN */}
+                        {/* 14. STATUS KEAKTIFAN */}
                         <td className="py-3 px-2 text-center border-r border-slate-100">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide ${
                             s.statusKeanggotaan === 'Aktif' || !s.statusKeanggotaan
@@ -359,19 +520,19 @@ export const LembagaDataIndukView: React.FC<LembagaDataIndukViewProps> = ({
                           </span>
                         </td>
 
-                        {/* 14. KELAS MHD */}
+                        {/* 15. KELAS MHD */}
                         <td className="py-3 px-3 font-semibold text-slate-700 border-r border-slate-100">
                           {kelasMhdVal}
                         </td>
 
-                        {/* 15. SEMESTER */}
+                        {/* 16. SEMESTER */}
                         <td className="py-3 px-3 font-semibold text-slate-700 border-r border-slate-100">
                           <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-bold">
                             {semesterVal}
                           </span>
                         </td>
 
-                        {/* 16. AKSI */}
+                        {/* 17. AKSI */}
                         <td className="py-3 px-2 text-center sticky right-0 z-10 bg-white group-hover:bg-slate-50 border-l border-slate-100 shadow-[-2px_0_5px_rgba(0,0,0,0.03)]">
                           <div className="flex items-center justify-center gap-1">
                             <button
@@ -398,17 +559,114 @@ export const LembagaDataIndukView: React.FC<LembagaDataIndukViewProps> = ({
             </table>
           </div>
         </div>
+
+        {/* Pagination Controls Footer */}
+        {totalItems > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between border-t border-slate-100 pt-4 text-xs text-slate-500 font-medium gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <span className="hidden sm:inline font-display">Baris per Halaman:</span>
+              <span title="Baris per Halaman"><Eye className="h-4 w-4 text-slate-400 sm:hidden shrink-0" /></span>
+              <div className="relative shrink-0">
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="appearance-none rounded-xl border border-slate-200 bg-white pl-3.5 pr-8 py-1.5 text-xs font-bold text-slate-700 focus:border-emerald-500 focus:outline-none cursor-pointer shadow-3xs"
+                >
+                  {[20, 50, 100, 500].map(sz => (
+                    <option key={sz} value={sz}>{sz === 500 ? 'Semua (500)' : sz}</option>
+                  ))}
+                </select>
+                <span className="absolute inset-y-0 right-0 flex items-center pr-2.5 pointer-events-none text-slate-400">
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </span>
+              </div>
+              <span className="text-slate-600">
+                Menampilkan <b>{totalItems > 0 ? startIndex + 1 : 0}</b> - <b>{endIndex}</b> dari <b>{totalItems}</b> santri
+              </span>
+            </div>
+
+            {/* Page Navigation */}
+            <div className="flex items-center gap-1 sm:gap-1.5 select-none">
+              <button
+                type="button"
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage(1)}
+                className={`h-8 w-8 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 transition-all ${
+                  currentPage <= 1 ? 'opacity-40 cursor-not-allowed' : 'hover:text-slate-800 cursor-pointer active:scale-95'
+                }`}
+                title="Halaman Pertama"
+              >
+                <ChevronsLeft className="h-4 w-4" />
+              </button>
+
+              <button
+                type="button"
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                className={`h-8 w-8 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 transition-all ${
+                  currentPage <= 1 ? 'opacity-40 cursor-not-allowed' : 'hover:text-slate-800 cursor-pointer active:scale-95'
+                }`}
+                title="Halaman Sebelumnya"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+
+              <div className="px-2 font-bold text-slate-700 text-xs">
+                Halaman {currentPage} / {totalPages}
+              </div>
+
+              <button
+                type="button"
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                className={`h-8 w-8 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 transition-all ${
+                  currentPage >= totalPages ? 'opacity-40 cursor-not-allowed' : 'hover:text-slate-800 cursor-pointer active:scale-95'
+                }`}
+                title="Halaman Berikutnya"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+
+              <button
+                type="button"
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage(totalPages)}
+                className={`h-8 w-8 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 transition-all ${
+                  currentPage >= totalPages ? 'opacity-40 cursor-not-allowed' : 'hover:text-slate-800 cursor-pointer active:scale-95'
+                }`}
+                title="Halaman Terakhir"
+              >
+                <ChevronsRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Edit Santri Kolom Modal */}
+      {/* NISM Generate Prompt Modal */}
+      <NismGenerateDialog
+        isOpen={nismModalState.isOpen}
+        onClose={() => setNismModalState({ isOpen: false, targetSantri: null })}
+        targetSantri={nismModalState.targetSantri}
+        students={students}
+        selectedLembaga={selectedLembaga}
+        onConfirm={handleConfirmGenerate}
+      />
+
+      {/* Edit Kolom Modal */}
       {editingSantri && (
         <EditSantriKolomModal
-          isOpen={Boolean(editingSantri)}
+          isOpen={!!editingSantri}
           onClose={() => setEditingSantri(null)}
           santri={editingSantri}
           onSave={(updated) => {
-            onUpdateSantri?.(updated);
-            setEditingSantri(null);
+            if (onUpdateSantri) {
+              onUpdateSantri(updated);
+              showToast(`Data santri ${updated.nama} berhasil diperbarui.`);
+            }
           }}
         />
       )}
