@@ -154,13 +154,14 @@ export interface Kelas {
   isDefault?: boolean;
 }
 
-export const isDefaultClass = (c: { id?: string; nama?: string; isDefault?: boolean } | null | undefined): boolean => {
+export const isDefaultClass = (c: { id?: string; nama?: string; isDefault?: boolean; pillType?: string } | null | undefined): boolean => {
   if (!c) return false;
+  if (c.pillType === 'induk' || c.pillType === 'calon' || c.pillType === 'all' || c.pillType === 'unassigned') return true;
+  if (c.id && (c.id === 'default-induk' || c.id === 'default-calon' || c.id.endsWith('-default') || c.id.includes('-default') || c.id === 'all' || c.id === 'unassigned')) return true;
   if (c.nama) {
     const lower = c.nama.trim().toLowerCase();
-    if (lower === 'calon pelajar' || lower === 'calon peserta didik') return true;
+    if (lower === 'data induk' || lower === 'calon pelajar' || lower === 'calon peserta didik' || lower === 'semua santri' || lower === 'tanpa kelas') return true;
   }
-  if (c.id && (c.id.endsWith('-default') || c.id.includes('-default'))) return true;
   if (c.isDefault !== undefined) return Boolean(c.isDefault);
   return false;
 };

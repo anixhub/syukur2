@@ -1141,8 +1141,8 @@ export default function LembagaKelasSub({
     return statsAcademic.rombel;
   }, [activeTab, statsAcademic]);
 
-  // --- Dynamic Unified Classes Builder ---
-  const subClasses = useMemo(() => {
+  // --- Dynamic Unified Custom Classes Builder ---
+  const customSubClasses = useMemo(() => {
     if (!selectedLembaga) return [];
     if (activeTab === 'Rombel') {
       return groupsList
@@ -1153,31 +1153,110 @@ export default function LembagaKelasSub({
           waliKelas: g.pembimbing,
           tingkatan: 'Lainnya',
           kapasitas: g.kuota || 20,
-          lembagaId: selectedLembaga.id
+          lembagaId: selectedLembaga.id,
+          isDefault: false
         }));
     } else {
-      return getClassesOfLembaga(selectedLembaga.id);
+      return getClassesOfLembaga(selectedLembaga.id).filter(c => !isDefaultClass(c));
     }
-  }, [selectedLembaga, activeTab, groupsList, kelasList]);
+  }, [selectedLembaga, activeTab, groupsList, kelasList, selectedGender]);
 
-  // --- Dynamic Data Induk Students ---
+  const subClasses = customSubClasses;
+
+  // --- Dynamic Data Induk Students (All students in this Lembaga) ---
   const allStudentsOfLembaga = useMemo(() => {
     if (!selectedLembaga) return [];
-    return santriList.filter(s => {
-      if (!isGenderMatch(s.gender, selectedGender)) return false;
-      return isStudentInLembaga(s, selectedLembaga);
-    });
-  }, [santriList, selectedLembaga, selectedGender]);
+    if (activeTab === 'Rombel') {
+      const assignedIds = new Set(
+        assignmentsList
+          .filter(a => a.kategoriId === selectedLembaga.id || customSubClasses.some(c => c.id === a.kelompokId))
+          .map(a => a.santriId)
+      );
+      return santriList.filter(s => {
+        if (!isGenderMatch(s.gender, selectedGender)) return false;
+        return assignedIds.has(s.id);
+      });
+    } else {
+      return santriList.filter(s => {
+        if (!isGenderMatch(s.gender, selectedGender)) return false;
+        return isStudentInLembaga(s, selectedLembaga);
+      });
+    }
+  }, [santriList, selectedLembaga, selectedGender, activeTab, assignmentsList, customSubClasses]);
+
+  // --- Dynamic Calon Peserta Didik Students (Students not in custom classes) ---
+  const calonStudentsOfLembaga = useMemo(() => {
+    if (!selectedLembaga) return [];
+    
+    if (activeTab === 'Rombel') {
+      const assignedToCustomGroupIds = new Set(
+        assignmentsList
+          .filter(a => customSubClasses.some(c => c.id === a.kelompokId))
+          .map(a => a.santriId)
+      );
+      return allStudentsOfLembaga.filter(s => !assignedToCustomGroupIds.has(s.id));
+    } else {
+      const assignedToCustomClassIds = new Set<string>();
+      customSubClasses.forEach(c => {
+        getStudentsInClass(c, selectedLembaga).forEach(s => assignedToCustomClassIds.add(s.id));
+      });
+      return allStudentsOfLembaga.filter(s => !assignedToCustomClassIds.has(s.id));
+    }
+  }, [allStudentsOfLembaga, selectedLembaga, activeTab, assignmentsList, customSubClasses, getStudentsInClass]);
 
   // --- Class Pill Items in Horizontal Scroll ---
+  // Mandatory Default Classes: 1. Data Induk, 2. Calon peserta didik + Custom User Classes
   const classPillItems = useMemo(() => {
     if (!selectedLembaga) return [];
-    return subClasses.map(c => ({
-      ...c,
-      pillType: 'kelas',
-      displayName: c.nama.toUpperCase(),
-    }));
-  }, [selectedLembaga, subClasses]);
+
+    // 1. "Data Induk" default pill (representing all students in this lembaga/rombel)
+    const indukPill: any = {
+      id: 'default-induk',
+      nama: 'Data Induk',
+      displayName: 'DATA INDUK',
+      pillType: 'induk',
+      count: allStudentsOfLembaga.length,
+      waliKelas: '-',
+      tingkatan: 'Data Induk',
+      lembagaId: selectedLembaga.id,
+      isDefault: true
+    };
+
+    // 2. "Calon peserta didik" default pill (representing all students not in custom classes)
+    const calonPill: any = {
+      id: 'default-calon',
+      nama: 'Calon peserta didik',
+      displayName: 'CALON PESERTA DIDIK',
+      pillType: 'calon',
+      count: calonStudentsOfLembaga.length,
+      waliKelas: '-',
+      tingkatan: 'Calon Pelajar',
+      lembagaId: selectedLembaga.id,
+      isDefault: true
+    };
+
+    // 3. User-created custom classes with their student counts
+    const classPills = customSubClasses.map(c => {
+      let count = 0;
+      if (activeTab === 'Rombel') {
+        const assignedIds = assignmentsList
+          .filter(a => a.kelompokId === c.id)
+          .map(a => a.santriId);
+        count = santriList.filter(s => assignedIds.includes(s.id) && isGenderMatch(s.gender, selectedGender)).length;
+      } else {
+        count = getStudentsInClass(c, selectedLembaga).length;
+      }
+      return {
+        ...c,
+        pillType: 'kelas',
+        displayName: c.nama.toUpperCase(),
+        count,
+        isDefault: false
+      };
+    });
+
+    return [indukPill, calonPill, ...classPills];
+  }, [selectedLembaga, customSubClasses, allStudentsOfLembaga, calonStudentsOfLembaga, activeTab, assignmentsList, santriList, selectedGender, getStudentsInClass]);
 
   const effectiveSelectedKelas = useMemo(() => {
     if (selectedKelas) {
@@ -1190,15 +1269,24 @@ export default function LembagaKelasSub({
   // --- Dynamic Unified Students Getter ---
   const currentClassStudents = useMemo(() => {
     if (!effectiveSelectedKelas || !selectedLembaga) return [];
+    
+    if (effectiveSelectedKelas.id === 'default-induk' || effectiveSelectedKelas.pillType === 'induk' || effectiveSelectedKelas.id === 'all' || effectiveSelectedKelas.pillType === 'all') {
+      return allStudentsOfLembaga;
+    }
+    
+    if (effectiveSelectedKelas.id === 'default-calon' || effectiveSelectedKelas.pillType === 'calon' || effectiveSelectedKelas.id === 'unassigned' || effectiveSelectedKelas.pillType === 'unassigned') {
+      return calonStudentsOfLembaga;
+    }
+
     if (activeTab === 'Rombel') {
       const assignedIds = assignmentsList
         .filter(a => a.kelompokId === effectiveSelectedKelas.id)
         .map(a => a.santriId);
-      return santriList.filter(s => assignedIds.includes(s.id) && s.gender === selectedGender);
+      return santriList.filter(s => assignedIds.includes(s.id) && isGenderMatch(s.gender, selectedGender));
     } else {
       return getStudentsInClass(effectiveSelectedKelas, selectedLembaga);
     }
-  }, [effectiveSelectedKelas, selectedLembaga, activeTab, assignmentsList, santriList, selectedGender]);
+  }, [effectiveSelectedKelas, selectedLembaga, allStudentsOfLembaga, calonStudentsOfLembaga, activeTab, assignmentsList, santriList, selectedGender, getStudentsInClass]);
 
   // Filtered students by search query and status filter
   const searchedStudents = useMemo(() => {
@@ -2081,7 +2169,8 @@ export default function LembagaKelasSub({
   const startIndex = (activePage - 1) * itemsPerPage;
   const paginatedStudents = filteredStudents.slice(startIndex, startIndex + itemsPerPage);
 
-  const isCalonPelajarPage = !!(effectiveSelectedKelas && (isDefaultClass(effectiveSelectedKelas) || effectiveSelectedKelas.pillType === 'calon'));
+  const isIndukPage = !!(effectiveSelectedKelas && (effectiveSelectedKelas.pillType === 'induk' || effectiveSelectedKelas.id === 'default-induk' || effectiveSelectedKelas.pillType === 'all' || effectiveSelectedKelas.id === 'all' || (effectiveSelectedKelas.nama && effectiveSelectedKelas.nama.trim().toLowerCase() === 'data induk')));
+  const isCalonPelajarPage = !!(effectiveSelectedKelas && (effectiveSelectedKelas.pillType === 'calon' || effectiveSelectedKelas.id === 'default-calon' || (effectiveSelectedKelas.nama && (effectiveSelectedKelas.nama.trim().toLowerCase() === 'calon peserta didik' || effectiveSelectedKelas.nama.trim().toLowerCase() === 'calon pelajar'))));
   const isLulusanPage = !!(effectiveSelectedKelas && (effectiveSelectedKelas.isLulusan || effectiveSelectedKelas.pillType === 'lulusan'));
   const gridColsClass = 'grid-cols-[55px_240px_110px_110px_100px_100px_50px]';
 
@@ -2627,6 +2716,14 @@ export default function LembagaKelasSub({
     });
 
     const isFormal = activeTab === 'Formal';
+    const isAll = selectedKelas.pillType === 'all' || selectedKelas.id === 'all';
+    const isUnassigned = selectedKelas.pillType === 'unassigned' || selectedKelas.id === 'unassigned';
+    const docTitle = isAll 
+      ? `DAFTAR SELURUH SANTRI - ${selectedLembaga.nama.toUpperCase()}`
+      : isUnassigned
+      ? `DAFTAR SANTRI TANPA KELAS - ${selectedLembaga.nama.toUpperCase()}`
+      : `DAFTAR SANTRI KELAS ${selectedKelas.nama.toUpperCase()} - ${selectedLembaga.nama.toUpperCase()}`;
+    const waliLabel = isAll ? 'Semua Kelas' : isUnassigned ? 'Tanpa Kelas' : cleanWaliKelas(selectedKelas.waliKelas || selectedKelas.pembimbing);
 
     const rowsHtml = studentsInClass.map((s, idx) => `
       <tr>
@@ -2647,7 +2744,7 @@ export default function LembagaKelasSub({
       <!DOCTYPE html>
       <html>
       <head>
-        <title>DAFTAR SANTRI KELAS ${selectedKelas.nama.toUpperCase()} - ${selectedLembaga.nama.toUpperCase()}</title>
+        <title>${docTitle}</title>
         <style>
           @page { size: A4 portrait; margin: 15mm; }
           body { font-family: sans-serif; color: #1e293b; margin: 0; padding: 10px; font-size: 11px; }
@@ -2669,10 +2766,10 @@ export default function LembagaKelasSub({
           <h1>${profile.namaPesantren || 'PONDOK PESANTREN'}</h1>
           <p>${profile.alamat || ''} ${(profile as any).kota ? ' - ' + (profile as any).kota : ''}</p>
         </div>
-        <div class="title">DAFTAR SANTRI KELAS: ${selectedKelas.nama}</div>
+        <div class="title">${isAll ? `DATA SELURUH SANTRI: ${selectedLembaga.nama}` : `DAFTAR SANTRI KELAS: ${selectedKelas.nama}`}</div>
         <div class="subtitle">${selectedLembaga.nama} (${selectedGender})</div>
         <div class="info">
-          <span><strong>Wali Kelas / Pembimbing:</strong> ${cleanWaliKelas(selectedKelas.waliKelas || selectedKelas.pembimbing)}</span>
+          <span><strong>Wali Kelas / Pembimbing:</strong> ${waliLabel}</span>
           <span><strong>Total Santri:</strong> ${studentsInClass.length} Santri</span>
         </div>
         <table>
@@ -3227,6 +3324,8 @@ export default function LembagaKelasSub({
                   {classPillItems.map((item) => {
                     const isSelected = effectiveSelectedKelas?.id === item.id;
                     const isRegular = item.pillType === 'kelas';
+                    const isAll = item.pillType === 'all';
+                    const isUnassigned = item.pillType === 'unassigned';
 
                     return (
                       <div
@@ -3237,15 +3336,34 @@ export default function LembagaKelasSub({
                             detailKelasRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                           }, 50);
                         }}
-                        className={`group inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer select-none shrink-0 shadow-2xs ${
+                        className={`group inline-flex items-center gap-2 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer select-none shrink-0 shadow-2xs ${
                           isSelected
                             ? 'bg-[#00693E] text-white shadow-md'
+                            : isUnassigned
+                            ? 'bg-amber-50/70 text-amber-800 hover:bg-amber-100/80 border border-amber-200/80'
                             : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200/80 hover:border-emerald-500/50'
                         }`}
                       >
-                        <Folder className={`h-4 w-4 ${isSelected ? 'text-white' : 'text-emerald-600'}`} />
+                        {isAll ? (
+                          <Users className={`h-4 w-4 shrink-0 ${isSelected ? 'text-white' : 'text-emerald-600'}`} />
+                        ) : isUnassigned ? (
+                          <Folder className={`h-4 w-4 shrink-0 ${isSelected ? 'text-white' : 'text-amber-600'}`} />
+                        ) : (
+                          <Folder className={`h-4 w-4 shrink-0 ${isSelected ? 'text-white' : 'text-emerald-600'}`} />
+                        )}
                         <span className="tracking-tight uppercase">{item.displayName || item.nama}</span>
                         
+                        {/* Student Count Badge */}
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
+                          isSelected
+                            ? 'bg-white/20 text-white'
+                            : isUnassigned
+                            ? 'bg-amber-200/60 text-amber-900'
+                            : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {item.count ?? 0}
+                        </span>
+
                         {/* 3 dots menu for regular classes */}
                         {isRegular && canWriteCurrent && (
                           <button
@@ -3312,6 +3430,10 @@ export default function LembagaKelasSub({
               </div>
             ) : (() => {
               const selectedKelas = effectiveSelectedKelas;
+              const isIndukPill = selectedKelas.pillType === 'induk' || selectedKelas.id === 'default-induk' || selectedKelas.pillType === 'all' || selectedKelas.id === 'all';
+              const isCalonPill = selectedKelas.pillType === 'calon' || selectedKelas.id === 'default-calon' || isDefaultClass(selectedKelas);
+              const isDefaultPill = isIndukPill || isCalonPill;
+
               return (
                 <div ref={detailKelasRef} className="w-full bg-white border border-slate-100 rounded-3xl p-5 sm:p-6 lg:p-7 shadow-xs relative scroll-mt-6">
                   <div className="flex flex-col w-full min-h-0">
@@ -3319,9 +3441,11 @@ export default function LembagaKelasSub({
                   {/* 1. Detail Kelas Header */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5 shrink-0">
                     <div>
-                      <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider">Detail Kelas</span>
+                      <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider">
+                        {isIndukPill ? 'DATA INDUK SANTRI' : isCalonPill ? 'CALON PESERTA DIDIK' : (activeTab === 'Rombel' ? 'DETAIL ROMBEL' : 'DETAIL KELAS')}
+                      </span>
                       <h2 className="text-2xl lg:text-3xl font-black text-slate-800 tracking-tight leading-none uppercase mt-0.5">
-                        {selectedKelas.nama}
+                        {isIndukPill ? `Data Induk (${selectedLembaga.nama})` : isCalonPill ? `Calon Peserta Didik (${selectedLembaga.nama})` : selectedKelas.nama}
                       </h2>
                     </div>
 
@@ -3331,32 +3455,33 @@ export default function LembagaKelasSub({
                         disabled={isSelectionMode}
                         onClick={handlePrintKelasPDF}
                         className="inline-flex items-center justify-center bg-white border border-slate-200 h-9 px-3 sm:px-3.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer shadow-3xs active:scale-95 transition-all disabled:opacity-40 gap-1.5"
-                        title="Cetak Data Kelas"
+                        title={isIndukPill ? 'Cetak Data Induk' : 'Cetak Data Kelas'}
                       >
                         <Printer className="h-4 w-4 text-slate-600" />
-                        <span className="hidden sm:inline">Cetak Kelas</span>
+                        <span className="hidden sm:inline">{isIndukPill ? 'Cetak Induk' : 'Cetak Kelas'}</span>
                       </button>
                       {canWriteCurrent && (() => {
                         const isRombelTab = (activeTab as string) === 'Rombel';
-                        const isSelectedKelasDefault = !isRombelTab && isDefaultClass(selectedKelas);
                         return (
                           <>
-                            <button
-                              disabled={isSelectionMode}
-                              onClick={() => {
-                                if (isSelectionMode) return;
-                                handleOpenKelasModal(selectedKelas);
-                              }}
-                              className={`inline-flex items-center justify-center bg-white border border-slate-200 h-9 px-3 sm:px-3.5 rounded-xl text-xs font-bold transition-all gap-1.5 ${
-                                isSelectionMode 
-                                  ? 'opacity-40 cursor-not-allowed text-slate-350' 
-                                  : 'hover:bg-slate-50 cursor-pointer text-slate-700 shadow-3xs active:scale-95'
-                              }`}
-                              title="Edit Kelas"
-                            >
-                              <Pencil className="h-4 w-4 text-slate-500" />
-                              <span className="hidden sm:inline">Edit</span>
-                            </button>
+                            {!isDefaultPill && (
+                              <button
+                                disabled={isSelectionMode}
+                                onClick={() => {
+                                  if (isSelectionMode) return;
+                                  handleOpenKelasModal(selectedKelas);
+                                }}
+                                className={`inline-flex items-center justify-center bg-white border border-slate-200 h-9 px-3 sm:px-3.5 rounded-xl text-xs font-bold transition-all gap-1.5 ${
+                                  isSelectionMode 
+                                    ? 'opacity-40 cursor-not-allowed text-slate-350' 
+                                    : 'hover:bg-slate-50 cursor-pointer text-slate-700 shadow-3xs active:scale-95'
+                                }`}
+                                title="Edit Kelas"
+                              >
+                                <Pencil className="h-4 w-4 text-slate-500" />
+                                <span className="hidden sm:inline">Edit</span>
+                              </button>
+                            )}
                           
                             <button
                               disabled={isSelectionMode}
@@ -3379,7 +3504,7 @@ export default function LembagaKelasSub({
                               </span>
                             </button>
 
-                            {!isSelectedKelasDefault && (
+                            {!isDefaultPill && (
                               <button
                                 disabled={isSelectionMode}
                                 onClick={() => {
@@ -3406,12 +3531,40 @@ export default function LembagaKelasSub({
                   {/* 2. BENTO STATS CARDS */}
                     <div className={`grid grid-cols-1 ${
                       activeTab === 'Formal' 
-                        ? (isCalonPelajarPage ? 'sm:grid-cols-2' : 'sm:grid-cols-3') 
-                        : (isCalonPelajarPage ? 'sm:grid-cols-1' : 'sm:grid-cols-2')
+                        ? (isCalonPelajarPage || isIndukPage ? 'sm:grid-cols-2' : 'sm:grid-cols-3') 
+                        : (isCalonPelajarPage || isIndukPage ? 'sm:grid-cols-1' : 'sm:grid-cols-2')
                     } gap-5 mb-6 shrink-0`}>
                       
-                       {/* Card 1: Wali Kelas / Pembimbing */}
-                       {!isCalonPelajarPage && (
+                       {/* Card 1: Wali Kelas / Total Kelas / Status */}
+                       {isIndukPill ? (
+                         <div className="bg-white rounded-3xl border border-slate-100 p-5 shadow-2xs flex flex-col justify-between">
+                           <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-2.5">
+                             TOTAL {activeTab === 'Rombel' ? 'ROMBEL' : 'KELAS'}
+                           </span>
+                           <div className="flex items-center gap-3">
+                             <div className="h-9 w-9 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
+                               <School className="h-4.5 w-4.5 text-[#046A38]" />
+                             </div>
+                             <span className="text-sm font-extrabold text-slate-800">
+                               {subClasses.length} {activeTab === 'Rombel' ? 'Kelompok' : 'Kelas'}
+                             </span>
+                           </div>
+                         </div>
+                       ) : isCalonPill ? (
+                         <div className="bg-white rounded-3xl border border-slate-100 p-5 shadow-2xs flex flex-col justify-between">
+                           <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-2.5">
+                             STATUS PENEMPATAN
+                           </span>
+                           <div className="flex items-center gap-3">
+                             <div className="h-9 w-9 rounded-full bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+                               <AlertCircle className="h-4.5 w-4.5 text-amber-600" />
+                             </div>
+                             <span className="text-sm font-extrabold text-amber-800">
+                               Calon Peserta Didik
+                             </span>
+                           </div>
+                         </div>
+                       ) : (
                          <div className="bg-white rounded-3xl border border-slate-100 p-5 shadow-2xs flex flex-col justify-between">
                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-2.5">
                              {activeTab === 'Rombel' ? 'PEMBIMBING' : 'WALI KELAS'}
