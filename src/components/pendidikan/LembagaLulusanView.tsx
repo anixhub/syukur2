@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { motion } from 'motion/react';
 import { 
-  ArrowLeft, Printer, Search, X, Award, GraduationCap, Users, Home, ExternalLink,
+  ArrowLeft, Download, Printer, Search, X, Award, GraduationCap, Users, Home, ExternalLink,
   Calendar, CheckCircle2, ChevronRight, Folder, Trash2
 } from 'lucide-react';
 import { Santri } from '../../types';
@@ -19,6 +19,7 @@ interface LembagaLulusanViewProps {
   statusFilter: string;
   onStatusFilterChange: (st: string) => void;
   onBackToHub: () => void;
+  onExport?: () => void;
   onPrintPDF: () => void;
   onSelectStudentDetail: (s: Santri) => void;
   selectedGender: 'Putra' | 'Putri';
@@ -39,6 +40,7 @@ export const LembagaLulusanView: React.FC<LembagaLulusanViewProps> = ({
   statusFilter,
   onStatusFilterChange,
   onBackToHub,
+  onExport,
   onPrintPDF,
   onSelectStudentDetail,
   selectedGender,
@@ -110,12 +112,12 @@ export const LembagaLulusanView: React.FC<LembagaLulusanViewProps> = ({
               </button>
             )}
             <button
-              onClick={onPrintPDF}
+              onClick={onExport || onPrintPDF}
               className="inline-flex items-center justify-center bg-white border border-slate-200 h-9 px-3.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer shadow-3xs active:scale-95 transition-all gap-1.5"
-              title="Cetak Data Lulusan"
+              title="Ekspor Data Lulusan & Alumni (Excel / PDF)"
             >
-              <Printer className="h-4 w-4 text-slate-600" />
-              <span>Cetak Lulusan</span>
+              <Download className="h-4 w-4 text-slate-600" />
+              <span>Export Data</span>
             </button>
           </div>
         </div>

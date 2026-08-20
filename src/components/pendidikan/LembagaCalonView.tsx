@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  ArrowLeft, Printer, Search, X, UserPlus, Users, ExternalLink,
+  ArrowLeft, Download, Printer, Search, X, UserPlus, Users, ExternalLink,
   ChevronUp, ChevronDown, ChevronsUpDown, MoreVertical, ArrowLeftRight, UserMinus, Eye, Pencil
 } from 'lucide-react';
 import { Santri, Lembaga } from '../../types';
@@ -19,6 +19,7 @@ interface LembagaCalonViewProps {
   statusFilter: string;
   onStatusFilterChange: (st: string) => void;
   onBackToHub: () => void;
+  onExport?: () => void;
   onPrintPDF: () => void;
   onSelectStudentDetail: (s: Santri) => void;
   onUpdateSantri?: (s: Santri) => void;
@@ -67,6 +68,7 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
   statusFilter,
   onStatusFilterChange,
   onBackToHub,
+  onExport,
   onPrintPDF,
   onSelectStudentDetail,
   onUpdateSantri,
@@ -252,12 +254,12 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
 
           <div className="flex items-center gap-2">
             <button
-              onClick={onPrintPDF}
+              onClick={onExport || onPrintPDF}
               className="inline-flex items-center justify-center bg-white border border-slate-200 h-9 px-3.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer shadow-3xs active:scale-95 transition-all gap-1.5"
-              title="Cetak Calon Peserta Didik"
+              title="Ekspor Data Calon Peserta Didik (Excel / PDF)"
             >
-              <Printer className="h-4 w-4 text-slate-600" />
-              <span>Cetak Calon Santri</span>
+              <Download className="h-4 w-4 text-slate-600" />
+              <span>Export Data</span>
             </button>
           </div>
         </div>

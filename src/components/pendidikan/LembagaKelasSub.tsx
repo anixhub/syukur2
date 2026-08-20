@@ -2487,12 +2487,74 @@ export default function LembagaKelasSub({
     return age !== null ? `${age} Thn` : '-';
   };
 
-  // Handle exporting XML-based Excel file for Lembaga
+  // Dynamic helper to resolve data, titles, and filenames for current view
+  const getCurrentViewExportData = () => {
+    if (!selectedLembaga) {
+      return {
+        title: 'DATA SANTRI',
+        modalTitle: 'Ekspor Data Santri',
+        modalDesc: 'Pilih format dokumen untuk mengunduh Excel atau mencetak data.',
+        students: [],
+        defaultFileName: 'Data_Santri'
+      };
+    }
+    const dateStr = new Date().toISOString().split('T')[0];
+    const cleanLemName = selectedLembaga.nama.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    if (selectedLembagaView === 'calon_peserta_didik') {
+      return {
+        title: `DAFTAR CALON PESERTA DIDIK - ${selectedLembaga.nama.toUpperCase()}`,
+        modalTitle: `Ekspor Data Calon Peserta Didik - ${selectedLembaga.nama}`,
+        modalDesc: `Pilih format dokumen untuk mengunduh Excel (.xls) atau mencetak daftar calon peserta didik ${selectedLembaga.nama} saat ini.`,
+        students: filteredCalonStudents,
+        defaultFileName: `Calon_Santri_${cleanLemName}_${selectedGender}_${dateStr}`
+      };
+    } else if (selectedLembagaView === 'data_induk') {
+      return {
+        title: `DATA INDUK SANTRI - ${selectedLembaga.nama.toUpperCase()}`,
+        modalTitle: `Ekspor Data Induk Santri - ${selectedLembaga.nama}`,
+        modalDesc: `Pilih format dokumen untuk mengunduh Excel (.xls) atau mencetak data induk santri ${selectedLembaga.nama} saat ini.`,
+        students: filteredDataIndukStudents,
+        defaultFileName: `Data_Induk_${cleanLemName}_${selectedGender}_${dateStr}`
+      };
+    } else if (selectedLembagaView === 'lulusan') {
+      return {
+        title: `DAFTAR LULUSAN & ALUMNI - ${selectedLembaga.nama.toUpperCase()}`,
+        modalTitle: `Ekspor Data Lulusan & Alumni - ${selectedLembaga.nama}`,
+        modalDesc: `Pilih format dokumen untuk mengunduh Excel (.xls) atau mencetak data alumni/lulusan ${selectedLembaga.nama} saat ini.`,
+        students: filteredGraduates,
+        defaultFileName: `Lulusan_${cleanLemName}_${selectedGender}_${dateStr}`
+      };
+    } else if (effectiveSelectedKelas) {
+      const cleanKelasName = effectiveSelectedKelas.nama.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const classStudentsToUse = (searchedStudents.length > 0 || searchQuery.trim() !== '' || statusFilter !== 'Semua')
+        ? searchedStudents
+        : currentClassStudents;
+      return {
+        title: `DAFTAR SANTRI KELAS ${effectiveSelectedKelas.nama.toUpperCase()} - ${selectedLembaga.nama.toUpperCase()}`,
+        modalTitle: `Ekspor Data Kelas ${effectiveSelectedKelas.nama} - ${selectedLembaga.nama}`,
+        modalDesc: `Pilih format dokumen untuk mengunduh Excel (.xls) atau mencetak data santri kelas ${effectiveSelectedKelas.nama} saat ini.`,
+        students: classStudentsToUse,
+        defaultFileName: `Kelas_${cleanKelasName}_${cleanLemName}_${selectedGender}_${dateStr}`
+      };
+    } else {
+      return {
+        title: `DATA SANTRI - ${selectedLembaga.nama.toUpperCase()}`,
+        modalTitle: `Ekspor Data Santri - ${selectedLembaga.nama}`,
+        modalDesc: `Pilih format dokumen untuk mengunduh Excel (.xls) atau mencetak data santri ${selectedLembaga.nama} saat ini.`,
+        students: allStudentsOfLembaga,
+        defaultFileName: `Data_${cleanLemName}_${selectedGender}_${dateStr}`
+      };
+    }
+  };
+
+  // Handle exporting XML-based Excel file for Lembaga (context-aware)
   const handleExportExcelLembaga = (customFileName?: string) => {
     if (!selectedLembaga) return;
-    const studentsToExport = allStudentsOfLembaga;
+    const viewData = getCurrentViewExportData();
+    const studentsToExport = viewData.students;
     if (studentsToExport.length === 0) {
-      alert(`Tidak ada data santri pada ${selectedLembaga.nama} untuk diekspor.`);
+      alert(`Tidak ada data santri pada ${viewData.title} untuk diekspor.`);
       return;
     }
 
@@ -2512,7 +2574,7 @@ export default function LembagaKelasSub({
       'NAMA AYAH',
       'NAMA IBU',
       'EMIS',
-      'VEVAL',
+      'VERVAL',
       'STATUS KEAKTIFAN',
       'KELAS MHD',
       'SEMESTER'
@@ -2548,7 +2610,7 @@ export default function LembagaKelasSub({
       120, // NAMA AYAH
       120, // NAMA IBU
       75,  // EMIS
-      75,  // VEVAL
+      75,  // VERVAL
       100, // STATUS KEAKTIFAN
       95,  // KELAS MHD
       85   // SEMESTER
@@ -2621,7 +2683,7 @@ export default function LembagaKelasSub({
 
     // Metadata header rows
     xml += `\n   <Row ss:Height="24">
-    <Cell ss:StyleID="TitleStyle"><Data ss:Type="String">DATA SANTRI - ${escapeXml(selectedLembaga.nama.toUpperCase())} (${escapeXml(selectedGender.toUpperCase())})</Data></Cell>
+    <Cell ss:StyleID="TitleStyle"><Data ss:Type="String">${escapeXml(viewData.title)} (${escapeXml(selectedGender.toUpperCase())})</Data></Cell>
    </Row>`;
 
     xml += `\n   <Row ss:Height="18">
@@ -2652,7 +2714,7 @@ export default function LembagaKelasSub({
  </Worksheet>
 </Workbook>`;
 
-    const defaultName = `Data_${selectedLembaga.nama.replace(/[^a-zA-Z0-9_-]/g, '_')}_${selectedGender}_${new Date().toISOString().split('T')[0]}.xls`;
+    const defaultName = `${viewData.defaultFileName}.xls`;
     const filename = customFileName
       ? (customFileName.toLowerCase().endsWith('.xls') || customFileName.toLowerCase().endsWith('.xlsx') ? customFileName : `${customFileName}.xls`)
       : defaultName;
@@ -2667,13 +2729,14 @@ export default function LembagaKelasSub({
     document.body.removeChild(link);
   };
 
-  // Handle printing PDF for Lembaga
+  // Handle printing PDF for Lembaga (context-aware)
   const handlePrintPDFLembaga = (customFileName?: string) => {
     if (!selectedLembaga) return;
     const profile = getPesantrenProfile();
-    const studentsToPrint = allStudentsOfLembaga;
+    const viewData = getCurrentViewExportData();
+    const studentsToPrint = viewData.students;
     if (studentsToPrint.length === 0) {
-      alert(`Tidak ada data santri pada lembaga ${selectedLembaga.nama}.`);
+      alert(`Tidak ada data santri pada ${viewData.title}.`);
       return;
     }
     const printWindow = window.open('', '_blank');
@@ -2713,7 +2776,7 @@ export default function LembagaKelasSub({
       <!DOCTYPE html>
       <html>
       <head>
-        <title>${customFileName || `DATA SANTRI - ${selectedLembaga.nama.toUpperCase()}`}</title>
+        <title>${customFileName || `${viewData.title} (${selectedGender.toUpperCase()})`}</title>
         <style>
           @page { size: A4 landscape; margin: 10mm; }
           body { font-family: sans-serif; color: #1e293b; margin: 0; padding: 10px; font-size: 9px; }
@@ -2737,7 +2800,7 @@ export default function LembagaKelasSub({
           <h1>${profile.namaPesantren || 'PONDOK PESANTREN'}</h1>
           <p>${profile.alamat || ''} ${(profile as any).kota ? ' - ' + (profile as any).kota : ''}</p>
         </div>
-        <div class="title">DATA SANTRI - ${selectedLembaga.nama.toUpperCase()} (${selectedGender.toUpperCase()})</div>
+        <div class="title">${viewData.title} (${selectedGender.toUpperCase()})</div>
         <div class="meta-box">
           <div>
             <span class="meta-item"><span class="meta-label">No. Statistik:</span> <span class="meta-val">${noStatistik}</span></span>
@@ -2763,7 +2826,7 @@ export default function LembagaKelasSub({
               <th style="width: 75px;">NAMA AYAH</th>
               <th style="width: 75px;">NAMA IBU</th>
               <th style="width: 50px;">EMIS</th>
-              <th style="width: 50px;">VEVAL</th>
+              <th style="width: 50px;">VERVAL</th>
               <th style="width: 50px;">STATUS</th>
               <th style="width: 65px;">KELAS MHD</th>
               <th style="width: 55px;">SEMESTER</th>
@@ -2793,182 +2856,12 @@ export default function LembagaKelasSub({
 
   // Handle printing PDF for Calon Peserta Didik
   const handlePrintCalonPDF = () => {
-    if (!selectedLembaga) return;
-    const profile = getPesantrenProfile();
-    const studentsToPrint = calonStudentsOfLembaga;
-    if (studentsToPrint.length === 0) {
-      alert(`Tidak ada data calon peserta didik pada lembaga ${selectedLembaga.nama}.`);
-      return;
-    }
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert('Gagal membuka jendela cetak. Pastikan pop-up dibolehkan di peramban Anda.');
-      return;
-    }
-    const dateStr = new Date().toLocaleDateString('id-ID', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric'
-    });
-    const rowsHtml = studentsToPrint.map((s, idx) => `
-      <tr>
-        <td style="text-align: center;">${idx + 1}</td>
-        <td>${s.nis || '-'}</td>
-        <td><strong>${s.nama}</strong></td>
-        <td>${s.nik || '-'}</td>
-        <td>${s.nisn || '-'}</td>
-        <td>${s.statusEmis || '-'}</td>
-        <td>${s.kamar || '-'}</td>
-      </tr>
-    `).join('');
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>DAFTAR CALON PESERTA DIDIK - ${selectedLembaga.nama.toUpperCase()}</title>
-        <style>
-          @page { size: A4 portrait; margin: 15mm; }
-          body { font-family: sans-serif; color: #1e293b; margin: 0; padding: 10px; font-size: 11px; }
-          .header { text-align: center; border-bottom: 2px solid #00693E; padding-bottom: 10px; margin-bottom: 15px; }
-          .header h1 { margin: 0; font-size: 18px; color: #00693E; font-weight: bold; }
-          .header p { margin: 3px 0 0; font-size: 11px; color: #64748b; }
-          .title { text-align: center; font-size: 14px; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; }
-          .info { margin-bottom: 12px; font-size: 11px; display: flex; justify-content: space-between; }
-          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-          th, td { border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 10px; text-align: left; }
-          th { background-color: #f1f5f9; font-weight: bold; color: #334155; }
-          tr:nth-child(even) { background-color: #f8fafc; }
-          .footer { margin-top: 25px; text-align: right; font-size: 10px; color: #64748b; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h1>${profile.namaPesantren || 'PONDOK PESANTREN'}</h1>
-          <p>${profile.alamat || ''} ${(profile as any).kota ? ' - ' + (profile as any).kota : ''}</p>
-        </div>
-        <div class="title">DAFTAR CALON PESERTA DIDIK - ${selectedLembaga.nama.toUpperCase()}</div>
-        <div class="info">
-          <span><strong>Gender:</strong> Santri ${selectedGender} | <strong>Total Calon:</strong> ${studentsToPrint.length} Santri</span>
-          <span>Dicetak pada: ${dateStr}</span>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th style="width: 30px; text-align: center;">No</th>
-              <th style="width: 80px;">NIS</th>
-              <th>Nama Santri</th>
-              <th style="width: 110px;">NIK</th>
-              <th style="width: 90px;">NISN</th>
-              <th style="width: 80px;">Status EMIS</th>
-              <th style="width: 80px;">Kamar</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rowsHtml}
-          </tbody>
-        </table>
-        <div class="footer">
-          Dicetak dari Sistem SMART SANTRI - Modul Pendidikan
-        </div>
-        <script>
-          window.onload = function() { window.print(); };
-        </script>
-      </body>
-      </html>
-    `;
-    printWindow.document.write(html);
-    printWindow.document.close();
+    handlePrintPDFLembaga();
   };
 
   // Handle printing PDF for Lulusan
   const handlePrintLulusanPDF = () => {
-    if (!selectedLembaga) return;
-    const profile = getPesantrenProfile();
-    const studentsToPrint = allGraduatesOfLembaga;
-    if (studentsToPrint.length === 0) {
-      alert(`Tidak ada data lulusan pada lembaga ${selectedLembaga.nama}.`);
-      return;
-    }
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert('Gagal membuka jendela cetak. Pastikan pop-up dibolehkan di peramban Anda.');
-      return;
-    }
-    const dateStr = new Date().toLocaleDateString('id-ID', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric'
-    });
-    const rowsHtml = studentsToPrint.map((s, idx) => `
-      <tr>
-        <td style="text-align: center;">${idx + 1}</td>
-        <td>${s.nis || '-'}</td>
-        <td><strong>${s.nama}</strong></td>
-        <td>${s.nik || '-'}</td>
-        <td>${s.nisn || '-'}</td>
-        <td>${s.tahunLulus || '-'}</td>
-        <td>${s.kamar || '-'}</td>
-        <td style="text-align: center;">Alumni</td>
-      </tr>
-    `).join('');
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>DAFTAR LULUSAN & ALUMNI - ${selectedLembaga.nama.toUpperCase()}</title>
-        <style>
-          @page { size: A4 portrait; margin: 15mm; }
-          body { font-family: sans-serif; color: #1e293b; margin: 0; padding: 10px; font-size: 11px; }
-          .header { text-align: center; border-bottom: 2px solid #00693E; padding-bottom: 10px; margin-bottom: 15px; }
-          .header h1 { margin: 0; font-size: 18px; color: #00693E; font-weight: bold; }
-          .header p { margin: 3px 0 0; font-size: 11px; color: #64748b; }
-          .title { text-align: center; font-size: 14px; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; }
-          .info { margin-bottom: 12px; font-size: 11px; display: flex; justify-content: space-between; }
-          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-          th, td { border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 10px; text-align: left; }
-          th { background-color: #f1f5f9; font-weight: bold; color: #334155; }
-          tr:nth-child(even) { background-color: #f8fafc; }
-          .footer { margin-top: 25px; text-align: right; font-size: 10px; color: #64748b; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h1>${profile.namaPesantren || 'PONDOK PESANTREN'}</h1>
-          <p>${profile.alamat || ''} ${(profile as any).kota ? ' - ' + (profile as any).kota : ''}</p>
-        </div>
-        <div class="title">DAFTAR LULUSAN & ALUMNI - ${selectedLembaga.nama.toUpperCase()}</div>
-        <div class="info">
-          <span><strong>Gender:</strong> Santri ${selectedGender} | <strong>Total Lulusan:</strong> ${studentsToPrint.length} Santri</span>
-          <span>Dicetak pada: ${dateStr}</span>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th style="width: 30px; text-align: center;">No</th>
-              <th style="width: 80px;">NIS</th>
-              <th>Nama Santri</th>
-              <th style="width: 110px;">NIK</th>
-              <th style="width: 90px;">NISN</th>
-              <th style="width: 90px;">Tahun Lulus</th>
-              <th style="width: 80px;">Kamar Asal</th>
-              <th style="width: 70px; text-align: center;">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rowsHtml}
-          </tbody>
-        </table>
-        <div class="footer">
-          Dicetak dari Sistem SMART SANTRI - Modul Pendidikan
-        </div>
-        <script>
-          window.onload = function() { window.print(); };
-        </script>
-      </body>
-      </html>
-    `;
-    printWindow.document.write(html);
-    printWindow.document.close();
+    handlePrintPDFLembaga();
   };
 
   // Handle printing PDF / document for the selected class (Kelas)
@@ -3452,7 +3345,8 @@ export default function LembagaKelasSub({
             statusFilter={calonStatusFilter}
             onStatusFilterChange={setCalonStatusFilter}
             onBackToHub={() => setSelectedLembagaView('hub')}
-            onPrintPDF={handlePrintCalonPDF}
+            onExport={() => setIsExportLembagaModalOpen(true)}
+            onPrintPDF={() => setIsExportLembagaModalOpen(true)}
             onSelectStudentDetail={(s) => setSelectedSantriForDetail(s)}
             onUpdateSantri={onUpdateSantri}
             selectedGender={selectedGender}
@@ -3474,7 +3368,8 @@ export default function LembagaKelasSub({
             statusFilter={lulusanStatusFilter}
             onStatusFilterChange={setLulusanStatusFilter}
             onBackToHub={() => setSelectedLembagaView('hub')}
-            onPrintPDF={handlePrintLulusanPDF}
+            onExport={() => setIsExportLembagaModalOpen(true)}
+            onPrintPDF={() => setIsExportLembagaModalOpen(true)}
             onSelectStudentDetail={(s) => setSelectedSantriForDetail(s)}
             selectedGender={selectedGender}
             canWriteCurrent={canWriteCurrent}
@@ -6143,23 +6038,26 @@ export default function LembagaKelasSub({
       )}
 
       {/* Export Lembaga Data Modal */}
-      {selectedLembaga && (
-        <ExportModal
-          isOpen={isExportLembagaModalOpen}
-          onClose={() => setIsExportLembagaModalOpen(false)}
-          title={`Ekspor Data ${selectedLembaga.nama}`}
-          description={`Pilih format dokumen yang Anda butuhkan untuk mengunduh Excel (.xls) atau mencetak data santri ${selectedLembaga.nama} saat ini.`}
-          defaultFileName={`Data_${selectedLembaga.nama.replace(/[^a-zA-Z0-9_-]/g, '_')}_${selectedGender}_${new Date().toISOString().split('T')[0]}`}
-          onExportExcel={(fileName) => {
-            handleExportExcelLembaga(fileName);
-            setIsExportLembagaModalOpen(false);
-          }}
-          onPrintPDF={(fileName) => {
-            handlePrintPDFLembaga(fileName);
-            setIsExportLembagaModalOpen(false);
-          }}
-        />
-      )}
+      {selectedLembaga && (() => {
+        const viewExportInfo = getCurrentViewExportData();
+        return (
+          <ExportModal
+            isOpen={isExportLembagaModalOpen}
+            onClose={() => setIsExportLembagaModalOpen(false)}
+            title={viewExportInfo.modalTitle}
+            description={viewExportInfo.modalDesc}
+            defaultFileName={viewExportInfo.defaultFileName}
+            onExportExcel={(fileName) => {
+              handleExportExcelLembaga(fileName);
+              setIsExportLembagaModalOpen(false);
+            }}
+            onPrintPDF={(fileName) => {
+              handlePrintPDFLembaga(fileName);
+              setIsExportLembagaModalOpen(false);
+            }}
+          />
+        );
+      })()}
 
     </div>
   );
