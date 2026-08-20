@@ -176,7 +176,7 @@ export default function PendidikanView({
 
   const deserializeKelas = (k: Kelas): Kelas => {
     if (!k) return k;
-    let isDefault = Boolean(k.isDefault || k.id?.includes('-default') || k.nama?.toLowerCase() === 'calon pelajar' || k.nama?.toLowerCase() === 'calon peserta didik');
+    let isDefault = Boolean(k.isDefault);
     let tingkatan = k.tingkatan;
     let kapasitas = k.kapasitas;
     let batasUsiaHari = k.batasUsiaHari;
@@ -224,10 +224,9 @@ export default function PendidikanView({
   };
 
   const serializeKelas = (k: Kelas): Kelas => {
-    const isDefault = k.isDefault !== undefined ? k.isDefault : Boolean(k.id?.includes('-default') || k.nama?.toLowerCase() === 'calon pelajar' || k.nama?.toLowerCase() === 'calon peserta didik');
     return {
       ...k,
-      isDefault,
+      isDefault: Boolean(k.isDefault),
       waliKelas: cleanWaliKelas(k.waliKelas)
     };
   };
@@ -321,91 +320,7 @@ export default function PendidikanView({
         const kelData = await fetchTableData<Kelas>('kelas', 'smartsantri_kelas', INITIAL_KELAS);
         const uniqueKels = kelData.filter((item, idx, arr) => arr.findIndex(x => x.id === item.id) === idx).map(deserializeKelas);
 
-        // Clean up duplicate default classes per lembaga, ensure custom names take priority, and convert 'Calon Pelajar' to 'Calon Peserta Didik'
-        const deDuplicatedKels: Kelas[] = [];
-        const duplicatesToDelete: string[] = [];
-
-        for (const lem of uniqueLems) {
-          const lemKels = uniqueKels.filter(k => k.lembagaId === lem.id);
-          const defaultCandidates = lemKels.filter(k => isDefaultClass(k));
-
-          if (defaultCandidates.length > 0) {
-            const chosenDefault = { ...defaultCandidates[0], isDefault: true };
-            if (chosenDefault.nama !== 'Calon Peserta Didik') {
-              chosenDefault.nama = 'Calon Peserta Didik';
-              updateTableRow('kelas', 'smartsantri_kelas', chosenDefault.id, serializeKelas(chosenDefault)).catch(() => {});
-            }
-
-            const extraDefaults = defaultCandidates.slice(1);
-            extraDefaults.forEach(dup => duplicatesToDelete.push(dup.id));
-
-            const nonDefaultKels = lemKels.filter(k => !defaultCandidates.some(d => d.id === k.id));
-            deDuplicatedKels.push(chosenDefault, ...nonDefaultKels);
-          } else {
-            if (lemKels.length > 0) {
-              const firstCls = { ...lemKels[0], isDefault: true };
-              if (firstCls.nama !== 'Calon Peserta Didik') {
-                firstCls.nama = 'Calon Peserta Didik';
-              }
-              deDuplicatedKels.push(firstCls, ...lemKels.slice(1));
-              updateTableRow('kelas', 'smartsantri_kelas', firstCls.id, serializeKelas(firstCls)).catch(() => {});
-            } else {
-              console.log(`Self-healing: Creating missing default class 'Calon Peserta Didik' for lembaga ${lem.nama} (${lem.id})`);
-              const defaultClassPayload: Kelas = {
-                id: 'K-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7) + '-default',
-                lembagaId: lem.id,
-                nama: 'Calon Peserta Didik',
-                waliKelas: '-',
-                tingkatan: 'Lainnya',
-                isDefault: true,
-                batasUsiaHari: 1,
-                batasUsiaBulan: 7,
-                batasUsiaUmurMin: 0,
-                batasUsiaUmurMax: 99,
-              };
-              try {
-                const savedClass = await insertTableRow('kelas', 'smartsantri_kelas', serializeKelas(defaultClassPayload));
-                deDuplicatedKels.push(deserializeKelas(savedClass));
-              } catch (err) {
-                console.error(`Failed self-healing default class for ${lem.nama}:`, err);
-              }
-            }
-          }
-        }
-
-        // Include orphan classes (whose lembagaId does not match any current lembaga) and convert 'Calon Pelajar' if any
-        const orphanKels = uniqueKels.filter(k => !uniqueLems.some(l => l.id === k.lembagaId)).map(k => {
-          if (k.nama.toLowerCase() === 'calon pelajar') {
-            const updated = { ...k, nama: 'Calon Peserta Didik' };
-            updateTableRow('kelas', 'smartsantri_kelas', k.id, serializeKelas(updated)).catch(() => {});
-            return updated;
-          }
-          return k;
-        });
-        deDuplicatedKels.push(...orphanKels);
-
-        // Deduplicate non-default and all classes per lembaga by normalized name
-        const finalKels: Kelas[] = [];
-        const seenClassKeys = new Set<string>();
-
-        for (const k of deDuplicatedKels) {
-          const key = `${k.lembagaId || 'orphan'}_${k.nama.trim().toLowerCase()}`;
-          if (!seenClassKeys.has(key)) {
-            seenClassKeys.add(key);
-            finalKels.push(k);
-          } else {
-            console.log(`Self-healing: Deleting duplicate class '${k.nama}' with ID: ${k.id}`);
-            duplicatesToDelete.push(k.id);
-          }
-        }
-
-        // Delete duplicate classes from persistent storage
-        for (const dupId of duplicatesToDelete) {
-          console.log(`Self-healing: Deleting duplicate class with ID: ${dupId}`);
-          deleteTableRow('kelas', 'smartsantri_kelas', dupId);
-        }
-
-        if (isMounted) setKelasList(finalKels);
+        if (isMounted) setKelasList(uniqueKels);
 
         const [catData, grpData, assData] = await Promise.all([
           fetchTableData<KategoriRombel>('kategori_rombel', 'smartsantri_rombel_categories', INITIAL_ROMBEL_CAT),

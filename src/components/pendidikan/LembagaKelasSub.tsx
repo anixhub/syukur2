@@ -457,7 +457,7 @@ export default function LembagaKelasSub({
     return (
       <tr className="text-[11px] font-black uppercase tracking-wider text-slate-600 border-b border-slate-200 bg-slate-100 select-none">
         {/* 1. NO */}
-        <th style={getStyle()} className="sticky left-0 z-20 w-[42px] min-w-[42px] max-w-[42px] pl-2 pr-1 py-4 bg-slate-100 border-r border-slate-200 text-center font-black text-slate-600">
+        <th style={getStyle()} className="sticky left-0 z-20 w-[46px] min-w-[46px] max-w-[46px] pl-2 pr-1 py-4 bg-slate-100 border-r border-slate-200 text-center font-black text-slate-600">
           {isSelectionMode ? (
             <button
               type="button"
@@ -488,51 +488,28 @@ export default function LembagaKelasSub({
           )}
         </th>
 
-        {/* 2. NISM */}
-        {renderSortableHeader('NISM', 'nism', 'w-[140px] min-w-[140px] pl-2 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+        {/* 2. NAMA (Sticky Left) */}
+        {renderSortableHeader('Nama Santri', 'nama', 'sticky left-[46px] z-20 w-[240px] min-w-[240px] max-w-[240px] pl-3 py-4 bg-slate-100 border-r border-slate-200 relative', 'justify-start', getStyle())}
 
-        {/* 3. NISN */}
-        {renderSortableHeader('NISN', 'nisn', 'w-[110px] min-w-[110px] pl-2 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+        {/* 3. NISM */}
+        {renderSortableHeader('NISM', 'nism', 'w-[140px] min-w-[140px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
 
-        {/* 4. NAMA (Sticky Left) */}
-        {renderSortableHeader('Nama Santri', 'nama', 'sticky left-[42px] z-20 w-[200px] min-w-[200px] max-w-[200px] pl-2 py-4 bg-slate-100 border-r border-slate-200 relative', 'justify-start', getStyle())}
+        {/* 4. NISN */}
+        {renderSortableHeader('NISN', 'nisn', 'w-[120px] min-w-[120px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
 
-        {/* 5. TEMPAT LAHIR */}
-        {renderSortableHeader('Tempat Lahir', 'tempatLahir', 'w-[130px] min-w-[130px] pl-2 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+        {/* 5. EMIS */}
+        {renderSortableHeader('EMIS', 'statusEmis', 'w-[110px] min-w-[110px] px-2 py-4 bg-slate-100 border-r border-slate-200 text-center', 'justify-center', getStyle())}
 
-        {/* 6. TANGGAL LAHIR */}
-        {renderSortableHeader('Tgl Lahir', 'tanggalLahir', 'w-[110px] min-w-[110px] pl-2 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+        {/* 6. VERVAL */}
+        {renderSortableHeader('Verval', 'statusVerval', 'w-[110px] min-w-[110px] px-2 py-4 bg-slate-100 border-r border-slate-200 text-center', 'justify-center', getStyle())}
 
-        {/* 7. UMUR */}
-        <th style={getStyle()} className="w-[70px] min-w-[70px] px-2 py-4 bg-slate-100 border-r border-slate-200 text-center font-black text-slate-600">
-          UMUR
-        </th>
+        {/* 7. STATUS KEAKTIFAN */}
+        {renderSortableHeader('Status Keaktifan', 'statusKeanggotaan', 'w-[140px] min-w-[140px] px-2 py-4 bg-slate-100 border-r border-slate-200 text-center', 'justify-center', getStyle())}
 
-        {/* 8. JENIS KELAMIN */}
-        {renderSortableHeader('L/P', 'gender', 'w-[60px] min-w-[60px] px-2 py-4 bg-slate-100 border-r border-slate-200 text-center', 'justify-center', getStyle())}
+        {/* 8. KELAS MHD */}
+        {renderSortableHeader('Kelas MHD', 'kelasMhd', 'w-[130px] min-w-[130px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
 
-        {/* 9. NAMA AYAH */}
-        {renderSortableHeader('Nama Ayah', 'namaAyah', 'w-[140px] min-w-[140px] pl-2 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
-
-        {/* 10. NAMA IBU */}
-        {renderSortableHeader('Nama Ibu', 'namaIbu', 'w-[140px] min-w-[140px] pl-2 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
-
-        {/* 11. EMIS */}
-        {renderSortableHeader('EMIS', 'statusEmis', 'w-[100px] min-w-[100px] px-2 py-4 bg-slate-100 border-r border-slate-200 text-center', 'justify-center', getStyle())}
-
-        {/* 12. VERVAL */}
-        {renderSortableHeader('Verval', 'statusVerval', 'w-[100px] min-w-[100px] px-2 py-4 bg-slate-100 border-r border-slate-200 text-center', 'justify-center', getStyle())}
-
-        {/* 13. STATUS KEAKTIFAN */}
-        {renderSortableHeader('Status', 'statusKeanggotaan', 'w-[100px] min-w-[100px] px-2 py-4 bg-slate-100 border-r border-slate-200 text-center', 'justify-center', getStyle())}
-
-        {/* 14. KELAS MHD */}
-        {renderSortableHeader('Kelas MHD', 'kelasMhd', 'w-[110px] min-w-[110px] pl-2 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
-
-        {/* 15. SEMESTER */}
-        {renderSortableHeader('Semester', 'semester', 'w-[100px] min-w-[100px] pl-2 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
-
-        {/* 16. AKSI (Sticky Right) */}
+        {/* 9. AKSI (Sticky Right) */}
         <th style={getStyle()} className="sticky right-0 z-20 w-[56px] min-w-[56px] max-w-[56px] px-2 py-4 bg-slate-100 border-l border-slate-200 font-black text-slate-600 text-center shadow-[-2px_0_5px_rgba(0,0,0,0.03)]">
           <span>Aksi</span>
         </th>
@@ -930,18 +907,6 @@ export default function LembagaKelasSub({
         uniqueList.push(item);
       }
     }
-    const hasDefault = uniqueList.some(k => isDefaultClass(k));
-    if (!hasDefault) {
-      const defaultCls: Kelas = {
-        id: `calon-${lembagaId}`,
-        lembagaId: String(lembagaId),
-        nama: 'Calon Peserta Didik',
-        waliKelas: '-',
-        tingkatan: 'Lainnya',
-        isDefault: true
-      };
-      return [defaultCls, ...uniqueList];
-    }
     return uniqueList;
   };
 
@@ -1207,9 +1172,7 @@ export default function LembagaKelasSub({
   // --- Class Pill Items in Horizontal Scroll ---
   const classPillItems = useMemo(() => {
     if (!selectedLembaga) return [];
-    const regularClasses = subClasses.filter(c => !isDefaultClass(c));
-    
-    return regularClasses.map(c => ({
+    return subClasses.map(c => ({
       ...c,
       pillType: 'kelas',
       displayName: c.nama.toUpperCase(),
@@ -1533,17 +1496,7 @@ export default function LembagaKelasSub({
 
         const actualLembagaId = savedLem?.id || newLembagaId;
 
-        // Automatically create a default class named "Calon Peserta Didik"
-        await onAddKelas({
-          id: 'K-' + Date.now() + '-default',
-          lembagaId: actualLembagaId,
-          nama: 'Calon Peserta Didik',
-          waliKelas: '-',
-          tingkatan: 'Lainnya',
-          kapasitas: 999
-        });
-
-        showToast('Lembaga baru berhasil dibuat beserta kelas default.');
+        showToast('Lembaga baru berhasil dibuat.');
       }
     }
 
@@ -1596,9 +1549,7 @@ export default function LembagaKelasSub({
     setIsKelasModalOpen(true);
   };
 
-  const handleSaveKelas = () => {
-    const isLembagaFormal = false;
-    const isCalonPelajar = Boolean(isLembagaFormal && editingKelas && isDefaultClass(editingKelas));
+  const handleSaveKelas = async () => {
     const targetNama = kelNama.trim();
     if (!selectedLembaga || !targetNama) return;
 
@@ -1607,39 +1558,38 @@ export default function LembagaKelasSub({
     if (activeTab === 'Rombel') {
       if (editingKelas) {
         if (onUpdateGroup) {
-          onUpdateGroup({
+          const upGrp = {
             id: editingKelas.id,
             kategoriId: selectedLembaga.id,
-            nama: kelNama.trim(),
+            nama: targetNama,
             pembimbing: finalWali,
-            kuota: Number(kelKapasitas)
-          });
+            kuota: Number(kelKapasitas),
+            gender: selectedGender
+          };
+          await onUpdateGroup(upGrp);
           showToast('Kelompok rombel berhasil diperbarui.');
           if (selectedKelas?.id === editingKelas.id) {
-            setSelectedKelas({
-              ...selectedKelas,
-              nama: kelNama.trim(),
-              waliKelas: finalWali,
-              kapasitas: Number(kelKapasitas)
-            });
+            setSelectedKelas(upGrp);
           }
         }
       } else {
         if (onAddGroup) {
-          onAddGroup({
+          const newGrp = {
             id: 'G-' + Date.now(),
             kategoriId: selectedLembaga.id,
-            nama: kelNama.trim(),
+            nama: targetNama,
             pembimbing: finalWali,
             kuota: Number(kelKapasitas),
             gender: selectedGender
-          });
+          };
+          const savedGrp = await onAddGroup(newGrp);
+          setSelectedKelas(savedGrp || newGrp);
           showToast('Kelompok rombel baru berhasil ditambahkan.');
         }
       }
     } else {
       if (editingKelas) {
-        onUpdateKelas({
+        const upKel: Kelas = {
           ...editingKelas,
           nama: targetNama,
           waliKelas: finalWali,
@@ -1649,30 +1599,28 @@ export default function LembagaKelasSub({
           batasUsiaBulan: Number(kelBatasUsiaBulan),
           batasUsiaUmurMin: Number(kelBatasUsiaUmurMin),
           batasUsiaUmurMax: Number(kelBatasUsiaUmurMax)
-        });
+        };
+        await onUpdateKelas(upKel);
         showToast('Kelas berhasil diperbarui.');
         if (selectedKelas?.id === editingKelas.id) {
-          setSelectedKelas({
-            ...selectedKelas,
-            nama: targetNama,
-            waliKelas: finalWali,
-            tingkatan: kelTingkat,
-            kapasitas: Number(kelKapasitas),
-            batasUsiaHari: Number(kelBatasUsiaHari),
-            batasUsiaBulan: Number(kelBatasUsiaBulan),
-            batasUsiaUmurMin: Number(kelBatasUsiaUmurMin),
-            batasUsiaUmurMax: Number(kelBatasUsiaUmurMax)
-          });
+          setSelectedKelas(upKel);
         }
       } else {
-        onAddKelas({
+        const newKel: Kelas = {
           id: 'K-' + Date.now(),
           lembagaId: selectedLembaga.id,
-          nama: kelNama.trim(),
+          nama: targetNama,
           waliKelas: finalWali,
           tingkatan: kelTingkat,
-          kapasitas: Number(kelKapasitas)
-        });
+          kapasitas: Number(kelKapasitas),
+          batasUsiaHari: Number(kelBatasUsiaHari),
+          batasUsiaBulan: Number(kelBatasUsiaBulan),
+          batasUsiaUmurMin: Number(kelBatasUsiaUmurMin),
+          batasUsiaUmurMax: Number(kelBatasUsiaUmurMax),
+          isDefault: false
+        };
+        const saved = await onAddKelas(newKel);
+        setSelectedKelas(saved || newKel);
         showToast('Kelas baru berhasil ditambahkan.');
       }
     }
@@ -3693,7 +3641,7 @@ export default function LembagaKelasSub({
                                 className="overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
                               >
                                 <table 
-                                  className="w-full text-left border-collapse min-w-[1450px]"
+                                  className="w-full text-left border-collapse min-w-[980px]"
                                   style={{
                                     width: floatingTableWidth ? `${floatingTableWidth}px` : '100%',
                                     minWidth: floatingTableWidth ? `${floatingTableWidth}px` : '100%',
@@ -3715,7 +3663,7 @@ export default function LembagaKelasSub({
                             onScroll={handleTableScroll}
                             className="overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
                           >
-                            <table className="w-full text-left border-collapse min-w-[1450px]">
+                            <table className="w-full text-left border-collapse min-w-[980px]">
                               {/* Table Header - 100% Solid Background */}
                               <thead style={{ visibility: isScrolled ? 'hidden' : 'visible' }}>
                                 {renderTableHeadContents(false)}
@@ -3725,7 +3673,7 @@ export default function LembagaKelasSub({
                               <tbody className="divide-y divide-slate-100">
                                 {filteredStudents.length === 0 ? (
                                   <tr>
-                                    <td colSpan={15} className="py-16 text-center text-slate-400 font-medium text-xs">
+                                    <td colSpan={9} className="py-16 text-center text-slate-400 font-medium text-xs">
                                       <div className="flex flex-col items-center justify-center gap-2.5">
                                         <p className="italic">Belum ada santri terdaftar di kelas/kelompok ini.</p>
                                         {canWriteCurrent && (
@@ -3768,7 +3716,7 @@ export default function LembagaKelasSub({
                                     } ${rowBgClass}`}
                                   >
                                     {/* 1. NO or Checkbox Column */}
-                                    <td className={`sticky left-0 z-10 w-[42px] min-w-[42px] max-w-[42px] text-center pl-2 pr-1 py-3.5 select-none transition-colors border-r border-slate-100 ${stickyBg}`}>
+                                    <td className={`sticky left-0 z-10 w-[46px] min-w-[46px] max-w-[46px] text-center pl-2 pr-1 py-3.5 select-none transition-colors border-r border-slate-100 ${stickyBg}`}>
                                       {isSelectionMode ? (
                                         <input
                                           type="checkbox"
@@ -3782,18 +3730,8 @@ export default function LembagaKelasSub({
                                       )}
                                     </td>
 
-                                    {/* 2. NISM */}
-                                    <td className="w-[140px] min-w-[140px] font-mono font-bold text-slate-700 truncate px-2.5 py-3.5 border-r border-slate-100">
-                                      {getSantriNismForLembaga(s, selectedLembaga) || <span className="text-slate-300">-</span>}
-                                    </td>
-
-                                    {/* 3. NISN */}
-                                    <td className="w-[110px] min-w-[110px] font-mono font-bold text-slate-600 truncate px-2.5 py-3.5 border-r border-slate-100">
-                                      {s.nisn || <span className="text-slate-300">-</span>}
-                                    </td>
-
-                                    {/* 4. NAMA (Sticky Left) */}
-                                    <td className={`sticky left-[42px] z-10 w-[200px] min-w-[200px] max-w-[200px] pl-2 pr-2 py-3 transition-colors border-r border-slate-100 ${stickyBg}`}>
+                                    {/* 2. NAMA (Sticky Left) */}
+                                    <td className={`sticky left-[46px] z-10 w-[240px] min-w-[240px] max-w-[240px] pl-3 pr-2 py-3 transition-colors border-r border-slate-100 ${stickyBg}`}>
                                       <div className="flex items-center gap-2.5 min-w-0">
                                         {renderStudentAvatar(s)}
                                         <div className="min-w-0 flex-1">
@@ -3829,42 +3767,18 @@ export default function LembagaKelasSub({
                                       </div>
                                     </td>
 
-                                    {/* 5. TEMPAT LAHIR */}
-                                    <td className="w-[130px] min-w-[130px] text-slate-700 font-medium truncate px-2.5 py-3.5 border-r border-slate-100" title={s.tempatLahir}>
-                                      {s.tempatLahir || <span className="text-slate-300">-</span>}
+                                    {/* 3. NISM */}
+                                    <td className="w-[140px] min-w-[140px] font-mono font-bold text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                      {getSantriNismForLembaga(s, selectedLembaga) || <span className="text-slate-300">-</span>}
                                     </td>
 
-                                    {/* 6. TANGGAL LAHIR */}
-                                    <td className="w-[110px] min-w-[110px] text-slate-600 font-mono font-medium truncate px-2.5 py-3.5 border-r border-slate-100">
-                                      {formatTanggal(s.tanggalLahir)}
+                                    {/* 4. NISN */}
+                                    <td className="w-[120px] min-w-[120px] font-mono font-bold text-slate-600 truncate px-3 py-3.5 border-r border-slate-100">
+                                      {s.nisn || <span className="text-slate-300">-</span>}
                                     </td>
 
-                                    {/* 7. UMUR */}
-                                    <td className="w-[70px] min-w-[70px] text-center font-bold text-slate-700 px-2 py-3.5 border-r border-slate-100">
-                                      {calculateAge(s.tanggalLahir)}
-                                    </td>
-
-                                    {/* 8. JENIS KELAMIN */}
-                                    <td className="w-[60px] min-w-[60px] text-center px-2 py-3.5 border-r border-slate-100">
-                                      <span className={`inline-flex items-center justify-center h-5 w-5 rounded-full text-[10px] font-black ${
-                                        s.gender === 'Putra' ? 'bg-indigo-50 text-indigo-700' : 'bg-rose-50 text-rose-700'
-                                      }`}>
-                                        {s.gender === 'Putra' ? 'L' : s.gender === 'Putri' ? 'P' : (s.gender || '-')}
-                                      </span>
-                                    </td>
-
-                                    {/* 9. NAMA AYAH */}
-                                    <td className="w-[140px] min-w-[140px] text-slate-700 font-medium truncate px-2.5 py-3.5 border-r border-slate-100" title={s.namaAyah}>
-                                      {s.namaAyah || <span className="text-slate-300">-</span>}
-                                    </td>
-
-                                    {/* 10. NAMA IBU */}
-                                    <td className="w-[140px] min-w-[140px] text-slate-700 font-medium truncate px-2.5 py-3.5 border-r border-slate-100" title={s.namaIbu}>
-                                      {s.namaIbu || <span className="text-slate-300">-</span>}
-                                    </td>
-
-                                    {/* 11. EMIS */}
-                                    <td className="w-[100px] min-w-[100px] text-center px-2 py-3.5 border-r border-slate-100 relative">
+                                    {/* 5. EMIS */}
+                                    <td className="w-[110px] min-w-[110px] text-center px-2 py-3.5 border-r border-slate-100 relative">
                                       <div className="relative inline-block text-left">
                                         <button
                                           disabled={!canWriteCurrent}
@@ -3903,8 +3817,8 @@ export default function LembagaKelasSub({
                                       </div>
                                     </td>
 
-                                    {/* 12. VERVAL */}
-                                    <td className="w-[100px] min-w-[100px] text-center px-2 py-3.5 border-r border-slate-100 relative">
+                                    {/* 6. VERVAL */}
+                                    <td className="w-[110px] min-w-[110px] text-center px-2 py-3.5 border-r border-slate-100 relative">
                                       <div className="relative inline-block text-left">
                                         <button
                                           disabled={!canWriteCurrent}
@@ -3941,8 +3855,8 @@ export default function LembagaKelasSub({
                                       </div>
                                     </td>
 
-                                    {/* 13. STATUS KEAKTIFAN */}
-                                    <td className="w-[100px] min-w-[100px] text-center px-2 py-3.5 border-r border-slate-100">
+                                    {/* 7. STATUS KEAKTIFAN */}
+                                    <td className="w-[140px] min-w-[140px] text-center px-2 py-3.5 border-r border-slate-100">
                                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide ${
                                         (s.statusKeanggotaan || 'Aktif') === 'Aktif'
                                           ? 'bg-[#E6F4EA] text-[#137333]'
@@ -3954,17 +3868,12 @@ export default function LembagaKelasSub({
                                       </span>
                                     </td>
 
-                                    {/* 14. KELAS MHD */}
-                                    <td className="w-[110px] min-w-[110px] text-slate-700 font-medium truncate px-2.5 py-3.5 border-r border-slate-100">
+                                    {/* 8. KELAS MHD */}
+                                    <td className="w-[130px] min-w-[130px] text-slate-700 font-medium truncate px-3 py-3.5 border-r border-slate-100">
                                       {s.kelasMhd || s.pendidikanInternal || s.indukMhd || <span className="text-slate-300">-</span>}
                                     </td>
 
-                                    {/* 15. SEMESTER */}
-                                    <td className="w-[100px] min-w-[100px] text-slate-700 font-medium truncate px-2.5 py-3.5 border-r border-slate-100">
-                                      {s.semester || 'Semester 1'}
-                                    </td>
-
-                                    {/* 16. Aksi Column (Sticky Right) */}
+                                    {/* 9. Aksi Column (Sticky Right) */}
                                     <td className={`sticky right-0 z-10 w-[56px] min-w-[56px] max-w-[56px] text-center px-2 py-3.5 transition-colors border-l border-slate-200 shadow-[-2px_0_5px_rgba(0,0,0,0.03)] ${stickyBg}`}>
                                       <div className="relative inline-block text-left" onClick={(e) => e.stopPropagation()}>
                                         <button
