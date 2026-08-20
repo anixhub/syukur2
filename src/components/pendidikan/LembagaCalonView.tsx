@@ -9,14 +9,13 @@ import {
 import { Santri, Lembaga } from '../../types';
 import { renderSantriAvatar } from '../SekretarisHelper';
 import EditSantriKolomModal from './EditSantriKolomModal';
-import { NismGenerateDialog } from './NismGenerateDialog';
 import { 
   getNismFieldKeyForLembaga,
   getSantriNismForLembaga,
-  getSantriTahunMasuk,
+  getSantriTahunMasukLembaga,
   formatTanggalMasukDMY,
   parseTanggalMasukToYear,
-  generate22DigitNism,
+  generate18DigitNism,
   getNextSequenceForSantri,
   updateSantriNismAndTahunMasuk,
   batchGenerateNismForStudents
@@ -100,14 +99,9 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
   const [pageSize, setPageSize] = useState<number>(20);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
-  // NISM Modal State
-  const [nismModalState, setNismModalState] = useState<{
-    isOpen: boolean;
-    targetSantri?: Santri | null;
-  }>({
-    isOpen: false,
-    targetSantri: null
-  });
+  // 1-Line Inline Tanggal Masuk Lembaga state
+  const currentYear = new Date().getFullYear();
+  const [tanggalMasukLembagaInput, setTanggalMasukLembagaInput] = useState<string>(`15/07/${currentYear}`);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -134,60 +128,38 @@ export const LembagaCalonView: React.FC<LembagaCalonViewProps> = ({
     ? 'Induk Ulya' 
     : nismFieldKey === 'indukMhd' 
     ? 'Induk MHD' 
-    : '22 Digit';
+    : '18 Digit';
 
-  const handleOpenSingleGenerate = (s: Santri) => {
-    setNismModalState({
-      isOpen: true,
-      targetSantri: s
-    });
-  };
-
-  const handleOpenBatchGenerate = () => {
-    setNismModalState({
-      isOpen: true,
-      targetSantri: null
-    });
-  };
-
-  const handleConfirmGenerate = ({
-    tanggalMasukDMY,
-    applyDateToAll,
-    overwriteExisting,
-    targetSantri
-  }: {
-    tanggalMasukDMY: string;
-    applyDateToAll: boolean;
-    overwriteExisting: boolean;
-    targetSantri?: Santri | null;
-  }) => {
+  const handleGenerateSingleNism = (targetSantri: Santri) => {
     if (!onUpdateSantri) return;
+    const tglInput = tanggalMasukLembagaInput.trim() || `15/07/${currentYear}`;
+    const year = parseTanggalMasukToYear(tglInput);
+    const seq = getNextSequenceForSantri(targetSantri, students, selectedLembaga, year);
+    const newNism = generate18DigitNism(targetSantri, selectedLembaga, seq, year);
+    const updated = updateSantriNismAndTahunMasuk(targetSantri, newNism, year, selectedLembaga, tglInput);
+    onUpdateSantri(updated);
+    showToast(`NISM 18-Digit (${nismLabelSub}) ${targetSantri.nama} berhasil dibuat: ${newNism}`);
+  };
 
-    if (targetSantri) {
-      const year = parseTanggalMasukToYear(tanggalMasukDMY);
-      const seq = getNextSequenceForSantri(targetSantri, students, selectedLembaga, year);
-      const newNism = generate22DigitNism(targetSantri, selectedLembaga, seq, year);
-      const updated = updateSantriNismAndTahunMasuk(targetSantri, newNism, year, selectedLembaga, tanggalMasukDMY);
-      onUpdateSantri(updated);
-      showToast(`NISM (${nismLabelSub}) ${targetSantri.nama} berhasil di-generate: ${newNism}`);
-    } else {
-      const { updatedStudents, countGenerated } = batchGenerateNismForStudents(
-        students,
-        selectedLembaga,
-        overwriteExisting,
-        tanggalMasukDMY,
-        applyDateToAll
-      );
-      updatedStudents.forEach(st => onUpdateSantri(st));
-      showToast(`Berhasil men-generate ${countGenerated} NISM calon santri dengan tanggal masuk ${tanggalMasukDMY}.`);
-    }
+  const handleExecuteBatchGenerate = () => {
+    if (!onUpdateSantri) return;
+    const tglInput = tanggalMasukLembagaInput.trim() || `15/07/${currentYear}`;
+    const { updatedStudents, countGenerated } = batchGenerateNismForStudents(
+      students,
+      selectedLembaga,
+      false,
+      tglInput,
+      true
+    );
+    updatedStudents.forEach(st => onUpdateSantri(st));
+    showToast(`Berhasil men-generate ${countGenerated} NISM 18-Digit calon santri.`);
   };
 
   const handleUpdateNismInline = (s: Santri, val: string) => {
     if (!onUpdateSantri) return;
     const currentVal = getSantriNismForLembaga(s, selectedLembaga);
     if (val.trim() === currentVal) return;
-    const updated = updateSantriNismAndTahunMasuk(s, val.trim(), s.tahunMasuk, selectedLembaga);
+    const updated = updateSantriNismAndTahunMasuk(s, val.trim(), s.tahunMasukLembaga, selectedLembaga);
     onUpdateSantri(updated);
     showToast(`NISM ${s.nama} diperbarui.`);
   };

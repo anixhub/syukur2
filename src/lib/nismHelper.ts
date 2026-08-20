@@ -143,44 +143,54 @@ export const getSantriTahunMasuk = (santri: Santri): string => {
 };
 
 /**
- * Extract 16-digit Nomor Statistik from Lembaga.
+ * Extract 12-digit Nomor Statistik from Lembaga.
  */
-export const get16DigitNomorStatistik = (lembaga?: Lembaga | null): string => {
-  if (!lembaga) return '0000000000000000';
+export const get12DigitNomorStatistik = (lembaga?: Lembaga | null): string => {
+  if (!lembaga) return '000000000000';
   const raw = (lembaga.nomorStatistik || lembaga.nomor_statistik || lembaga.kode || '').replace(/\D/g, '');
-  if (raw.length >= 16) {
-    return raw.slice(0, 16);
+  if (raw.length >= 12) {
+    return raw.slice(0, 12);
   }
   if (raw.length > 0) {
-    return raw.padEnd(16, '0');
+    return raw.padEnd(12, '0');
   }
   // Default sensible prefix if empty based on lembaga type
   const lemName = (lembaga.nama || '').toLowerCase();
   if (lemName.includes('wustho') || lemName.includes('wustha')) {
-    return '5112350700010000';
+    return '511235070001';
   }
   if (lemName.includes('ulya')) {
-    return '5212350700010000';
+    return '521235070001';
   }
-  return '1212350700010000';
+  return '121235070001';
 };
 
 /**
- * Generate 22-digit NISM for a single santri:
- * [16 digit Nomor Statistik] + [2 digit akhir Tahun Masuk Lembaga] + [4 digit nomor urut]
+ * Backward compatibility alias
  */
-export const generate22DigitNism = (
+export const get16DigitNomorStatistik = get12DigitNomorStatistik;
+
+/**
+ * Generate 18-digit NISM for a single santri:
+ * [12 digit Nomor Statistik] + [2 digit akhir Tahun Masuk Lembaga] + [4 digit nomor urut]
+ */
+export const generate18DigitNism = (
   santri: Santri,
   lembaga: Lembaga | null | undefined,
   sequenceIndex: number,
   customTahunMasukLembaga?: string
 ): string => {
-  const ns16 = get16DigitNomorStatistik(lembaga);
+  const ns12 = get12DigitNomorStatistik(lembaga);
   const yearStr = customTahunMasukLembaga || getSantriTahunMasukLembaga(santri);
   const year2Digit = yearStr.slice(-2).padStart(2, '0');
   const seq4 = String(sequenceIndex).padStart(4, '0');
-  return `${ns16}${year2Digit}${seq4}`;
+  return `${ns12}${year2Digit}${seq4}`;
 };
+
+/**
+ * Backward compatibility alias
+ */
+export const generate22DigitNism = generate18DigitNism;
 
 /**
  * Update Santri's NISM and/or Tanggal Masuk Lembaga.
@@ -242,8 +252,8 @@ export const getNextSequenceForSantri = (
   sameYearStudents.forEach((s) => {
     if (s.id === targetSantri.id) return;
     const existingNism = s[fieldKey];
-    if (existingNism && existingNism.length === 22) {
-      const seqPart = parseInt(existingNism.slice(18, 22), 10);
+    if (existingNism && existingNism.length >= 16) {
+      const seqPart = parseInt(existingNism.slice(-4), 10);
       if (!isNaN(seqPart) && seqPart > maxSeq) {
         maxSeq = seqPart;
       }
@@ -260,7 +270,7 @@ export const getNextSequenceForSantri = (
 };
 
 /**
- * Batch generate 22-digit NISM for a list of students in a Lembaga.
+ * Batch generate 18-digit NISM for a list of students in a Lembaga.
  * If overwriteExisting is false, only generates for students without NISM in this field.
  * Optionally applies a custom default admission date/year if provided to tanggalMasukLembaga.
  */
@@ -280,8 +290,8 @@ export const batchGenerateNismForStudents = (
   students.forEach((s) => {
     const existingNism = s[fieldKey];
     const thn = (applyDateToAll && defaultYear) ? defaultYear : getSantriTahunMasukLembaga(s);
-    if (!overwriteExisting && existingNism && existingNism.length === 22) {
-      const seqPart = parseInt(existingNism.slice(18, 22), 10);
+    if (!overwriteExisting && existingNism && existingNism.length >= 16) {
+      const seqPart = parseInt(existingNism.slice(-4), 10);
       if (!isNaN(seqPart) && seqPart > (yearCounters[thn] || 0)) {
         yearCounters[thn] = seqPart;
       }
@@ -306,7 +316,7 @@ export const batchGenerateNismForStudents = (
     const nextSeq = (yearCounters[thn] || 0) + 1;
     yearCounters[thn] = nextSeq;
 
-    const newNism = generate22DigitNism(s, lembaga, nextSeq, thn);
+    const newNism = generate18DigitNism(s, lembaga, nextSeq, thn);
     countGenerated++;
     return updateSantriNismAndTahunMasuk(s, newNism, thn, lembaga, tglToApply);
   });

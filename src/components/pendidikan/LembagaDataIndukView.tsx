@@ -8,14 +8,13 @@ import {
 import { Santri } from '../../types';
 import { renderSantriAvatar } from '../SekretarisHelper';
 import EditSantriKolomModal from './EditSantriKolomModal';
-import { NismGenerateDialog } from './NismGenerateDialog';
 import { 
   getNismFieldKeyForLembaga,
   getSantriNismForLembaga,
-  getSantriTahunMasuk,
+  getSantriTahunMasukLembaga,
   formatTanggalMasukDMY,
   parseTanggalMasukToYear,
-  generate22DigitNism,
+  generate18DigitNism,
   getNextSequenceForSantri,
   updateSantriNismAndTahunMasuk,
   batchGenerateNismForStudents
@@ -95,14 +94,9 @@ export const LembagaDataIndukView: React.FC<LembagaDataIndukViewProps> = ({
   const [pageSize, setPageSize] = useState<number>(20);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
-  // NISM Generate Dialog state
-  const [nismModalState, setNismModalState] = useState<{
-    isOpen: boolean;
-    targetSantri?: Santri | null;
-  }>({
-    isOpen: false,
-    targetSantri: null
-  });
+  // 1-Line Inline Tanggal Masuk Lembaga state
+  const currentYear = new Date().getFullYear();
+  const [tanggalMasukLembagaInput, setTanggalMasukLembagaInput] = useState<string>(`15/07/${currentYear}`);
 
   // Reset page when filters or search change
   useEffect(() => {
@@ -121,7 +115,7 @@ export const LembagaDataIndukView: React.FC<LembagaDataIndukViewProps> = ({
     ? 'Induk Ulya' 
     : nismFieldKey === 'indukMhd' 
     ? 'Induk MHD' 
-    : '22 Digit';
+    : '18 Digit';
 
   // Pagination calculations
   const totalItems = students.length;
@@ -132,60 +126,36 @@ export const LembagaDataIndukView: React.FC<LembagaDataIndukViewProps> = ({
     return students.slice(startIndex, endIndex);
   }, [students, startIndex, endIndex]);
 
-  const handleOpenSingleGenerate = (s: Santri) => {
-    setNismModalState({
-      isOpen: true,
-      targetSantri: s
-    });
-  };
-
-  const handleOpenBatchGenerate = () => {
-    setNismModalState({
-      isOpen: true,
-      targetSantri: null
-    });
-  };
-
-  const handleConfirmGenerate = ({
-    tanggalMasukDMY,
-    applyDateToAll,
-    overwriteExisting,
-    targetSantri
-  }: {
-    tanggalMasukDMY: string;
-    applyDateToAll: boolean;
-    overwriteExisting: boolean;
-    targetSantri?: Santri | null;
-  }) => {
+  const handleGenerateSingleNism = (targetSantri: Santri) => {
     if (!onUpdateSantri) return;
+    const tglInput = tanggalMasukLembagaInput.trim() || `15/07/${currentYear}`;
+    const year = parseTanggalMasukToYear(tglInput);
+    const seq = getNextSequenceForSantri(targetSantri, students, selectedLembaga, year);
+    const newNism = generate18DigitNism(targetSantri, selectedLembaga, seq, year);
+    const updated = updateSantriNismAndTahunMasuk(targetSantri, newNism, year, selectedLembaga, tglInput);
+    onUpdateSantri(updated);
+    showToast(`NISM 18-Digit ${targetSantri.nama} berhasil dibuat: ${newNism}`);
+  };
 
-    if (targetSantri) {
-      // Single student generate
-      const year = parseTanggalMasukToYear(tanggalMasukDMY);
-      const seq = getNextSequenceForSantri(targetSantri, students, selectedLembaga, year);
-      const newNism = generate22DigitNism(targetSantri, selectedLembaga, seq, year);
-      const updated = updateSantriNismAndTahunMasuk(targetSantri, newNism, year, selectedLembaga, tanggalMasukDMY);
-      onUpdateSantri(updated);
-      showToast(`NISM ${targetSantri.nama} berhasil di-generate: ${newNism}`);
-    } else {
-      // Batch generate
-      const { updatedStudents, countGenerated } = batchGenerateNismForStudents(
-        students,
-        selectedLembaga,
-        overwriteExisting,
-        tanggalMasukDMY,
-        applyDateToAll
-      );
-      updatedStudents.forEach(st => onUpdateSantri(st));
-      showToast(`Berhasil men-generate ${countGenerated} NISM santri dengan tanggal masuk ${tanggalMasukDMY}.`);
-    }
+  const handleExecuteBatchGenerate = () => {
+    if (!onUpdateSantri) return;
+    const tglInput = tanggalMasukLembagaInput.trim() || `15/07/${currentYear}`;
+    const { updatedStudents, countGenerated } = batchGenerateNismForStudents(
+      students,
+      selectedLembaga,
+      false,
+      tglInput,
+      true
+    );
+    updatedStudents.forEach(st => onUpdateSantri(st));
+    showToast(`Berhasil men-generate ${countGenerated} NISM (18 Digit) santri.`);
   };
 
   const handleUpdateNismInline = (s: Santri, val: string) => {
     if (!onUpdateSantri) return;
     const currentVal = getSantriNismForLembaga(s, selectedLembaga);
     if (val.trim() === currentVal) return;
-    const updated = updateSantriNismAndTahunMasuk(s, val.trim(), s.tahunMasuk, selectedLembaga);
+    const updated = updateSantriNismAndTahunMasuk(s, val.trim(), s.tahunMasukLembaga, selectedLembaga);
     onUpdateSantri(updated);
     showToast(`NISM ${s.nama} diperbarui.`);
   };
@@ -226,15 +196,30 @@ export const LembagaDataIndukView: React.FC<LembagaDataIndukViewProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleOpenBatchGenerate}
-              className="inline-flex items-center justify-center bg-emerald-600 hover:bg-emerald-700 text-white h-9 px-3.5 rounded-xl text-xs font-bold cursor-pointer shadow-3xs active:scale-95 transition-all gap-1.5"
-              title="Generate Otomatis NISM 22 Digit untuk Santri"
-            >
-              <Sparkles className="h-4 w-4 text-emerald-100" />
-              <span>Generate NISM</span>
-            </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* 1-Line Inline Input Tanggal Masuk & Tombol Generate NISM */}
+            <div className="flex items-center bg-slate-50 p-1 rounded-xl border border-slate-200 shadow-3xs">
+              <div className="flex items-center gap-1.5 px-2 text-xs font-semibold text-slate-500">
+                <Calendar className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                <span className="text-3xs font-bold text-slate-500 uppercase tracking-wider hidden sm:inline">Tgl:</span>
+              </div>
+              <input
+                type="text"
+                placeholder="dd/mm/yyyy"
+                value={tanggalMasukLembagaInput}
+                onChange={(e) => setTanggalMasukLembagaInput(e.target.value)}
+                className="w-24 sm:w-28 h-7 px-2 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-800 text-center focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                title="Tanggal Masuk Lembaga (dd/mm/yyyy)"
+              />
+              <button
+                onClick={handleExecuteBatchGenerate}
+                className="ml-1 inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white h-7 px-3 rounded-lg text-xs font-bold transition cursor-pointer shadow-3xs"
+                title="Generate 18-Digit NISM (12 Digit No Statistik + 2 Digit Tahun Masuk + 4 Digit No Urut)"
+              >
+                <Sparkles className="h-3.5 w-3.5 text-emerald-100" />
+                <span>Generate NISM</span>
+              </button>
+            </div>
 
             <button
               onClick={onExport || onPrintPDF}
@@ -400,13 +385,13 @@ export const LembagaDataIndukView: React.FC<LembagaDataIndukViewProps> = ({
                                   (e.target as HTMLInputElement).blur();
                                 }
                               }}
-                              placeholder="22 Digit NISM..."
+                              placeholder="18 Digit NISM..."
                               className="flex-1 font-mono text-[11px] font-bold text-slate-800 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-200 focus:border-emerald-500 rounded px-1.5 py-1 outline-none transition-all"
                             />
                             <button
                               type="button"
-                              onClick={() => handleOpenSingleGenerate(s)}
-                              title="Generate 22-Digit NISM Otomatis"
+                              onClick={() => handleGenerateSingleNism(s)}
+                              title="Generate 18-Digit NISM Otomatis"
                               className="px-1.5 py-1 rounded-md bg-emerald-50 hover:bg-emerald-100 active:scale-95 text-emerald-800 text-[10px] font-black tracking-tight border border-emerald-200/80 flex items-center gap-1 shrink-0 transition-all cursor-pointer shadow-3xs"
                             >
                               <Sparkles className="h-3 w-3 text-emerald-600" />
@@ -645,16 +630,6 @@ export const LembagaDataIndukView: React.FC<LembagaDataIndukViewProps> = ({
           </div>
         )}
       </div>
-
-      {/* NISM Generate Prompt Modal */}
-      <NismGenerateDialog
-        isOpen={nismModalState.isOpen}
-        onClose={() => setNismModalState({ isOpen: false, targetSantri: null })}
-        targetSantri={nismModalState.targetSantri}
-        students={students}
-        selectedLembaga={selectedLembaga}
-        onConfirm={handleConfirmGenerate}
-      />
 
       {/* Edit Kolom Modal */}
       {editingSantri && (
