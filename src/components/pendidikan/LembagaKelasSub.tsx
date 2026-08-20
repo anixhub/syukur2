@@ -10,17 +10,13 @@ import {
   FileSpreadsheet, ClipboardList, Filter
 } from 'lucide-react';
 import { Lembaga, Kelas, Santri, KategoriRombel, KelompokRombel, RombelAssignment, isDefaultClass, isEmisTerdaftar, getClsLembagaId, isGenderMatch } from '../../types';
-import { demoteSantriToCalonPesertaDidik, compressImage, parseCatatanInvalid, formatCatatanWithInvalid, cleanWaliKelas, isMatchLembagaStrict } from '../../lib/utils';
+import { demoteSantriToCalonPesertaDidik, compressImage, parseCatatanInvalid, formatCatatanWithInvalid, cleanWaliKelas, isMatchLembagaStrict, getLembagaJenis } from '../../lib/utils';
 import { uploadFileToStorage, getApiUrl } from '../../lib/api';
 import SantriDetailModal from '../sekretaris/SantriDetailModal';
 import { PUTRA_AVATAR, PUTRI_AVATAR, renderSantriAvatar, calculateRealtimeAge, getPesantrenProfile } from '../SekretarisHelper';
-import LembagaHubView from './LembagaHubView';
-import LembagaDataIndukView from './LembagaDataIndukView';
-import LembagaCalonView from './LembagaCalonView';
-import LembagaLulusanView from './LembagaLulusanView';
 import EditSantriKolomModal from './EditSantriKolomModal';
 import { ExportModal } from '../ExportModal';
-import { getSantriNismForLembaga, getSantriTahunMasuk, formatTanggalMasukDMY } from '../../lib/nismHelper';
+import { getSantriNismForLembaga, getSantriTahunMasuk, formatTanggalMasukDMY, getNismFieldKeyForLembaga } from '../../lib/nismHelper';
 
 const MONTH_NAMES = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
@@ -120,16 +116,6 @@ export default function LembagaKelasSub({
   const [selectedKelas, setSelectedKelas] = useState<any | null>(null);
   const detailKelasRef = useRef<HTMLDivElement>(null);
   
-  // Navigation State within Selected Lembaga: 'hub' (4 tombol) | 'data_induk' | 'calon_peserta_didik' | 'kelas' | 'lulusan'
-  const [selectedLembagaView, setSelectedLembagaView] = useState<'hub' | 'data_induk' | 'calon_peserta_didik' | 'kelas' | 'lulusan'>('hub');
-  const [selectedCohort, setSelectedCohort] = useState<string>('Semua');
-  const [dataIndukClassFilter, setDataIndukClassFilter] = useState<string>('Semua');
-  const [dataIndukSearch, setDataIndukSearch] = useState<string>('');
-  const [dataIndukStatusFilter, setDataIndukStatusFilter] = useState<string>('Semua');
-  const [calonSearch, setCalonSearch] = useState<string>('');
-  const [calonStatusFilter, setCalonStatusFilter] = useState<string>('Semua');
-  const [lulusanSearch, setLulusanSearch] = useState<string>('');
-  const [lulusanStatusFilter, setLulusanStatusFilter] = useState<string>('Semua');
   const [isExportLembagaModalOpen, setIsExportLembagaModalOpen] = useState<boolean>(false);
 
   // Keep selectedLembaga in sync with the latest lembagasList or categoriesList when parent updates
@@ -775,27 +761,6 @@ export default function LembagaKelasSub({
     }
   };
 
-  // Helper: Resolve Lembaga type
-  const getLembagaJenis = (l: Lembaga): 'Formal' | 'Internal' => {
-    if (l.jenis && (l.jenis === 'Formal' || l.jenis === 'Internal')) return l.jenis;
-    const lower = (l.nama || '').toLowerCase();
-    const kode = (l.kode || '').toLowerCase();
-    if (
-      lower.includes('madin') || 
-      lower.includes('diniyah') || 
-      lower.includes('tpq') || 
-      lower.includes('tahfidz') || 
-      lower.includes('pondok') || 
-      lower.includes('kitab') || 
-      lower.includes('internal') ||
-      kode.includes('madin') ||
-      kode.includes('tahf')
-    ) {
-      return 'Internal';
-    }
-    return 'Formal';
-  };
-
   // Filtered Lembaga
   const filteredLembagas = lembagasList.filter(l => {
     const isJenisMatch = getLembagaJenis(l) === activeTab;
@@ -812,23 +777,62 @@ export default function LembagaKelasSub({
     const norm = (str?: string | null) => (str || '').trim().toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ');
     const rawLower = (str?: string | null) => (str || '').trim().toLowerCase();
     const targetId = rawLower(l.id);
+    const lemName = (l.nama || '').toLowerCase();
+    const nismKey = getNismFieldKeyForLembaga(l);
+
+    // 1. Direct explicit NISM or calonLembagaId match
+    if ((s as any).calonLembagaId && String((s as any).calonLembagaId) === String(l.id)) {
+      return true;
+    }
 
     if (isFormal) {
-      // 1. Check s.pendidikanFormal (Primary source of truth for Formal)
+      // Check explicit NISM key for this institution
+      if (nismKey === 'indukWustho' && s.indukWustho && s.indukWustho.trim() !== '' && s.indukWustho !== '-') {
+        return true;
+      }
+      if (nismKey === 'indukUlya' && s.indukUlya && s.indukUlya.trim() !== '' && s.indukUlya !== '-') {
+        return true;
+      }
+      if (nismKey === 'indukMhd' && s.indukMhd && s.indukMhd.trim() !== '' && s.indukMhd !== '-') {
+        return true;
+      }
+
+      // 2. Check s.pendidikanFormal (Primary source of truth for Formal)
       if (s.pendidikanFormal && s.pendidikanFormal.trim() !== '' && s.pendidikanFormal !== 'TIDAK TERDAFTAR' && s.pendidikanFormal !== 'Belum / Non-Formal' && s.pendidikanFormal !== '-') {
         const formalParts = s.pendidikanFormal.split(',').map(x => x.trim()).filter(Boolean);
         for (const entry of formalParts) {
           const dashParts = entry.split('-');
           const prefix = dashParts[0].trim();
-          if (isMatchLembagaStrict(l, prefix)) {
+          if (isMatchLembagaStrict(l, prefix) || isMatchLembagaStrict(l, entry)) {
             return true;
           }
+          // If entry contains 'Calon Peserta Didik' or 'Calon Pelajar'
+          if (entry.toLowerCase().includes('calon')) {
+            if (isMatchLembagaStrict(l, prefix)) {
+              return true;
+            }
+            if ((lemName.includes('wustho') || lemName.includes('wushto')) && (entry.toLowerCase().includes('wustho') || entry.toLowerCase().includes('wushto') || s.indukWustho)) {
+              return true;
+            }
+            if (lemName.includes('ulya') && (entry.toLowerCase().includes('ulya') || s.indukUlya)) {
+              return true;
+            }
+          }
         }
-        // If s.pendidikanFormal is explicitly set to another formal institution (e.g. Wustho vs Ulya), NEVER match this institution
-        return false;
+        // If s.pendidikanFormal matches another distinct formal institution strictly, return false
+        const otherFormalLembagas = lembagasList.filter(otherL => getLembagaJenis(otherL) === 'Formal' && String(otherL.id) !== String(l.id));
+        const matchesOtherFormal = otherFormalLembagas.some(otherL => {
+          return formalParts.some(entry => {
+            const prefix = entry.split('-')[0].trim();
+            return isMatchLembagaStrict(otherL, prefix);
+          });
+        });
+        if (matchesOtherFormal) {
+          return false;
+        }
       }
 
-      // 2. Fallback check: if s.pendidikanFormal is empty / unassigned, check s.kelas only if not matching any other formal lembaga
+      // 3. Fallback check: if s.pendidikanFormal is empty / unassigned, check s.kelas or pendidikanTerakhir
       const otherFormalLembagas = lembagasList.filter(otherL => getLembagaJenis(otherL) === 'Formal' && String(otherL.id) !== String(l.id));
       const classesOfL = kelasList.filter(k => {
         const kLemId = rawLower(getClsLembagaId(k));
@@ -858,9 +862,24 @@ export default function LembagaKelasSub({
         if (matchClass) return true;
       }
 
+      // Check if student has generic 'Calon Peserta Didik' in s.kelas and matches tier or induction
+      if (s.kelas && (s.kelas.toLowerCase().includes('calon') || s.kelas.toLowerCase().includes('tanpa'))) {
+        const pendTerakhir = (s.pendidikanTerakhir || '').toLowerCase();
+        if ((lemName.includes('wustho') || lemName.includes('wushto')) && (s.indukWustho || pendTerakhir.includes('wustho') || pendTerakhir.includes('wushto') || pendTerakhir.includes('smp') || pendTerakhir.includes('mts') || pendTerakhir.includes('tsanawiyah'))) {
+          return true;
+        }
+        if (lemName.includes('ulya') && (s.indukUlya || pendTerakhir.includes('ulya') || pendTerakhir.includes('sma') || pendTerakhir.includes('ma') || pendTerakhir.includes('aliyah'))) {
+          return true;
+        }
+      }
+
       return false;
     } else {
       // Internal institution
+      if (nismKey === 'indukMhd' && s.indukMhd && s.indukMhd.trim() !== '' && s.indukMhd !== '-') {
+        return true;
+      }
+
       // 1. Check s.pendidikanInternal
       if (s.pendidikanInternal && s.pendidikanInternal.trim() !== '' && s.pendidikanInternal !== 'Belum / Non-Madin' && s.pendidikanInternal !== '-') {
         const internalParts = s.pendidikanInternal.split(',').map(x => x.trim()).filter(Boolean);
@@ -1185,34 +1204,6 @@ export default function LembagaKelasSub({
     });
   }, [santriList, selectedLembaga, selectedGender]);
 
-  // --- Dynamic Calon Peserta Didik Students ---
-  const calonStudentsOfLembaga = useMemo(() => {
-    if (!selectedLembaga) return [];
-    const defaultCls = subClasses.find(c => isDefaultClass(c));
-    if (defaultCls) {
-      return getStudentsInClass(defaultCls, selectedLembaga);
-    }
-    const nonDefaultClasses = subClasses.filter(c => !isDefaultClass(c));
-    return allStudentsOfLembaga.filter(s => {
-      return !nonDefaultClasses.some(c => getStudentsInClass(c, selectedLembaga).some(cs => cs.id === s.id));
-    });
-  }, [selectedLembaga, subClasses, allStudentsOfLembaga]);
-
-  // --- Dynamic Lulusan / Alumni Students ---
-  const allGraduatesOfLembaga = useMemo(() => {
-    if (!selectedLembaga) return [];
-    return santriList.filter(s => {
-      if (!isGenderMatch(s.gender, selectedGender)) return false;
-      const inLembaga = isStudentInLembaga(s, selectedLembaga);
-      const isAlumniOrGrad = s.statusKeanggotaan === 'Alumni' || 
-                             (s as any).statusSantri === 'Alumni' || 
-                             !!s.tahunLulus ||
-                             (s.kelas && s.kelas.toLowerCase().includes('alumni')) ||
-                             (s.kelas && s.kelas.toLowerCase().includes('lulus'));
-      return inLembaga && isAlumniOrGrad;
-    });
-  }, [santriList, selectedLembaga, selectedGender]);
-
   // --- Class Pill Items in Horizontal Scroll ---
   const classPillItems = useMemo(() => {
     if (!selectedLembaga) return [];
@@ -1353,128 +1344,6 @@ export default function LembagaKelasSub({
       return 0;
     });
   }, [searchedStudents, sortField, sortDirection]);
-
-  const filteredDataIndukStudents = useMemo(() => {
-    const q = dataIndukSearch.trim().toLowerCase();
-    return allStudentsOfLembaga.filter(s => {
-      const matchesSearch = !q || (
-        (s.nama || '').toLowerCase().includes(q) ||
-        (s.nik && s.nik.toLowerCase().includes(q)) ||
-        (s.nis && s.nis.toLowerCase().includes(q)) ||
-        (s.nisn && s.nisn.toLowerCase().includes(q)) ||
-        (s.indukMhd && s.indukMhd.toLowerCase().includes(q)) ||
-        (s.indukWustho && s.indukWustho.toLowerCase().includes(q)) ||
-        (s.indukUlya && s.indukUlya.toLowerCase().includes(q))
-      );
-      if (!matchesSearch) return false;
-
-      if (dataIndukClassFilter && dataIndukClassFilter !== 'Semua') {
-        const targetClass = subClasses.find(c => c.id === dataIndukClassFilter || c.nama === dataIndukClassFilter);
-        if (targetClass) {
-          const inClass = getStudentsInClass(targetClass, selectedLembaga).some(cs => cs.id === s.id);
-          if (!inClass) return false;
-        }
-      }
-
-      if (dataIndukStatusFilter && dataIndukStatusFilter !== 'Semua') {
-        const st = s.statusKeanggotaan || 'Aktif';
-        if (dataIndukStatusFilter === 'Aktif' && st !== 'Aktif') return false;
-        if (dataIndukStatusFilter === 'Alumni' && st !== 'Alumni') return false;
-        if (dataIndukStatusFilter === 'Mutasi' && st !== 'Mutasi') return false;
-      }
-
-      return true;
-    }).sort((a, b) => (a.nama || '').localeCompare(b.nama || '', 'id', { sensitivity: 'base', numeric: true }));
-  }, [allStudentsOfLembaga, dataIndukSearch, dataIndukClassFilter, dataIndukStatusFilter, subClasses, selectedLembaga]);
-
-  const filteredCalonStudents = useMemo(() => {
-    const q = calonSearch.trim().toLowerCase();
-    return calonStudentsOfLembaga.filter(s => {
-      const matchesSearch = !q || (
-        (s.nama || '').toLowerCase().includes(q) ||
-        (s.nik && s.nik.toLowerCase().includes(q)) ||
-        (s.nis && s.nis.toLowerCase().includes(q)) ||
-        (s.nisn && s.nisn.toLowerCase().includes(q)) ||
-        (s.indukMhd && s.indukMhd.toLowerCase().includes(q)) ||
-        (s.indukWustho && s.indukWustho.toLowerCase().includes(q)) ||
-        (s.indukUlya && s.indukUlya.toLowerCase().includes(q))
-      );
-      if (!matchesSearch) return false;
-
-      if (calonStatusFilter && calonStatusFilter !== 'Semua') {
-        const isTerdaftar = isEmisTerdaftar(s.statusEmis);
-        if (calonStatusFilter === 'Terdaftar' && !isTerdaftar) return false;
-        if (calonStatusFilter === 'Belum' && isTerdaftar) return false;
-        if (calonStatusFilter === 'Invalid' && s.statusEmis !== 'Invalid') return false;
-      }
-
-      return true;
-    }).sort((a, b) => (a.nama || '').localeCompare(b.nama || '', 'id', { sensitivity: 'base', numeric: true }));
-  }, [calonStudentsOfLembaga, calonSearch, calonStatusFilter]);
-
-  const graduationCohorts = useMemo(() => {
-    const currentYear = new Date().getFullYear();
-    const years = [
-      'Semua',
-      String(currentYear),
-      String(currentYear - 1),
-      String(currentYear - 2),
-      String(currentYear - 3),
-      'Sebelumnya'
-    ];
-    return years.map(yr => {
-      let count = 0;
-      if (yr === 'Semua') {
-        count = allGraduatesOfLembaga.length;
-      } else if (yr === 'Sebelumnya') {
-        count = allGraduatesOfLembaga.filter(s => {
-          const y = parseInt(s.tahunLulus || '0');
-          return y > 0 && y < (currentYear - 3);
-        }).length;
-      } else {
-        count = allGraduatesOfLembaga.filter(s => s.tahunLulus === yr || (!s.tahunLulus && yr === String(currentYear))).length;
-      }
-      return {
-        id: yr,
-        nama: yr === 'Semua' ? 'Semua Angkatan / Lulusan' : `Lulusan Tahun ${yr}`,
-        tahun: yr,
-        count
-      };
-    });
-  }, [allGraduatesOfLembaga]);
-
-  const filteredGraduates = useMemo(() => {
-    const q = lulusanSearch.trim().toLowerCase();
-    const currentYear = new Date().getFullYear();
-    return allGraduatesOfLembaga.filter(s => {
-      const matchesSearch = !q || (
-        (s.nama || '').toLowerCase().includes(q) ||
-        (s.nik && s.nik.toLowerCase().includes(q)) ||
-        (s.nis && s.nis.toLowerCase().includes(q)) ||
-        (s.nisn && s.nisn.toLowerCase().includes(q)) ||
-        (s.indukMhd && s.indukMhd.toLowerCase().includes(q)) ||
-        (s.indukWustho && s.indukWustho.toLowerCase().includes(q)) ||
-        (s.indukUlya && s.indukUlya.toLowerCase().includes(q))
-      );
-      if (!matchesSearch) return false;
-
-      if (selectedCohort && selectedCohort !== 'Semua') {
-        if (selectedCohort === 'Sebelumnya') {
-          const y = parseInt(s.tahunLulus || '0');
-          if (!(y > 0 && y < (currentYear - 3))) return false;
-        } else {
-          const matchYear = s.tahunLulus === selectedCohort || (!s.tahunLulus && selectedCohort === String(currentYear));
-          if (!matchYear) return false;
-        }
-      }
-
-      if (lulusanStatusFilter && lulusanStatusFilter !== 'Semua') {
-        if (s.statusKeanggotaan !== lulusanStatusFilter) return false;
-      }
-
-      return true;
-    }).sort((a, b) => (a.nama || '').localeCompare(b.nama || '', 'id', { sensitivity: 'base', numeric: true }));
-  }, [allGraduatesOfLembaga, lulusanSearch, selectedCohort, lulusanStatusFilter]);
 
   // --- Class selection and cleanup ---
   useEffect(() => {
@@ -1896,67 +1765,6 @@ export default function LembagaKelasSub({
       }
     });
     setConfirmRemoveOpen(true);
-  };
-
-  const handleRemoveGraduate = (student: Santri) => {
-    if (!selectedLembaga) return;
-    setConfirmRemoveData({
-      type: 'single',
-      studentName: student.nama,
-      studentId: student.id,
-      label: 'lulusan / alumni',
-      className: 'Lulusan & Alumni',
-      onConfirm: () => {
-        onUpdateSantriClass(student.id, 'Tanpa Kelas', selectedLembaga.id);
-        if (onUpdateSantri) {
-          onUpdateSantri({
-            ...student,
-            tahunLulus: undefined,
-            catatan: student.catatan ? student.catatan.replace(/\[PF:.*?\]\s*/g, '').replace(/\[PI:.*?\]\s*/g, '').trim() : undefined
-          });
-        }
-        showToast(`${student.nama} berhasil dihapus dari daftar lulusan ${selectedLembaga.nama}.`);
-      }
-    });
-    setConfirmRemoveOpen(true);
-  };
-
-  const handleClearAllGraduates = () => {
-    if (!selectedLembaga) return;
-    const targetGrads = allGraduatesOfLembaga;
-    if (targetGrads.length === 0) return;
-    setConfirmRemoveData({
-      type: 'bulk',
-      count: targetGrads.length,
-      label: 'seluruh lulusan',
-      className: 'Lulusan & Alumni',
-      onConfirm: () => {
-        const ids = targetGrads.map(s => s.id);
-        if (onUpdateSantriClassBatch) {
-          onUpdateSantriClassBatch(ids, 'Tanpa Kelas', selectedLembaga.id);
-        } else {
-          ids.forEach(id => onUpdateSantriClass(id, 'Tanpa Kelas', selectedLembaga.id));
-        }
-        if (onUpdateSantri) {
-          targetGrads.forEach(s => {
-            onUpdateSantri({
-              ...s,
-              tahunLulus: undefined,
-              catatan: s.catatan ? s.catatan.replace(/\[PF:.*?\]\s*/g, '').replace(/\[PI:.*?\]\s*/g, '').trim() : undefined
-            });
-          });
-        }
-        showToast(`Seluruh data lulusan pada ${selectedLembaga.nama} (${targetGrads.length} santri) berhasil dikosongkan.`);
-      }
-    });
-    setConfirmRemoveOpen(true);
-  };
-
-  const handleTransferFromCalon = (student: Santri) => {
-    if (!selectedLembaga) return;
-    setTransferStudent(student);
-    setTransferLembagaId(selectedLembaga.id);
-    setDestClassId('');
   };
 
   const handleExecuteTransfer = () => {
@@ -2502,31 +2310,7 @@ export default function LembagaKelasSub({
     const dateStr = new Date().toISOString().split('T')[0];
     const cleanLemName = selectedLembaga.nama.replace(/[^a-zA-Z0-9_-]/g, '_');
 
-    if (selectedLembagaView === 'calon_peserta_didik') {
-      return {
-        title: `DAFTAR CALON PESERTA DIDIK - ${selectedLembaga.nama.toUpperCase()}`,
-        modalTitle: `Ekspor Data Calon Peserta Didik - ${selectedLembaga.nama}`,
-        modalDesc: `Pilih format dokumen untuk mengunduh Excel (.xls) atau mencetak daftar calon peserta didik ${selectedLembaga.nama} saat ini.`,
-        students: filteredCalonStudents,
-        defaultFileName: `Calon_Santri_${cleanLemName}_${selectedGender}_${dateStr}`
-      };
-    } else if (selectedLembagaView === 'data_induk') {
-      return {
-        title: `DATA INDUK SANTRI - ${selectedLembaga.nama.toUpperCase()}`,
-        modalTitle: `Ekspor Data Induk Santri - ${selectedLembaga.nama}`,
-        modalDesc: `Pilih format dokumen untuk mengunduh Excel (.xls) atau mencetak data induk santri ${selectedLembaga.nama} saat ini.`,
-        students: filteredDataIndukStudents,
-        defaultFileName: `Data_Induk_${cleanLemName}_${selectedGender}_${dateStr}`
-      };
-    } else if (selectedLembagaView === 'lulusan') {
-      return {
-        title: `DAFTAR LULUSAN & ALUMNI - ${selectedLembaga.nama.toUpperCase()}`,
-        modalTitle: `Ekspor Data Lulusan & Alumni - ${selectedLembaga.nama}`,
-        modalDesc: `Pilih format dokumen untuk mengunduh Excel (.xls) atau mencetak data alumni/lulusan ${selectedLembaga.nama} saat ini.`,
-        students: filteredGraduates,
-        defaultFileName: `Lulusan_${cleanLemName}_${selectedGender}_${dateStr}`
-      };
-    } else if (effectiveSelectedKelas) {
+    if (effectiveSelectedKelas) {
       const cleanKelasName = effectiveSelectedKelas.nama.replace(/[^a-zA-Z0-9_-]/g, '_');
       const classStudentsToUse = (searchedStudents.length > 0 || searchQuery.trim() !== '' || statusFilter !== 'Semua')
         ? searchedStudents
@@ -2543,7 +2327,7 @@ export default function LembagaKelasSub({
         title: `DATA SANTRI - ${selectedLembaga.nama.toUpperCase()}`,
         modalTitle: `Ekspor Data Santri - ${selectedLembaga.nama}`,
         modalDesc: `Pilih format dokumen untuk mengunduh Excel (.xls) atau mencetak data santri ${selectedLembaga.nama} saat ini.`,
-        students: allStudentsOfLembaga,
+        students: currentClassStudents,
         defaultFileName: `Data_${cleanLemName}_${selectedGender}_${dateStr}`
       };
     }
@@ -3144,7 +2928,6 @@ export default function LembagaKelasSub({
                       key={l.id}
                       onClick={() => {
                         setSelectedLembaga(l);
-                        setSelectedLembagaView('hub');
                         setSelectedKelas(null);
                       }}
                       className="group relative bg-white border border-slate-100 rounded-2xl cursor-pointer transition-all hover:border-slate-300 hover:shadow-md flex h-32 overflow-hidden"
@@ -3289,99 +3072,6 @@ export default function LembagaKelasSub({
               </div>
             )}
           </motion.div>
-        ) : selectedLembagaView === 'hub' ? (
-          <LembagaHubView
-            key="lembaga-hub-view"
-            selectedLembaga={selectedLembaga}
-            activeTab={activeTab}
-            subClasses={subClasses.filter(c => !isDefaultClass(c))}
-            allStudentsCount={allStudentsOfLembaga.length}
-            calonCount={calonStudentsOfLembaga.length}
-            graduatesCount={allGraduatesOfLembaga.length}
-            canWriteCurrent={canWriteCurrent}
-            isSelectionMode={isSelectionMode}
-            onBack={() => {
-              setSelectedLembaga(null);
-              setSelectedKelas(null);
-              setSelectedLembagaView('hub');
-            }}
-            onSelectView={(v) => {
-              setSelectedLembagaView(v);
-              if (v === 'kelas') {
-                setSelectedKelas(null);
-              }
-            }}
-            onExport={() => setIsExportLembagaModalOpen(true)}
-            onPrint={() => setIsExportLembagaModalOpen(true)}
-            onEdit={() => handleOpenLembagaModal(selectedLembaga)}
-            onDelete={() => handleDeleteLembagaClick(selectedLembaga.id, selectedLembaga.nama)}
-            generate4LetterKode={generate4LetterKode}
-            getLogoUrl={getLogoUrl}
-          />
-        ) : selectedLembagaView === 'data_induk' ? (
-          <LembagaDataIndukView
-            key="data-induk-view"
-            selectedLembaga={selectedLembaga}
-            activeTab={activeTab}
-            subClasses={subClasses}
-            students={filteredDataIndukStudents}
-            totalStudentsCount={allStudentsOfLembaga.length}
-            searchQuery={dataIndukSearch}
-            onSearchChange={setDataIndukSearch}
-            classFilter={dataIndukClassFilter}
-            onClassFilterChange={setDataIndukClassFilter}
-            statusFilter={dataIndukStatusFilter}
-            onStatusFilterChange={setDataIndukStatusFilter}
-            onBackToHub={() => setSelectedLembagaView('hub')}
-            onExport={() => setIsExportLembagaModalOpen(true)}
-            onPrintPDF={() => setIsExportLembagaModalOpen(true)}
-            onSelectStudentDetail={(s) => setSelectedSantriForDetail(s)}
-            onUpdateSantri={onUpdateSantri}
-            selectedGender={selectedGender}
-          />
-        ) : selectedLembagaView === 'calon_peserta_didik' ? (
-          <LembagaCalonView
-            key="calon-view"
-            selectedLembaga={selectedLembaga}
-            activeTab={activeTab}
-            students={filteredCalonStudents}
-            totalCalonCount={calonStudentsOfLembaga.length}
-            searchQuery={calonSearch}
-            onSearchChange={setCalonSearch}
-            statusFilter={calonStatusFilter}
-            onStatusFilterChange={setCalonStatusFilter}
-            onBackToHub={() => setSelectedLembagaView('hub')}
-            onExport={() => setIsExportLembagaModalOpen(true)}
-            onPrintPDF={() => setIsExportLembagaModalOpen(true)}
-            onSelectStudentDetail={(s) => setSelectedSantriForDetail(s)}
-            onUpdateSantri={onUpdateSantri}
-            selectedGender={selectedGender}
-            canWriteCurrent={canWriteCurrent}
-            onTransferStudent={handleTransferFromCalon}
-            onRemoveStudent={handleRemoveStudentFromCalon}
-          />
-        ) : selectedLembagaView === 'lulusan' ? (
-          <LembagaLulusanView
-            key="lulusan-view"
-            selectedLembaga={selectedLembaga}
-            activeTab={activeTab}
-            students={filteredGraduates}
-            allGraduates={allGraduatesOfLembaga}
-            selectedCohort={selectedCohort}
-            onSelectCohort={setSelectedCohort}
-            searchQuery={lulusanSearch}
-            onSearchChange={setLulusanSearch}
-            statusFilter={lulusanStatusFilter}
-            onStatusFilterChange={setLulusanStatusFilter}
-            onBackToHub={() => setSelectedLembagaView('hub')}
-            onExport={() => setIsExportLembagaModalOpen(true)}
-            onPrintPDF={() => setIsExportLembagaModalOpen(true)}
-            onSelectStudentDetail={(s) => setSelectedSantriForDetail(s)}
-            selectedGender={selectedGender}
-            canWriteCurrent={canWriteCurrent}
-            onClearAllGraduates={handleClearAllGraduates}
-            onRemoveGraduate={handleRemoveGraduate}
-          />
         ) : (
           <motion.div
             key="unified-daftar-kelas-view"
@@ -3400,16 +3090,16 @@ export default function LembagaKelasSub({
                     disabled={isSelectionMode}
                     onClick={() => {
                       if (isSelectionMode) return;
-                      setSelectedLembagaView('hub');
+                      setSelectedLembaga(null);
                       setSelectedKelas(null);
                     }}
                     className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-[#00693E] transition-all font-bold text-xs shadow-3xs shrink-0 ${
                       isSelectionMode ? 'opacity-40 cursor-not-allowed text-slate-300' : 'active:scale-95 cursor-pointer'
                     }`}
-                    title="Kembali ke Menu Lembaga"
+                    title="Kembali ke Daftar Lembaga"
                   >
                     <ArrowLeft className="h-4 w-4" />
-                    <span>Kembali ke Menu Lembaga</span>
+                    <span>Kembali ke Daftar Lembaga</span>
                   </button>
 
                   <span className="hidden sm:inline-block text-xs font-black text-slate-400 uppercase tracking-widest leading-none">

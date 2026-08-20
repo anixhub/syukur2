@@ -270,6 +270,47 @@ export const getNextSequenceForSantri = (
 };
 
 /**
+ * Clear NISM for a single student in a Lembaga.
+ */
+export const clearSantriNismForLembaga = (
+  santri: Santri,
+  lembaga: Lembaga | null | undefined
+): Santri => {
+  const fieldKey = getNismFieldKeyForLembaga(lembaga);
+  const updated: Santri = { ...santri };
+  const currentVal = santri[fieldKey];
+  updated[fieldKey] = '';
+  if (updated.nism === currentVal) {
+    updated.nism = '';
+  }
+  return updated;
+};
+
+/**
+ * Clear NISM for all given students in a Lembaga.
+ */
+export const clearNismForStudents = (
+  students: Santri[],
+  lembaga: Lembaga | null | undefined
+): { updatedStudents: Santri[]; countCleared: number } => {
+  const fieldKey = getNismFieldKeyForLembaga(lembaga);
+  let countCleared = 0;
+  const updatedStudents = students.map((s) => {
+    const currentVal = s[fieldKey];
+    if (currentVal && currentVal.trim() !== '') {
+      countCleared++;
+    }
+    const updated = { ...s };
+    updated[fieldKey] = '';
+    if (updated.nism === currentVal) {
+      updated.nism = '';
+    }
+    return updated;
+  });
+  return { updatedStudents, countCleared };
+};
+
+/**
  * Batch generate 18-digit NISM for a list of students in a Lembaga.
  * If overwriteExisting is false, only generates for students without NISM in this field.
  * Optionally applies a custom default admission date/year if provided to tanggalMasukLembaga.

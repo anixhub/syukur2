@@ -29,7 +29,7 @@ import {
   GraduationCap
 } from 'lucide-react';
 import { Santri, Lembaga, Kelas, KategoriRombel, KelompokRombel, RombelAssignment, isEmisTerdaftar, isGenderMatch } from '../../types';
-import { demoteSantriToCalonPesertaDidik, parseCatatanInvalid, cleanWaliKelas, isMatchLembagaStrict } from '../../lib/utils';
+import { demoteSantriToCalonPesertaDidik, parseCatatanInvalid, cleanWaliKelas, isMatchLembagaStrict, getLembagaJenis } from '../../lib/utils';
 import { renderSantriAvatar, getPesantrenProfile, calculateRealtimeAge } from '../SekretarisHelper';
 import SantriDetailModal from '../sekretaris/SantriDetailModal';
 import { ExportModal } from '../ExportModal';
@@ -74,27 +74,6 @@ export default function DataAkademikSub({
 
   // Primary mode state: 'formal' (Pendidikan Formal), 'internal' (Internal Pondok), or 'rombel' (Rombongan Belajar)
   const [academicType, setAcademicType] = useState<'formal' | 'internal' | 'rombel'>('formal');
-
-  // Helper to determine whether a Lembaga is Formal or Internal
-  const getLembagaJenis = (l: Lembaga): 'Formal' | 'Internal' => {
-    if (l.jenis && (l.jenis === 'Formal' || l.jenis === 'Internal')) return l.jenis;
-    const lower = (l.nama || '').toLowerCase();
-    const kode = (l.kode || '').toLowerCase();
-    if (
-      lower.includes('madin') || 
-      lower.includes('diniyah') || 
-      lower.includes('tpq') || 
-      lower.includes('tahfidz') || 
-      lower.includes('pondok') || 
-      lower.includes('kitab') || 
-      lower.includes('internal') ||
-      kode.includes('madin') ||
-      kode.includes('tahf')
-    ) {
-      return 'Internal';
-    }
-    return 'Formal';
-  };
 
   // Search & Filter States
   const [searchQuery, setSearchQuery] = useState('');

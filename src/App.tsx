@@ -272,6 +272,11 @@ export default function App() {
           if (s.nikAyah !== undefined && s.nikAyah !== null) updated.nikAyah = formatBigDigit(s.nikAyah);
           if (s.nikIbu !== undefined && s.nikIbu !== null) updated.nikIbu = formatBigDigit(s.nikIbu);
           if (s.noHp !== undefined && s.noHp !== null) updated.noHp = formatBigDigit(s.noHp);
+          // Hapus semua nomor NISM sesuai instruksi (dikosongkan agar diisi ulang sesuai acuan tanggal masuk)
+          updated.nism = '';
+          updated.indukWustho = '';
+          updated.indukUlya = '';
+          updated.indukMhd = '';
           return updated;
         });
 

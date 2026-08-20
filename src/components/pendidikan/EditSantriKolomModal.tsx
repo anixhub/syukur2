@@ -24,6 +24,7 @@ export const EditSantriKolomModal: React.FC<EditSantriKolomModalProps> = ({
     indukWustho: santri.indukWustho || '',
     indukUlya: santri.indukUlya || '',
     indukMhd: santri.indukMhd || '',
+    tanggalMasukLembaga: santri.tanggalMasukLembaga || santri.tanggalMasuk || '',
     tahunMasuk: santri.tahunMasuk || getSantriTahunMasuk(santri) || '',
     nisn: santri.nisn || '',
     nama: santri.nama || '',
@@ -49,9 +50,10 @@ export const EditSantriKolomModal: React.FC<EditSantriKolomModalProps> = ({
     const updated: Santri = {
       ...santri,
       nism: cleanNism,
-      indukWustho: formData.indukWustho.trim() || (cleanNism.length === 22 && santri.pendidikanFormal?.toLowerCase().includes('wustho') ? cleanNism : santri.indukWustho),
-      indukUlya: formData.indukUlya.trim() || (cleanNism.length === 22 && santri.pendidikanFormal?.toLowerCase().includes('ulya') ? cleanNism : santri.indukUlya),
-      indukMhd: formData.indukMhd.trim() || santri.indukMhd,
+      indukWustho: formData.indukWustho.trim() || (cleanNism.length === 18 && santri.pendidikanFormal?.toLowerCase().includes('wustho') ? cleanNism : santri.indukWustho),
+      indukUlya: formData.indukUlya.trim() || (cleanNism.length === 18 && santri.pendidikanFormal?.toLowerCase().includes('ulya') ? cleanNism : santri.indukUlya),
+      indukMhd: formData.indukMhd.trim() || (cleanNism.length === 18 && (santri.pendidikanInternal?.toLowerCase().includes('mhd') || santri.kelasMhd) ? cleanNism : santri.indukMhd),
+      tanggalMasukLembaga: formData.tanggalMasukLembaga.trim(),
       tahunMasuk: formData.tahunMasuk.trim(),
       nisn: formData.nisn.trim(),
       nama: formData.nama.trim(),
@@ -117,13 +119,14 @@ export const EditSantriKolomModal: React.FC<EditSantriKolomModalProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
-                      NISM (22 Digit)
+                      NISM (18 Digit)
                     </label>
                     <input
                       type="text"
                       value={formData.nism}
+                      maxLength={18}
                       onChange={(e) => setFormData({ ...formData, nism: e.target.value })}
-                      placeholder="Contoh: 5112350700010000240001"
+                      placeholder="18 Digit NISM..."
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none font-mono font-semibold text-slate-800 text-xs"
                     />
                     <p className="text-[10px] text-slate-400 mt-1">NISM / No. Induk Madrasah</p>

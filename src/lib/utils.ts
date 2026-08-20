@@ -212,6 +212,66 @@ export function formatClassNameOnly(rawClassOrFormal?: string | null): string {
 }
 
 /**
+ * Helper to determine whether a Lembaga is Formal or Internal.
+ * Recognizes PDF (Pendidikan Diniyah Formal), SPM (Satuan Pendidikan Mu'adalah),
+ * MTs, MA, SMP, SMA, SMK, SD, MI as 'Formal',
+ * and MDT, Madin Takmiliyah, TPQ, Tahfidz, etc. as 'Internal'.
+ */
+export function getLembagaJenis(l: Lembaga): 'Formal' | 'Internal' {
+  if (!l) return 'Formal';
+  if (l.jenis && (l.jenis === 'Formal' || l.jenis === 'Internal')) return l.jenis;
+  const lower = (l.nama || '').toLowerCase();
+  const kode = (l.kode || '').toLowerCase();
+
+  // 1. Explicit Formal education keywords
+  if (
+    lower.includes('diniyah formal') ||
+    lower.includes('pendidikan diniyah formal') ||
+    lower.includes('pdf') ||
+    lower.includes('spm') ||
+    lower.includes('muadalah') ||
+    lower.includes("mu'adalah") ||
+    lower.includes('wustho') ||
+    lower.includes('wushto') ||
+    lower.includes('wusto') ||
+    lower.includes('ulya') ||
+    lower.includes('tsanawiyah') ||
+    lower.includes('aliyah') ||
+    lower.includes('ibtidaiyyah') ||
+    lower.includes('formal') ||
+    kode.includes('pdf') ||
+    kode.includes('spm') ||
+    kode.includes('mts') ||
+    kode.includes('ma') ||
+    kode.includes('smp') ||
+    kode.includes('sma') ||
+    kode.includes('smk') ||
+    kode.includes('sd') ||
+    kode.includes('mi')
+  ) {
+    return 'Formal';
+  }
+
+  // 2. Explicit Internal / Non-Formal pondok keywords
+  if (
+    lower.includes('madin') || 
+    lower.includes('diniyah') || 
+    lower.includes('takmiliyah') ||
+    lower.includes('tpq') || 
+    lower.includes('tahfidz') || 
+    lower.includes('pondok') || 
+    lower.includes('kitab') || 
+    lower.includes('internal') ||
+    kode.includes('madin') ||
+    kode.includes('tahf')
+  ) {
+    return 'Internal';
+  }
+
+  return 'Formal';
+}
+
+/**
  * Rigorous helper to match an institution against a text string (e.g. from pendidikanFormal or pendidikanInternal prefix).
  * Guarantees strict isolation across tiers (Wustho vs Ulya vs Ula) so candidates of one tier NEVER leak into another.
  */
@@ -241,14 +301,23 @@ export function isMatchLembagaStrict(l: Lembaga, text?: string | null): boolean 
 
   // 2. Strict Academic Tier Disambiguation (Mutually exclusive levels)
   const EXCLUSIVE_TIER_GROUPS = [
-    { name: 'wustho', terms: ['wustho', 'wushto', 'wusto', 'mts', 'smp', 'spmw', 'spwu'] },
-    { name: 'ulya', terms: ['ulya', 'ulia', 'ma', 'sma', 'smk', 'spmu', 'spul'] },
+    { name: 'wustho', terms: ['wustho', 'wushto', 'wusto', 'mts', 'smp', 'spmw', 'spwu', 'tsanawiyah'] },
+    { name: 'ulya', terms: ['ulya', 'ulia', 'ma', 'sma', 'smk', 'spmu', 'spul', 'aliyah'] },
     { name: 'ula', terms: ['ula', 'mi', 'sd', 'spmua', 'ibtidaiyyah', 'ibtidaiyah'] },
   ];
 
   const findTierGroup = (str: string) => {
+    const s = normalizeSpelling(str.toLowerCase());
     return EXCLUSIVE_TIER_GROUPS.find(g => 
-      g.terms.some(t => new RegExp(`(^|\\s|[-_])${t}($|\\s|[-_])`, 'i').test(str) || str.toLowerCase().includes(t))
+      g.terms.some(t => {
+        if (t.length <= 3) {
+          // Strict word boundary for 2-3 letter abbreviations (like 'ma', 'mi', 'sd', 'mts', 'smp', 'sma')
+          // so 'madrasah' does not trigger 'ma', 'miftahul' does not trigger 'mi', etc.
+          const escaped = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          return new RegExp(`(^|[\\s_\\-.,/()])${escaped}([\\s_\\-.,/()]|$)`, 'i').test(s);
+        }
+        return s.includes(t);
+      })
     );
   };
 
@@ -264,8 +333,14 @@ export function isMatchLembagaStrict(l: Lembaga, text?: string | null): boolean 
     return false;
   }
 
+  // If both have the same tier (e.g. both are Wustho), and there are no other contradictory keywords, accept match
+  if (textTier && targetTier && textTier.name === targetTier.name) {
+    // If text only specifies the tier e.g. "Wustho" or "SPM Wustho" and target is "SPM Wustho Putra"
+    return true;
+  }
+
   // 3. Normalized inclusion / word check
-  const genericWords = new Set(['spm', 'madrasah', 'pondok', 'pesantren', 'sekolah', 'unit', 'pendidikan', 'lembaga', 'yayasan', 'al', 'ad', 'at', 'an', 'el', 'diniyyah', 'diniyah']);
+  const genericWords = new Set(['spm', 'madrasah', 'pondok', 'pesantren', 'sekolah', 'unit', 'pendidikan', 'lembaga', 'yayasan', 'al', 'ad', 'at', 'an', 'el', 'diniyyah', 'diniyah', 'putra', 'putri', 'pa', 'pi', 'sa', 'pdf']);
   const textWords = n.split(' ').filter(w => w.length > 0 && !genericWords.has(w));
   const targetWords = targetNama.split(' ').filter(w => w.length > 0 && !genericWords.has(w));
 
@@ -298,13 +373,7 @@ export function demoteSantriToCalonPesertaDidik(
   const formalLembagaIds: string[] = [];
   let formalLembagas: Lembaga[] = [];
   if (lembagasList) {
-    formalLembagas = lembagasList.filter(l => {
-      if (l.jenis) return l.jenis === 'Formal';
-      const lower = (l.nama || '').toLowerCase();
-      return !lower.includes('madin') && !lower.includes('diniyah') && !lower.includes('tpq') &&
-             !lower.includes('tahfidz') && !lower.includes('pondok') && !lower.includes('kitab') &&
-             !lower.includes('internal');
-    });
+    formalLembagas = lembagasList.filter(l => getLembagaJenis(l) === 'Formal');
     formalLembagaIds.push(...formalLembagas.map(l => String(l.id)));
   }
 
@@ -340,7 +409,7 @@ export function demoteSantriToCalonPesertaDidik(
   if (santri.pendidikanFormal && santri.pendidikanFormal.trim() !== '') {
     const parts = santri.pendidikanFormal.split(' - ');
     const lemName = parts[0].trim();
-    if (lemName) {
+    if (lemName && lemName.toLowerCase() !== 'calon peserta didik' && lemName.toLowerCase() !== 'calon pelajar') {
       newFormal = `${lemName} - Calon Peserta Didik`;
     } else {
       newFormal = 'Calon Peserta Didik';
@@ -356,6 +425,12 @@ export function demoteSantriToCalonPesertaDidik(
           if (matchedLem) break;
         }
       }
+    }
+    if (!matchedLem && santri.indukWustho) {
+      matchedLem = formalLembagas.find(l => (l.nama || '').toLowerCase().includes('wustho'));
+    }
+    if (!matchedLem && santri.indukUlya) {
+      matchedLem = formalLembagas.find(l => (l.nama || '').toLowerCase().includes('ulya'));
     }
     if (matchedLem) {
       newFormal = `${matchedLem.nama} - Calon Peserta Didik`;

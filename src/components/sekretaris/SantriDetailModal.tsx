@@ -24,12 +24,29 @@ import {
   Eye,
   Upload,
   Trash2,
-  Maximize2
+  Maximize2,
+  Sparkles,
+  Check,
+  RotateCcw,
+  Edit2,
+  Save,
+  Building2,
+  Info
 } from 'lucide-react';
 import { Santri, BendaharaRecord, KeamananRecord, Kamar, Kompleks, Kelas, Lembaga, KelompokRombel, RombelAssignment, KategoriRombel } from '../../types';
 import { renderSantriAvatar, isCustomPasFoto, calculateRealtimeAge } from '../SekretarisHelper';
 import { uploadFileToStorage, updateTableRow, getApiUrl } from '../../lib/api';
 import { processUploadedFile } from '../../lib/utils';
+import { 
+  getNismFieldKeyForLembaga,
+  getSantriNismForLembaga,
+  formatTanggalMasukDMY,
+  parseTanggalMasukToYear,
+  generate18DigitNism,
+  getNextSequenceForSantri,
+  updateSantriNismAndTahunMasuk,
+  clearSantriNismForLembaga
+} from '../../lib/nismHelper';
 
 const formatDateDMY = (dateVal?: any) => {
   if (dateVal === undefined || dateVal === null) return '-';
@@ -196,10 +213,160 @@ export default function SantriDetailModal({ selectedSantri, onClose, onUpdateSan
   React.useEffect(() => {
     if (selectedSantri) {
       setLocalSantri(selectedSantri);
+      const defaultTgl = formatTanggalMasukDMY(selectedSantri.tanggalMasukLembaga || selectedSantri.tanggalMasuk || '');
+      setNismFormState({
+        indukWustho: {
+          nism: selectedSantri.indukWustho || '',
+          tanggalMasuk: defaultTgl
+        },
+        indukUlya: {
+          nism: selectedSantri.indukUlya || '',
+          tanggalMasuk: defaultTgl
+        },
+        indukMhd: {
+          nism: selectedSantri.indukMhd || '',
+          tanggalMasuk: defaultTgl
+        },
+        nism: {
+          nism: selectedSantri.nism || '',
+          tanggalMasuk: defaultTgl
+        }
+      });
     } else {
       setLocalSantri(null);
+      setNismFormState({});
     }
   }, [selectedSantri]);
+
+  const [nismFormState, setNismFormState] = useState<Record<string, { nism: string; tanggalMasuk: string }>>({});
+  const [savingLembagaKey, setSavingLembagaKey] = useState<string | null>(null);
+  const [savedSuccessKey, setSavedSuccessKey] = useState<string | null>(null);
+
+  const handleNismFieldChange = (fieldKey: string, prop: 'nism' | 'tanggalMasuk', val: string) => {
+    setNismFormState(prev => ({
+      ...prev,
+      [fieldKey]: {
+        ...(prev[fieldKey] || { nism: '', tanggalMasuk: '' }),
+        [prop]: val
+      }
+    }));
+  };
+
+  const handleSaveNismRow = async (fieldKey: string, lembagaObj?: any) => {
+    if (!localSantri) return;
+    setSavingLembagaKey(fieldKey);
+    try {
+      const rowData = nismFormState[fieldKey] || { nism: '', tanggalMasuk: '' };
+      const yr = parseTanggalMasukToYear(rowData.tanggalMasuk);
+      
+      const payload: Partial<Santri> = {
+        [fieldKey]: rowData.nism.trim(),
+        tanggalMasukLembaga: rowData.tanggalMasuk.trim(),
+        tahunMasuk: yr
+      };
+
+      const updated = await updateTableRow<Santri>('santri', 'smartsantri_santriList', localSantri.id, payload);
+      setLocalSantri(updated);
+      onUpdateSantri?.(updated);
+      
+      setSavedSuccessKey(fieldKey);
+      setTimeout(() => {
+        setSavedSuccessKey(null);
+      }, 2500);
+    } catch (err: any) {
+      console.error("Gagal menyimpan NISM lembaga:", err);
+      alert("Gagal menyimpan: " + err.message);
+    } finally {
+      setSavingLembagaKey(null);
+    }
+  };
+
+  const handleGenerateNismInModal = async (fieldKey: string, jenjang: string, lembagaObj?: any) => {
+    if (!localSantri) return;
+    setSavingLembagaKey(fieldKey);
+    try {
+      const rowData = nismFormState[fieldKey] || { nism: '', tanggalMasuk: '' };
+      const yr = parseTanggalMasukToYear(rowData.tanggalMasuk || localSantri.tanggalMasukLembaga || localSantri.tanggalMasuk || '2024');
+      
+      // Get all students to calculate next sequence
+      let allStudents: Santri[] = [];
+      try {
+        const local = localStorage.getItem('smartsantri_santriList');
+        if (local) allStudents = JSON.parse(local);
+      } catch (e) {}
+
+      const mockLembaga: Lembaga = lembagaObj || {
+        id: fieldKey,
+        nama: fieldKey === 'indukWustho' ? 'SPM Wustho' : fieldKey === 'indukUlya' ? 'SPM Ulya' : fieldKey === 'indukMhd' ? 'Madrasah Diniyyah' : 'Formal',
+        kode: fieldKey === 'indukWustho' ? 'WUSTHO' : fieldKey === 'indukUlya' ? 'ULYA' : fieldKey === 'indukMhd' ? 'MHD' : 'FORMAL',
+        jenjang: jenjang,
+        nomorStatistik: fieldKey === 'indukWustho' ? '511235070001' : fieldKey === 'indukUlya' ? '521235070001' : fieldKey === 'indukMhd' ? '512235070001' : '121235070001',
+        kategori: 'Pendidikan',
+        status: 'Aktif'
+      };
+
+      const seq = getNextSequenceForSantri(localSantri, allStudents, mockLembaga, yr);
+      const generated18 = generate18DigitNism(localSantri, mockLembaga, seq, yr);
+
+      const updatedForm = {
+        nism: generated18,
+        tanggalMasuk: rowData.tanggalMasuk || formatTanggalMasukDMY(localSantri.tanggalMasukLembaga || localSantri.tanggalMasuk || '') || `01/07/${yr}`
+      };
+
+      setNismFormState(prev => ({
+        ...prev,
+        [fieldKey]: updatedForm
+      }));
+
+      const payload: Partial<Santri> = {
+        [fieldKey]: generated18,
+        tanggalMasukLembaga: updatedForm.tanggalMasuk,
+        tahunMasuk: yr
+      };
+
+      const updated = await updateTableRow<Santri>('santri', 'smartsantri_santriList', localSantri.id, payload);
+      setLocalSantri(updated);
+      onUpdateSantri?.(updated);
+
+      setSavedSuccessKey(fieldKey);
+      setTimeout(() => {
+        setSavedSuccessKey(null);
+      }, 2500);
+    } catch (err: any) {
+      console.error("Gagal generate NISM:", err);
+      alert("Gagal generate NISM: " + err.message);
+    } finally {
+      setSavingLembagaKey(null);
+    }
+  };
+
+  const handleClearNismRow = async (fieldKey: string) => {
+    if (!localSantri) return;
+    setSavingLembagaKey(fieldKey);
+    try {
+      const updatedForm = {
+        ...(nismFormState[fieldKey] || { tanggalMasuk: '' }),
+        nism: ''
+      };
+
+      setNismFormState(prev => ({
+        ...prev,
+        [fieldKey]: updatedForm
+      }));
+
+      const payload: Partial<Santri> = {
+        [fieldKey]: ''
+      };
+
+      const updated = await updateTableRow<Santri>('santri', 'smartsantri_santriList', localSantri.id, payload);
+      setLocalSantri(updated);
+      onUpdateSantri?.(updated);
+    } catch (err: any) {
+      console.error("Gagal menghapus NISM:", err);
+    } finally {
+      setSavingLembagaKey(null);
+    }
+  };
 
   React.useEffect(() => {
     if (selectedSantri) {
@@ -994,87 +1161,278 @@ export default function SantriDetailModal({ selectedSantri, onClose, onUpdateSan
 
             {/* Tab 3: Akademik */}
             {activeTab === 'akademik' && (
-              <div className="space-y-4 animate-fadeIn">
-                {/* 1. Kelas Card */}
-                <div className="bg-[#eefcd2] p-4 rounded-[24px] border border-[#d3e9a5] shadow-xs">
-                  <h4 className="text-center font-black text-slate-800 text-sm mb-4 tracking-wide">
-                    Kelas
-                  </h4>
-                  <div className="space-y-2">
-                    {academicClasses.length > 0 ? (
-                      academicClasses.map((cls, idx) => (
-                        <div 
-                          key={idx} 
-                          className="bg-white px-4 py-2.5 rounded-full shadow-xs border border-slate-100 flex items-center justify-between gap-3 text-xs"
-                        >
-                          <span className="font-extrabold text-slate-800 uppercase tracking-wide truncate">
-                            {cls.lembaga}
-                          </span>
-                          <span className="bg-[#ffe4a0] text-slate-800 font-extrabold px-4 py-1 rounded-full shrink-0 min-w-[100px] text-center">
-                            {cls.kelas}
-                          </span>
+              <div className="space-y-5 animate-fadeIn">
+                {/* 1. TABEL UTAMA: Data Lembaga, Tanggal Masuk & NISM (18-Digit) */}
+                <div className="bg-white rounded-[24px] border border-amber-200/80 shadow-xs overflow-hidden">
+                  <div className="p-4 sm:p-5 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-b border-amber-200/60">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-amber-600 text-white flex items-center justify-center font-bold text-sm shadow-2xs">
+                          <Building2 className="h-5 w-5" />
                         </div>
-                      ))
-                    ) : (
-                      <div className="text-center py-4 text-xs text-slate-500 font-medium bg-white rounded-full border border-slate-100">
-                        Belum terdaftar di kelas mana pun
+                        <div>
+                          <h4 className="font-black text-slate-800 text-sm tracking-wide flex items-center gap-2">
+                            <span>Tabel Lembaga, Tanggal Masuk & NISM</span>
+                            <span className="bg-amber-100 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-md border border-amber-300/60">
+                              18 Digit
+                            </span>
+                          </h4>
+                          <p className="text-xs text-slate-500 font-medium">
+                            Kelola tanggal masuk lembaga sebagai acuan pembentukan Nomor Induk Santri Masuk (NISM).
+                          </p>
+                        </div>
                       </div>
-                    )}
+                    </div>
+                  </div>
+
+                  <div className="p-4 sm:p-5">
+                    <div className="overflow-x-auto rounded-xl border border-slate-200/90 shadow-3xs">
+                      <table className="w-full text-left border-collapse min-w-[700px]">
+                        <thead>
+                          <tr className="bg-slate-100 border-b border-slate-200 text-[10px] font-black text-slate-700 uppercase tracking-wider select-none">
+                            <th className="w-10 py-3 px-2 text-center border-r border-slate-200">NO</th>
+                            <th className="w-52 py-3 px-3 border-r border-slate-200">LEMBAGA / SATUAN</th>
+                            <th className="w-44 py-3 px-3 border-r border-slate-200">
+                              <div className="flex items-center justify-between">
+                                <span>TGL MASUK LEMBAGA</span>
+                                <span className="text-[9px] text-slate-400 font-normal lowercase">(dd/mm/yyyy)</span>
+                              </div>
+                            </th>
+                            <th className="w-20 py-3 px-2 text-center border-r border-slate-200">THN ACUAN</th>
+                            <th className="w-56 py-3 px-3 border-r border-slate-200">NOMOR NISM (18 DIGIT)</th>
+                            <th className="w-36 py-3 px-2 text-center">AKSI</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-xs">
+                          {[
+                            {
+                              id: 'wustho',
+                              key: 'indukWustho',
+                              nama: 'SPM Wustho',
+                              jenjang: 'Wustho',
+                              deskripsi: "Pendidikan Mu'adalah Tingkat Pertama (Setara SMP/MTs)",
+                              badgeColor: 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            },
+                            {
+                              id: 'ulya',
+                              key: 'indukUlya',
+                              nama: 'SPM Ulya',
+                              jenjang: 'Ulya',
+                              deskripsi: "Pendidikan Mu'adalah Tingkat Atas (Setara SMA/MA)",
+                              badgeColor: 'bg-indigo-50 text-indigo-800 border-indigo-200'
+                            },
+                            {
+                              id: 'mhd',
+                              key: 'indukMhd',
+                              nama: 'Madrasah Diniyyah (MHD)',
+                              jenjang: 'MHD',
+                              deskripsi: 'Pendidikan Diniyyah & Kitab Kuning Pesantren',
+                              badgeColor: 'bg-amber-50 text-amber-800 border-amber-200'
+                            },
+                            {
+                              id: 'formal',
+                              key: 'nism',
+                              nama: 'Pendidikan Formal / Umum',
+                              jenjang: 'Formal',
+                              deskripsi: 'Pendidikan Formal & Umum Pesantren',
+                              badgeColor: 'bg-sky-50 text-sky-800 border-sky-200'
+                            }
+                          ].map((item, idx) => {
+                            const curForm = nismFormState[item.key] || { nism: '', tanggalMasuk: '' };
+                            const computedYear = parseTanggalMasukToYear(curForm.tanggalMasuk || localSantri.tanggalMasukLembaga || localSantri.tanggalMasuk || '2024');
+                            const isSaving = savingLembagaKey === item.key;
+                            const isSaved = savedSuccessKey === item.key;
+
+                            return (
+                              <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+                                {/* 1. NO */}
+                                <td className="py-3 px-2 text-center font-bold text-slate-400 border-r border-slate-100">
+                                  {idx + 1}
+                                </td>
+
+                                {/* 2. LEMBAGA / SATUAN */}
+                                <td className="py-3 px-3 border-r border-slate-100">
+                                  <div>
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="font-extrabold text-slate-800 text-xs">
+                                        {item.nama}
+                                      </span>
+                                      <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border ${item.badgeColor}`}>
+                                        {item.jenjang}
+                                      </span>
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 font-medium mt-0.5">
+                                      {item.deskripsi}
+                                    </p>
+                                  </div>
+                                </td>
+
+                                {/* 3. TGL MASUK LEMBAGA */}
+                                <td className="py-2 px-3 border-r border-slate-100">
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      type="text"
+                                      value={curForm.tanggalMasuk}
+                                      onChange={(e) => handleNismFieldChange(item.key, 'tanggalMasuk', e.target.value)}
+                                      placeholder="Contoh: 15/07/2024"
+                                      className="w-full px-2 py-1.5 text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
+                                      title="Masukkan Tanggal Masuk Lembaga (dd/mm/yyyy)"
+                                    />
+                                  </div>
+                                </td>
+
+                                {/* 4. THN ACUAN */}
+                                <td className="py-3 px-2 text-center font-mono font-bold text-amber-900 border-r border-slate-100 bg-amber-50/40">
+                                  <span className="bg-white px-2 py-0.5 rounded border border-amber-200 text-xs">
+                                    {computedYear}
+                                  </span>
+                                </td>
+
+                                {/* 5. NOMOR NISM (18 DIGIT) */}
+                                <td className="py-2 px-3 border-r border-slate-100">
+                                  <input
+                                    type="text"
+                                    value={curForm.nism}
+                                    maxLength={18}
+                                    onChange={(e) => handleNismFieldChange(item.key, 'nism', e.target.value)}
+                                    placeholder="18 Digit NISM..."
+                                    className="w-full px-2.5 py-1.5 text-xs font-mono font-extrabold text-slate-800 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 tracking-wide"
+                                  />
+                                </td>
+
+                                {/* 6. AKSI */}
+                                <td className="py-2 px-2 text-center">
+                                  <div className="flex items-center justify-center gap-1">
+                                    {/* Generate NISM */}
+                                    <button
+                                      type="button"
+                                      disabled={isSaving}
+                                      onClick={() => handleGenerateNismInModal(item.key, item.jenjang)}
+                                      title="Generate 18-Digit NISM Otomatis berdasarkan tahun masuk lembaga"
+                                      className="inline-flex items-center gap-1 bg-amber-50 hover:bg-amber-100 active:scale-95 text-amber-900 border border-amber-300/80 px-2 py-1.5 rounded-lg text-[11px] font-extrabold transition-all cursor-pointer shadow-3xs disabled:opacity-50"
+                                    >
+                                      <Sparkles className="h-3 w-3 text-amber-600" />
+                                      <span>Generate</span>
+                                    </button>
+
+                                    {/* Simpan */}
+                                    <button
+                                      type="button"
+                                      disabled={isSaving}
+                                      onClick={() => handleSaveNismRow(item.key)}
+                                      title="Simpan Perubahan Tanggal & NISM"
+                                      className={`inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-extrabold transition-all cursor-pointer shadow-3xs disabled:opacity-50 ${
+                                        isSaved 
+                                          ? 'bg-emerald-600 text-white' 
+                                          : 'bg-slate-800 hover:bg-slate-900 text-white'
+                                      }`}
+                                    >
+                                      {isSaved ? <Check className="h-3 w-3" /> : <Save className="h-3 w-3" />}
+                                      <span>{isSaved ? 'Tersimpan' : 'Simpan'}</span>
+                                    </button>
+
+                                    {/* Hapus */}
+                                    {curForm.nism && (
+                                      <button
+                                        type="button"
+                                        disabled={isSaving}
+                                        onClick={() => handleClearNismRow(item.key)}
+                                        title="Hapus / Kosongkan NISM ini"
+                                        className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200/80 transition-all cursor-pointer"
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
 
-                {/* 2. Rombongan Belajar Card */}
-                <div className="bg-[#eefcd2] p-4 rounded-[24px] border border-[#d3e9a5] shadow-xs">
-                  <h4 className="text-center font-black text-slate-800 text-sm mb-4 tracking-wide">
-                    Rombongan Belajar
-                  </h4>
-                  <div className="space-y-2">
-                    {academicRombels.length > 0 ? (
-                      academicRombels.map((rom, idx) => (
-                        <div 
-                          key={idx} 
-                          className="bg-white px-4 py-2.5 rounded-full shadow-xs border border-slate-100 flex items-center justify-between gap-3 text-xs"
-                        >
-                          <span className="font-extrabold text-slate-800 truncate">
-                            {rom.category}
-                          </span>
-                          <span className="bg-[#ffe4a0] text-slate-800 font-extrabold px-4 py-1 rounded-full shrink-0 min-w-[100px] text-center">
-                            {rom.group}
-                          </span>
+                {/* 2. Grid for Kelas & Rombel */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Kelas Card */}
+                  <div className="bg-[#eefcd2] p-4 rounded-[24px] border border-[#d3e9a5] shadow-xs">
+                    <h4 className="text-center font-black text-slate-800 text-sm mb-3 tracking-wide">
+                      Kelas Terdaftar
+                    </h4>
+                    <div className="space-y-2">
+                      {academicClasses.length > 0 ? (
+                        academicClasses.map((cls, idx) => (
+                          <div 
+                            key={idx} 
+                            className="bg-white px-4 py-2 rounded-full shadow-xs border border-slate-100 flex items-center justify-between gap-3 text-xs"
+                          >
+                            <span className="font-extrabold text-slate-800 uppercase tracking-wide truncate">
+                              {cls.lembaga}
+                            </span>
+                            <span className="bg-[#ffe4a0] text-slate-800 font-extrabold px-3 py-0.5 rounded-full shrink-0 min-w-[80px] text-center">
+                              {cls.kelas}
+                            </span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-center py-4 text-xs text-slate-500 font-medium bg-white rounded-full border border-slate-100">
+                          Belum terdaftar di kelas mana pun
                         </div>
-                      ))
-                    ) : (
-                      <div className="text-center py-4 text-xs text-slate-500 font-medium bg-white rounded-full border border-slate-100">
-                        Belum terdaftar di rombongan belajar mana pun
-                      </div>
-                    )}
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Rombongan Belajar Card */}
+                  <div className="bg-[#eefcd2] p-4 rounded-[24px] border border-[#d3e9a5] shadow-xs">
+                    <h4 className="text-center font-black text-slate-800 text-sm mb-3 tracking-wide">
+                      Rombongan Belajar
+                    </h4>
+                    <div className="space-y-2">
+                      {academicRombels.length > 0 ? (
+                        academicRombels.map((rom, idx) => (
+                          <div 
+                            key={idx} 
+                            className="bg-white px-4 py-2 rounded-full shadow-xs border border-slate-100 flex items-center justify-between gap-3 text-xs"
+                          >
+                            <span className="font-extrabold text-slate-800 truncate">
+                              {rom.category}
+                            </span>
+                            <span className="bg-[#ffe4a0] text-slate-800 font-extrabold px-3 py-0.5 rounded-full shrink-0 min-w-[80px] text-center">
+                              {rom.group}
+                            </span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-center py-4 text-xs text-slate-500 font-medium bg-white rounded-full border border-slate-100">
+                          Belum terdaftar di rombongan belajar mana pun
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                {/* 3. Dokumen & Riwayat Pendidikan Card */}
+                {/* 3. Dokumen & Riwayat Ringkas */}
                 <div className="bg-[#eefcd2] p-4 rounded-[24px] border border-[#d3e9a5] shadow-xs">
-                  <h4 className="text-center font-black text-slate-800 text-sm mb-4 tracking-wide">
-                    Dokumen & Riwayat Pendidikan
+                  <h4 className="text-center font-black text-slate-800 text-sm mb-3 tracking-wide">
+                    Ringkasan Identitas Akademik
                   </h4>
-                  <div className="space-y-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
                     {[
-                      { label: 'NISM', val: localSantri.nism || '-' },
                       { label: 'NISN', val: localSantri.nisn || '-' },
                       { label: 'KELAS MHD', val: localSantri.kelasMhd || localSantri.indukMhd || '-' },
                       { label: 'SEMESTER', val: localSantri.semester || 'Semester 1' },
-                      { label: 'INDUK MHD', val: localSantri.indukMhd || '-' },
-                      { label: 'INDUK WUSTHO', val: localSantri.indukWustho || '-' },
-                      { label: 'INDUK ULYA', val: localSantri.indukUlya || '-' },
                       { label: 'Pendidikan Terakhir', val: localSantri.pendidikanTerakhir || '-' },
                     ].map((item, idx) => (
                       <div 
                         key={idx} 
-                        className="bg-white px-4 py-2.5 rounded-full shadow-xs border border-slate-100 flex items-center justify-between gap-3 text-xs"
+                        className="bg-white px-3 py-2 rounded-xl shadow-xs border border-slate-100 flex flex-col justify-between gap-1 text-xs"
                       >
-                        <span className="font-extrabold text-slate-500 tracking-wide truncate">
+                        <span className="font-extrabold text-slate-400 text-[10px] uppercase tracking-wider">
                           {item.label}
                         </span>
-                        <span className="bg-[#ffe4a0] text-slate-800 font-extrabold px-3 py-1 rounded-full shrink-0 max-w-[220px] text-center truncate">
+                        <span className="font-black text-slate-800 truncate">
                           {item.val}
                         </span>
                       </div>
