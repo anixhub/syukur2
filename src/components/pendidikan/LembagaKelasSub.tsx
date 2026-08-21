@@ -325,25 +325,6 @@ export default function LembagaKelasSub({
   // Class Delete Confirmation state
   const [classToDelete, setClassToDelete] = useState<{ id: string; name: string } | null>(null);
 
-  // Reset Calon & Induk Students state
-  const [isResetStudentsModalOpen, setIsResetStudentsModalOpen] = useState(false);
-  const [isResettingStudents, setIsResettingStudents] = useState(false);
-
-  const handleConfirmResetAllStudents = async () => {
-    setIsResettingStudents(true);
-    try {
-      if (onResetAllLembagaStudents) {
-        await onResetAllLembagaStudents();
-      }
-      showToast('Semua data calon peserta didik dan data induk berhasil di-reset.');
-      setIsResetStudentsModalOpen(false);
-    } catch (err: any) {
-      showToast('Gagal mereset data: ' + (err?.message || err), 'error');
-    } finally {
-      setIsResettingStudents(false);
-    }
-  };
-
   // Edit student column modal state
   const [editingSantriForKolom, setEditingSantriForKolom] = useState<Santri | null>(null);
 
@@ -3175,15 +3156,6 @@ export default function LembagaKelasSub({
                     <>
                       <button
                         disabled={isSelectionMode}
-                        onClick={() => setIsResetStudentsModalOpen(true)}
-                        className="inline-flex items-center justify-center bg-white border border-rose-200 h-9 px-3 sm:px-3.5 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 cursor-pointer shadow-3xs active:scale-95 transition-all disabled:opacity-40 gap-1.5"
-                        title="Reset Data Calon & Induk Semua Lembaga"
-                      >
-                        <RotateCcw className="h-4 w-4 text-rose-500" />
-                        <span className="hidden sm:inline">Reset Calon & Induk</span>
-                      </button>
-                      <button
-                        disabled={isSelectionMode}
                         onClick={() => handleOpenLembagaModal(selectedLembaga)}
                         className="inline-flex items-center justify-center bg-white border border-slate-200 h-9 px-3 sm:px-3.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer shadow-3xs active:scale-95 transition-all disabled:opacity-40 gap-1.5"
                         title="Edit Lembaga"
@@ -3516,22 +3488,6 @@ export default function LembagaKelasSub({
                                 {isRombelTab ? 'Tambah Anggota' : 'Tambah Santri'}
                               </span>
                             </button>
-
-                            {isDefaultPill && (
-                              <button
-                                disabled={isSelectionMode}
-                                onClick={() => setIsResetStudentsModalOpen(true)}
-                                className={`inline-flex items-center justify-center border h-9 px-3.5 rounded-xl text-xs font-bold transition-all shrink-0 gap-1.5 ${
-                                  isSelectionMode 
-                                    ? 'bg-rose-50/50 border-rose-50/50 opacity-40 cursor-not-allowed text-rose-350' 
-                                    : 'bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 cursor-pointer shadow-3xs active:scale-95'
-                                }`}
-                                title="Reset Data Calon & Induk Semua Lembaga"
-                              >
-                                <RotateCcw className="h-4 w-4 text-rose-500" />
-                                <span className="hidden sm:inline">Reset Calon & Induk</span>
-                              </button>
-                            )}
 
                             {!isDefaultPill && (
                               <button
@@ -5964,50 +5920,6 @@ export default function LembagaKelasSub({
           />
         );
       })()}
-
-      {/* Reset Calon & Induk Students Modal */}
-      {isResetStudentsModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-fade-in">
-          <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-md w-full shadow-2xl border border-slate-100 text-center space-y-4">
-            <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto shadow-inner">
-              <AlertTriangle className="h-7 w-7" />
-            </div>
-            <div>
-              <h3 className="text-lg font-black text-slate-900">
-                Reset Data Calon & Data Induk?
-              </h3>
-              <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                Tindakan ini akan mengosongkan status penempatan calon peserta didik dan data induk di semua lembaga. Semua santri akan kembali berstatus <strong>Tanpa Lembaga / Tanpa Kelas</strong> agar dapat didaftarkan secara manual oleh pengguna.
-              </p>
-            </div>
-            <div className="flex items-center gap-3 pt-2">
-              <button
-                type="button"
-                disabled={isResettingStudents}
-                onClick={() => setIsResetStudentsModalOpen(false)}
-                className="flex-1 h-10 px-4 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all cursor-pointer disabled:opacity-50"
-              >
-                Batal
-              </button>
-              <button
-                type="button"
-                disabled={isResettingStudents}
-                onClick={handleConfirmResetAllStudents}
-                className="flex-1 h-10 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-xs font-bold text-white shadow-sm transition-all cursor-pointer inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
-              >
-                {isResettingStudents ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Mereset...</span>
-                  </>
-                ) : (
-                  <span>Ya, Reset Semua Data</span>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );
