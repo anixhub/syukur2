@@ -247,11 +247,26 @@ export default function App() {
   const loadSantriData = React.useCallback(() => {
     fetchTableData<Santri>('santri', 'smartsantri_santriList', [])
       .then(list => {
+        const needsEducationReset = !localStorage.getItem('smartsantri_education_reset_v2026');
         let hasDummy = false;
         const cleaned = list.map(s => {
           let updated = { ...s };
           const unifiedStatus = s.statusKeanggotaan || (s as any).status || 'Aktif';
           updated.statusKeanggotaan = unifiedStatus as any;
+
+          if (needsEducationReset) {
+            hasDummy = true;
+            updated.pendidikanFormal = '';
+            updated.pendidikanInternal = '';
+            updated.nism = '';
+            updated.indukWustho = '';
+            updated.indukUlya = '';
+            updated.indukMhd = '';
+            (updated as any).calonLembagaId = undefined;
+            if (updated.kelas && (updated.kelas.toLowerCase().includes('calon') || updated.kelas === 'VII Tsanawiyah A')) {
+              updated.kelas = 'Tanpa Kelas';
+            }
+          }
 
           if (s.kelas === 'VII Tsanawiyah A') {
             hasDummy = true;
@@ -279,6 +294,12 @@ export default function App() {
           updated.indukMhd = '';
           return updated;
         });
+
+        if (needsEducationReset) {
+          try {
+            localStorage.setItem('smartsantri_education_reset_v2026', 'true');
+          } catch (e) {}
+        }
 
         setSantriList((prev) => {
           const now = Date.now();

@@ -514,6 +514,9 @@ export default function DataAkademikSub({
     const compactClassStr = (str?: string | null) => cleanClassStr(str).replace(/\s+/g, '');
 
     if (isFormal) {
+      // Formal institution only allows students with EMIS 'Terdaftar'
+      if (!isEmisTerdaftar(s.statusEmis)) return null;
+
       // 1. Check s.pendidikanFormal
       if (s.pendidikanFormal && s.pendidikanFormal.trim() !== '' && s.pendidikanFormal !== 'TIDAK TERDAFTAR' && s.pendidikanFormal !== 'Belum / Non-Formal' && s.pendidikanFormal !== '-') {
         const formalParts = s.pendidikanFormal.split(',').map(x => x.trim()).filter(Boolean);
@@ -3197,7 +3200,7 @@ export default function DataAkademikSub({
                 }}
                 className="appearance-none rounded-xl border border-slate-200 bg-white pl-3.5 pr-8 py-2 text-xs font-bold text-slate-700 focus:border-indigo-500 focus:outline-none cursor-pointer"
               >
-                {[10, 20, 50, 100].map(sz => (
+                {[20, 50, 100].map(sz => (
                   <option key={sz} value={sz}>{sz}</option>
                 ))}
               </select>
