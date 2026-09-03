@@ -14,7 +14,6 @@ import {
   ChevronsUpDown
 } from 'lucide-react';
 import { Santri, Lembaga, Kelas } from '../../../types';
-import { demoteSantriToCalonPesertaDidik } from '../../../lib/utils';
 import { fetchTableData } from '../../../lib/api';
 import { renderSantriAvatar, isCustomPasFoto } from '../../SekretarisHelper';
 import { MembershipBadge } from '../components/HelperComponents';

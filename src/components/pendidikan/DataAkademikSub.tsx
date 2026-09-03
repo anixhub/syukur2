@@ -28,8 +28,8 @@ import {
   UserCheck,
   GraduationCap
 } from 'lucide-react';
-import { Santri, Lembaga, Kelas, KategoriRombel, KelompokRombel, RombelAssignment, isEmisTerdaftar, isGenderMatch } from '../../types';
-import { demoteSantriToCalonPesertaDidik, parseCatatanInvalid, cleanWaliKelas, isMatchLembagaStrict, getLembagaJenis } from '../../lib/utils';
+import { Santri, Lembaga, Kelas, KategoriRombel, KelompokRombel, RombelAssignment, isGenderMatch } from '../../types';
+import { parseCatatanInvalid, cleanWaliKelas, isMatchLembagaStrict, getLembagaJenis } from '../../lib/utils';
 import { renderSantriAvatar, getPesantrenProfile, calculateRealtimeAge } from '../SekretarisHelper';
 import SantriDetailModal from '../sekretaris/SantriDetailModal';
 import { ExportModal } from '../ExportModal';
@@ -514,9 +514,6 @@ export default function DataAkademikSub({
     const compactClassStr = (str?: string | null) => cleanClassStr(str).replace(/\s+/g, '');
 
     if (isFormal) {
-      // Formal institution only allows students with EMIS 'Terdaftar'
-      if (!isEmisTerdaftar(s.statusEmis)) return null;
-
       // 1. Check s.pendidikanFormal
       if (s.pendidikanFormal && s.pendidikanFormal.trim() !== '' && s.pendidikanFormal !== 'TIDAK TERDAFTAR' && s.pendidikanFormal !== 'Belum / Non-Formal' && s.pendidikanFormal !== '-') {
         const formalParts = s.pendidikanFormal.split(',').map(x => x.trim()).filter(Boolean);
@@ -2832,7 +2829,6 @@ export default function DataAkademikSub({
                           const isOpen = activeCellDropdown?.santriId === s.id && activeCellDropdown?.columnKey === cellKey;
                           const availableClasses = kelasList.filter(c => String(c.lembagaId) === String(lem.id));
                           const isFormalLem = getLembagaJenis(lem) === 'Formal';
-                          const isStudentEmisRegistered = isEmisTerdaftar(s.statusEmis);
                           const cleanAvailableClasses = availableClasses.filter(c => {
                             const lower = c.nama.trim().toLowerCase();
                             return lower !== 'calon peserta didik' && lower !== 'calon pelajar' && lower !== 'tanpa kelas';
@@ -2897,14 +2893,6 @@ export default function DataAkademikSub({
                                         } w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl z-50 text-left font-sans text-xs`}
                                         onClick={(e) => e.stopPropagation()}
                                       >
-                                        {/* Warning Banner for Unregistered EMIS in Formal Institutions */}
-                                        {isFormalLem && !isStudentEmisRegistered && (
-                                          <div className="mb-2 p-2 rounded-xl bg-amber-50 border border-amber-200/80 text-[10.5px] font-medium text-amber-900 flex items-center justify-center gap-1.5 leading-snug text-center">
-                                            <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
-                                            <span>Santri belum EMIS.</span>
-                                          </div>
-                                        )}
-
                                         {/* Confirmation Action Header: Only visible when value has changed */}
                                         {isClassChanged && (
                                           <div className="flex items-center justify-between pb-2 mb-2 border-b border-amber-100 bg-amber-50/80 -mx-2 -mt-2 p-2 rounded-t-2xl">
@@ -2984,35 +2972,28 @@ export default function DataAkademikSub({
 
                                           {cleanAvailableClasses.map(c => {
                                             const isSelected = pendingCellValue === c.nama;
-                                            const isClassDisabled = isFormalLem && !isStudentEmisRegistered;
                                             return (
                                               <button
                                                 key={c.id}
                                                 type="button"
-                                                disabled={isClassDisabled}
                                                 onClick={(e) => {
                                                   e.stopPropagation();
-                                                  if (isClassDisabled) return;
                                                   setPendingCellValue(c.nama);
                                                 }}
                                                 onDoubleClick={(e) => {
                                                   e.stopPropagation();
-                                                  if (isClassDisabled) return;
                                                   handleInlineClassChange(s, lem, c.nama);
                                                 }}
                                                 className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-medium transition-colors text-left ${
-                                                  isClassDisabled
-                                                    ? 'opacity-50 bg-slate-50 text-slate-400 cursor-not-allowed select-none'
-                                                    : isSelected
-                                                      ? 'bg-indigo-50 font-bold text-indigo-900 cursor-pointer'
-                                                      : 'text-slate-700 hover:bg-slate-100 cursor-pointer'
+                                                  isSelected
+                                                    ? 'bg-indigo-50 font-bold text-indigo-900 cursor-pointer'
+                                                    : 'text-slate-700 hover:bg-slate-100 cursor-pointer'
                                                 }`}
-                                                title={isClassDisabled ? 'Santri belum EMIS' : undefined}
                                               >
                                                 <div className="flex items-center gap-1.5 min-w-0">
                                                   <span className="truncate">{c.nama}</span>
                                                 </div>
-                                                {isSelected && !isClassDisabled && (
+                                                {isSelected && (
                                                   <Check className="h-3.5 w-3.5 text-indigo-800 shrink-0 stroke-[2.5]" />
                                                 )}
                                               </button>
@@ -3357,23 +3338,7 @@ export default function DataAkademikSub({
                   <div className="space-y-4.5 max-h-[350px] overflow-y-auto pr-1">
                     {activeLembagas.map(lem => {
                       const value = selectedClassesByLembaga[lem.id] || 'no_change';
-                      const isFormalLembaga = (lem as any).jenis === 'Formal';
-                      const hasUnregisteredEmis = santriToEdit.some(s => !isEmisTerdaftar(s.statusEmis));
-                      
-                      let availableClasses = kelasList.filter(c => c.lembagaId === lem.id);
-                      if (isFormalLembaga && hasUnregisteredEmis) {
-                        availableClasses = availableClasses.filter(c => (c as any).isDefault || c.nama.trim().toLowerCase() === 'calon peserta didik');
-                        if (availableClasses.length === 0) {
-                          availableClasses = [{
-                            id: 'default-' + lem.id,
-                            lembagaId: String(lem.id),
-                            nama: 'Calon Peserta Didik',
-                            waliKelas: '-',
-                            tingkatan: 'Lainnya',
-                            isDefault: true
-                          } as any];
-                        }
-                      }
+                      const availableClasses = kelasList.filter(c => c.lembagaId === lem.id);
 
                       return (
                         <div key={lem.id} className="space-y-1.5">
@@ -3400,11 +3365,6 @@ export default function DataAkademikSub({
                               </option>
                             ))}
                           </select>
-                          {isFormalLembaga && hasUnregisteredEmis && (
-                            <p className="text-[11px] font-medium text-amber-700 mt-1">
-                              ⚠️ Terdapat santri belum terdaftar EMIS. Pada pendidikan formal, kelas dibatasi ke <strong>"Calon Peserta Didik"</strong>.
-                            </p>
-                          )}
                         </div>
                       );
                     })}
@@ -3499,26 +3459,11 @@ export default function DataAkademikSub({
           const activeLemId = transferLembagaId || (eligibleLembagas[0]?.id || '');
           const currentLemObj = lembagasList.find(l => l.id === activeLemId) || eligibleLembagas[0];
           const isFormalTarget = (currentLemObj?.jenis === 'Formal' || targetKind === 'Formal');
-          const isStudentEmis = isEmisTerdaftar(transferStudent.statusEmis);
 
           let targetClasses = kelasList.filter(k => {
             const lemId = String((k as any).lembagaId || (k as any).lembaga_id || '');
             return lemId === String(activeLemId);
           });
-
-          if (isFormalTarget && !isStudentEmis) {
-            targetClasses = targetClasses.filter(c => (c as any).isDefault || c.nama.trim().toLowerCase() === 'calon peserta didik');
-            if (targetClasses.length === 0) {
-              targetClasses = [{
-                id: 'default-' + activeLemId,
-                lembagaId: String(activeLemId),
-                nama: 'Calon Peserta Didik',
-                waliKelas: '-',
-                tingkatan: 'Lainnya',
-                isDefault: true
-              } as any];
-            }
-          }
 
           const handleExecuteTransferModal = () => {
             if (!transferStudent || !activeLemId) return;
@@ -3647,12 +3592,6 @@ export default function DataAkademikSub({
                       </select>
                     )}
                   </div>
-
-                  {isFormalTarget && !isStudentEmis && (
-                    <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-800 font-medium leading-relaxed">
-                      ⚠️ Santri belum terdaftar EMIS. Pada pendidikan formal, kelas tujuan dibatasi hanya ke <strong>"Calon Peserta Didik"</strong>.
-                    </div>
-                  )}
                 </div>
 
                 <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex items-center justify-end gap-2">
@@ -3777,9 +3716,6 @@ export default function DataAkademikSub({
                                 statusEmis: valToApply as any,
                                 catatan: s.statusEmis === 'Invalid' && valToApply !== 'Invalid' ? extraNote : (valToApply === 'Invalid' && !s.catatan?.toLowerCase().startsWith('emis invalid:') ? `Emis Invalid: Status EMIS Invalid${s.catatan ? ` | ${s.catatan}` : ''}` : s.catatan)
                               };
-                              if (valToApply === 'Belum') {
-                                updated = demoteSantriToCalonPesertaDidik(s, lembagasList, kelasList);
-                              }
                               onUpdateSantri(updated);
                               setToast({ message: `Status EMIS ${s.nama} berhasil diubah ke ${valToApply}`, type: 'success' });
                             }

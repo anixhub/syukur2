@@ -24,7 +24,7 @@ import {
   Filter
 } from 'lucide-react';
 import { Santri, Lembaga, Kelas, isGenderMatch } from '../../../types';
-import { demoteSantriToCalonPesertaDidik, PENDIDIKAN_OPTIONS, normalizePendidikan, formatDateDDMMYYYY, parseCatatanInvalid, formatCatatanWithInvalid, parseCatatanInvalidParts, formatCatatanParts } from '../../../lib/utils';
+import { PENDIDIKAN_OPTIONS, normalizePendidikan, formatDateDDMMYYYY, parseCatatanInvalid, formatCatatanWithInvalid, parseCatatanInvalidParts, formatCatatanParts } from '../../../lib/utils';
 import { renderSantriAvatar, getFormalKelasDisplay } from '../../SekretarisHelper';
 import { MembershipBadge } from '../components/HelperComponents';
 import { AgeFilterConfig, calculateAgeOnDate } from '../AgeFilterModal';
@@ -2388,9 +2388,6 @@ export default function SantriTableView({
                               statusEmis: valToApply as any,
                               catatan: s.statusEmis === 'Invalid' ? extraNote : s.catatan
                             };
-                            if (valToApply === 'Belum') {
-                              updated = demoteSantriToCalonPesertaDidik(updated, lembagasList, kelasList);
-                            }
                             onUpdateSantri?.(updated);
                           }
                           setActiveEmisDropdownId(null);
@@ -2810,11 +2807,11 @@ export default function SantriTableView({
                     </label>
                     <select
                       disabled={!pendingState.lem}
-                      value={pendingState.cls && isEmis ? String(pendingState.cls.id) : 'calon'}
+                      value={pendingState.cls ? String(pendingState.cls.id) : 'calon'}
                       onChange={(e) => {
                         const chosenClassId = e.target.value;
                         let selectedCls: Kelas | null = null;
-                        if (pendingState.lem && chosenClassId !== 'calon' && isEmis) {
+                        if (pendingState.lem && chosenClassId !== 'calon') {
                           selectedCls = kelasList.find(k => String(k.id) === chosenClassId) || null;
                         }
                         setPendingFormalKelas(prev => ({
@@ -2846,10 +2843,8 @@ export default function SantriTableView({
                               <option
                                 key={k.id}
                                 value={String(k.id)}
-                                disabled={!isEmis}
-                                className={!isEmis ? 'text-slate-400 bg-slate-100' : ''}
                               >
-                                {k.nama} {!isEmis ? ' (Perlu EMIS)' : ''}
+                                {k.nama}
                               </option>
                             ))
                           }
@@ -2857,14 +2852,6 @@ export default function SantriTableView({
                       )}
                     </select>
                   </div>
-
-                  {/* Info box for EMIS */}
-                  {!isEmis && (
-                    <div className="mb-3 p-2.5 rounded-xl bg-amber-50 border border-amber-200/80 text-[10.5px] text-amber-900 font-medium leading-snug flex items-center justify-center text-center gap-1.5 shadow-2xs">
-                      <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
-                      <span>Santri belum EMIS.</span>
-                    </div>
-                  )}
 
                   {/* Action buttons */}
                   <div className="flex items-center justify-end gap-2 pt-2.5 border-t border-slate-100">

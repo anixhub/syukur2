@@ -1377,7 +1377,7 @@ export default function SantriFormModal({
       const targetLembaga = lembagasList.find(l => String(l.id) === String(form.pendidikanFormalLembagaId));
       if (targetLembaga) {
         let targetClassName = 'Calon Peserta Didik';
-        if (form.statusEmis === 'Terdaftar' && form.pendidikanFormalClassId && form.pendidikanFormalClassId !== 'calon') {
+        if (form.pendidikanFormalClassId && form.pendidikanFormalClassId !== 'calon') {
           const targetClass = kelasList.find(k => 
             String(k.id) === String(form.pendidikanFormalClassId) || 
             k.nama.toLowerCase() === form.pendidikanFormalClassId.toLowerCase()
@@ -2343,7 +2343,7 @@ export default function SantriFormModal({
                                     ...prev,
                                     statusEmis: val,
                                     catatan: prev.statusEmis === 'Invalid' ? extraNote : prev.catatan,
-                                    ...(val === 'Belum' ? { pendidikanFormalClassId: 'calon', statusVerval: 'Proses' } : {})
+                                    ...(val === 'Belum' ? { statusVerval: 'Proses' } : {})
                                   };
                                 });
                               }
@@ -2422,12 +2422,8 @@ export default function SantriFormModal({
                             </div>
 
                             <select
-                              value={form.statusEmis === 'Terdaftar' ? (form.pendidikanFormalClassId || 'calon') : 'calon'}
+                              value={form.pendidikanFormalClassId || 'calon'}
                               onChange={(e) => {
-                                if (form.statusEmis !== 'Terdaftar') {
-                                  setForm(prev => ({ ...prev, pendidikanFormalClassId: 'calon' }));
-                                  return;
-                                }
                                 setForm(prev => ({ ...prev, pendidikanFormalClassId: e.target.value }));
                               }}
                               className="w-full rounded-xl border border-slate-200 bg-white p-3.5 text-sm focus:border-emerald-500 outline-none cursor-pointer"
@@ -2443,20 +2439,12 @@ export default function SantriFormModal({
                                   <option 
                                     key={k.id} 
                                     value={k.id}
-                                    disabled={form.statusEmis !== 'Terdaftar'}
                                   >
-                                    {k.nama} {form.statusEmis !== 'Terdaftar' ? '(Perlu EMIS Terdaftar)' : ''}
+                                    {k.nama}
                                   </option>
                                 ))
                               }
                             </select>
-
-                            {form.statusEmis !== 'Terdaftar' && (
-                              <div className="flex items-center gap-1.5 text-amber-700 bg-amber-50 p-2 rounded-lg border border-amber-200/60 text-xs font-medium">
-                                <span>⚠️</span>
-                                <span>Status EMIS belum Terdaftar. Hanya kelas <strong>Calon Peserta Didik</strong> yang dapat dipilih.</span>
-                              </div>
-                            )}
                           </div>
                         )}
 

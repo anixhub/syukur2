@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, GraduationCap } from 'lucide-react';
 import { Santri, Lembaga, Kelas, isDefaultClass } from '../../types';
-import { demoteSantriToCalonPesertaDidik } from '../../lib/utils';
 import { fetchTableData } from '../../lib/api';
 
 interface BulkEditModalProps {
@@ -206,11 +205,6 @@ export default function BulkEditModal({
           }
           if (bulkSelectedFields.statusEmis) {
             updated.statusEmis = bulkForm.statusEmis;
-            if (bulkForm.statusEmis === 'Belum') {
-              const demoted = demoteSantriToCalonPesertaDidik(updated, lembagasList, kelasList);
-              updated.kelas = demoted.kelas;
-              updated.pendidikanFormal = demoted.pendidikanFormal;
-            }
           }
           if (bulkSelectedFields.tanggalMasuk) {
             updated.tanggalMasuk = bulkForm.tanggalMasuk;

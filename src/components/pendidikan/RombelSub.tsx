@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Plus, Trash2, Edit, ChevronRight, Users, Award, X, Search, Compass, Tag, BookOpen, AlertCircle, ChevronLeft, ArrowLeftRight, LayoutGrid, List, MoreVertical, ArrowUpDown, Download, FileSpreadsheet, Printer, CheckSquare, Eye, ArrowUp, ArrowDown, ChevronDown, Info, Folder
 } from 'lucide-react';
-import { KategoriRombel, KelompokRombel, RombelAssignment, Santri, isEmisTerdaftar } from '../../types';
+import { KategoriRombel, KelompokRombel, RombelAssignment, Santri } from '../../types';
 import SantriDetailModal from '../sekretaris/SantriDetailModal';
 import { ExportModal } from '../ExportModal';
 import { getPesantrenProfile } from '../SekretarisHelper';

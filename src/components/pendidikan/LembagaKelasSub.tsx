@@ -11,7 +11,7 @@ import {
   FileSpreadsheet, ClipboardList, Filter, RotateCcw, AlertTriangle
 } from 'lucide-react';
 import { Lembaga, Kelas, Santri, KategoriRombel, KelompokRombel, RombelAssignment, isDefaultClass, isEmisTerdaftar, getClsLembagaId, isGenderMatch } from '../../types';
-import { demoteSantriToCalonPesertaDidik, compressImage, parseCatatanInvalid, formatCatatanWithInvalid, cleanWaliKelas, isMatchLembagaStrict, getLembagaJenis } from '../../lib/utils';
+import { compressImage, parseCatatanInvalid, formatCatatanWithInvalid, cleanWaliKelas, isMatchLembagaStrict, getLembagaJenis } from '../../lib/utils';
 import { uploadFileToStorage, getApiUrl } from '../../lib/api';
 import SantriDetailModal from '../sekretaris/SantriDetailModal';
 import { PUTRA_AVATAR, PUTRI_AVATAR, renderSantriAvatar, calculateRealtimeAge, getPesantrenProfile } from '../SekretarisHelper';
@@ -764,16 +764,10 @@ export default function LembagaKelasSub({
 
     // 1. Direct explicit calonLembagaId match
     if ((s as any).calonLembagaId && String((s as any).calonLembagaId) === String(l.id)) {
-      if (isFormal && !isEmisTerdaftar(s.statusEmis)) return false;
       return true;
     }
 
     if (isFormal) {
-      // RULE: Only students with EMIS 'Terdaftar' can enter / belong to formal institutions!
-      if (!isEmisTerdaftar(s.statusEmis)) {
-        return false;
-      }
-
       // Check explicit NISM key for this institution
       if (nismKey === 'indukWustho' && s.indukWustho && s.indukWustho.trim() !== '' && s.indukWustho !== '-') {
         return true;
@@ -1863,14 +1857,6 @@ export default function LembagaKelasSub({
 
       if (currentClassStudentIds.includes(s.id)) return false;
 
-      // Khusus pada modal tambah anggota lembaga formal:
-      // hanya santri yang keterangan EMIS-nya sudah terdaftar yang bisa masuk ke lembaga formal.
-      if (activeTab !== 'Rombel' && isFormalLembaga) {
-        if (!isEmisTerdaftar(s.statusEmis)) {
-          return false;
-        }
-      }
-
       return true;
     });
   };
@@ -1973,9 +1959,6 @@ export default function LembagaKelasSub({
       
       if (isFormalLembaga) {
         if (s.statusKeanggotaan === 'Meninggal') return false;
-        if (!isEmisTerdaftar(s.statusEmis)) {
-          return false;
-        }
       } else {
         if (!isAktif(s)) return false;
       }
@@ -4589,7 +4572,6 @@ export default function LembagaKelasSub({
           const activeLemId = transferLembagaId || selectedLembaga?.id;
           const currentLemObj = lembagasList.find(l => l.id === activeLemId) || selectedLembaga;
           const isFormalTarget = (currentLemObj?.jenis === 'Formal' || targetKind === 'Formal');
-          const isStudentEmis = isEmisTerdaftar(transferStudent.statusEmis);
 
           let targetClasses = kelasList.filter(k => {
             const lemId = getClsLembagaId(k);
@@ -4600,21 +4582,6 @@ export default function LembagaKelasSub({
             }
             return true;
           });
-
-          if (isFormalTarget && !isStudentEmis) {
-            targetClasses = targetClasses.filter(c => isDefaultClass(c) || c.nama.trim().toLowerCase() === 'calon peserta didik');
-            // If targetClasses is empty (no explicit default class in DB for activeLemId), provide synthetic default class
-            if (targetClasses.length === 0) {
-              targetClasses = [{
-                id: 'default-' + activeLemId,
-                lembagaId: String(activeLemId),
-                nama: 'Calon Peserta Didik',
-                waliKelas: '-',
-                tingkatan: 'Lainnya',
-                isDefault: true
-              }];
-            }
-          }
 
           return (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 animate-fade-in">
@@ -4722,7 +4689,6 @@ export default function LembagaKelasSub({
           const isFormalTarget = (currentBulkLemObj?.jenis === 'Formal' || targetKind === 'Formal');
 
           const selectedStudents = santriList.filter(s => selectedStudentIds.includes(s.id));
-          const hasUnregisteredEmis = selectedStudents.some(s => !isEmisTerdaftar(s.statusEmis));
 
           let targetBulkClasses = kelasList.filter(k => {
             const lemId = getClsLembagaId(k);
@@ -4733,20 +4699,6 @@ export default function LembagaKelasSub({
             }
             return true;
           });
-
-          if (isFormalTarget && hasUnregisteredEmis) {
-            targetBulkClasses = targetBulkClasses.filter(c => isDefaultClass(c) || c.nama.trim().toLowerCase() === 'calon peserta didik');
-            if (targetBulkClasses.length === 0) {
-              targetBulkClasses = [{
-                id: 'default-' + activeBulkLemId,
-                lembagaId: String(activeBulkLemId),
-                nama: 'Calon Peserta Didik',
-                waliKelas: '-',
-                tingkatan: 'Lainnya',
-                isDefault: true
-              }];
-            }
-          }
 
           return (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 animate-fade-in">
@@ -4826,12 +4778,6 @@ export default function LembagaKelasSub({
                       </select>
                     )}
                   </div>
-
-                  {isFormalTarget && hasUnregisteredEmis && (
-                    <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-800 font-medium leading-relaxed">
-                      ⚠️ Terdapat santri yang <strong>belum terdaftar EMIS</strong> di antara data yang dipilih. Pada pendidikan formal, kelas tujuan dibatasi hanya ke <strong>"Calon Peserta Didik"</strong>.
-                    </div>
-                  )}
                 </div>
 
                 <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex items-center justify-end gap-2">
@@ -5514,9 +5460,6 @@ export default function LembagaKelasSub({
                                 statusEmis: valToApply as any,
                                 catatan: s.statusEmis === 'Invalid' && valToApply !== 'Invalid' ? extraNote : (valToApply === 'Invalid' && !s.catatan?.toLowerCase().startsWith('emis invalid:') ? `Emis Invalid: Status EMIS Invalid${s.catatan ? ` | ${s.catatan}` : ''}` : s.catatan)
                               };
-                              if (valToApply === 'Belum') {
-                                updated = demoteSantriToCalonPesertaDidik(s, lembagasList, kelasList);
-                              }
                               onUpdateSantri(updated);
                             }
                             setActiveEmisDropdownId(null);
