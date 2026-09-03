@@ -51,7 +51,7 @@ export interface Santri {
   statusKeanggotaan: 'Aktif' | 'Alumni' | 'Meninggal' | 'Mutasi';
   status?: string;
   statusDomisili?: 'Muqim' | 'Kampung';
-  statusEmis?: 'Terdaftar' | 'Invalid' | 'Belum';
+  statusEmis?: 'Terdaftar' | 'Invalid' | 'Belum' | 'Keluar' | 'Lulus';
   statusVerval?: 'Sukses' | 'Proses';
   tahunLulus?: string;
   semester?: string;

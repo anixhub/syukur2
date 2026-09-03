@@ -456,7 +456,7 @@ const initialFormState = {
   // Status & Administrasi
   statusKeanggotaan: 'Aktif' as 'Aktif' | 'Alumni' | 'Meninggal' | 'Mutasi',
   statusDomisili: 'Muqim' as 'Muqim' | 'Kampung',
-  statusEmis: 'Belum' as 'Terdaftar' | 'Invalid' | 'Belum',
+  statusEmis: 'Belum' as 'Terdaftar' | 'Invalid' | 'Belum' | 'Keluar' | 'Lulus',
   statusVerval: 'Proses' as 'Sukses' | 'Proses',
   kelas: '',
   kamar: '',
@@ -2352,6 +2352,8 @@ export default function SantriFormModal({
                           >
                             <option value="Terdaftar">Terdaftar</option>
                             <option value="Invalid">Invalid</option>
+                            <option value="Keluar">Keluar</option>
+                            <option value="Lulus">Lulus</option>
                             <option value="Belum">Belum</option>
                           </select>
                         </div>

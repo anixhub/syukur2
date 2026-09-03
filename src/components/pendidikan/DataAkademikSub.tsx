@@ -202,7 +202,7 @@ export default function DataAkademikSub({
   // Status EMIS Dropdown States
   const [activeEmisDropdownId, setActiveEmisDropdownId] = useState<string | null>(null);
   const [emisDropdownPos, setEmisDropdownPos] = useState<{ top: number; left: number; isUpward?: boolean } | null>(null);
-  const [pendingEmis, setPendingEmis] = useState<{ [santriId: string]: 'Terdaftar' | 'Belum' | 'Invalid' }>({});
+  const [pendingEmis, setPendingEmis] = useState<{ [santriId: string]: 'Terdaftar' | 'Belum' | 'Invalid' | 'Keluar' | 'Lulus' }>({});
 
   // Row Action Dropdown State
   const [openDropdownRowId, setOpenDropdownRowId] = useState<string | null>(null);
@@ -2794,6 +2794,10 @@ export default function DataAkademikSub({
                                   ? 'bg-[#E6F4EA] text-[#137333] hover:bg-emerald-200'
                                   : s.statusEmis === 'Invalid'
                                   ? 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+                                  : s.statusEmis === 'Keluar'
+                                  ? 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                                  : s.statusEmis === 'Lulus'
+                                  ? 'bg-blue-50 text-blue-700 hover:bg-blue-100'
                                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                               }`}
                               title="Klik untuk ubah Status EMIS"
@@ -2807,6 +2811,10 @@ export default function DataAkademikSub({
                                 ? 'bg-[#E6F4EA] text-[#137333]'
                                 : s.statusEmis === 'Invalid'
                                 ? 'bg-rose-50 text-rose-700'
+                                : s.statusEmis === 'Keluar'
+                                ? 'bg-amber-50 text-amber-700'
+                                : s.statusEmis === 'Lulus'
+                                ? 'bg-blue-50 text-blue-700'
                                 : 'bg-slate-100 text-slate-600'
                             }`}>
                               {s.statusEmis || 'Belum'}
@@ -3809,7 +3817,7 @@ export default function DataAkademikSub({
                     </div>
                   )}
 
-                  {(['Terdaftar', 'Invalid', 'Belum'] as const).map((emisOption) => {
+                  {(['Terdaftar', 'Invalid', 'Belum', 'Keluar', 'Lulus'] as const).map((emisOption) => {
                     const activeVal = pendingEmis[s.id] || currentEmis;
                     const isCurrent = activeVal === emisOption;
                     return (
@@ -3822,12 +3830,32 @@ export default function DataAkademikSub({
                         }}
                         className={`w-full text-left px-3 py-1.5 transition-colors flex items-center justify-between cursor-pointer ${
                           isCurrent 
-                            ? (emisOption === 'Invalid' ? 'bg-rose-50 text-rose-700 font-bold' : 'bg-emerald-50 text-emerald-700 font-bold') 
+                            ? (emisOption === 'Invalid' 
+                                ? 'bg-rose-50 text-rose-700 font-bold' 
+                                : emisOption === 'Keluar'
+                                  ? 'bg-amber-50 text-amber-700 font-bold'
+                                  : emisOption === 'Lulus'
+                                    ? 'bg-blue-50 text-blue-700 font-bold'
+                                    : emisOption === 'Terdaftar'
+                                      ? 'bg-emerald-50 text-emerald-700 font-bold'
+                                      : 'bg-slate-100 text-slate-700 font-bold') 
                             : 'hover:bg-slate-50 text-slate-600'
                         }`}
                       >
-                        <span className={emisOption === 'Invalid' ? 'text-rose-600 font-bold' : ''}>{emisOption}</span>
-                        {isCurrent && <span className={`h-1.5 w-1.5 rounded-full ${emisOption === 'Invalid' ? 'bg-rose-600' : 'bg-emerald-600'}`} />}
+                        <span className={
+                          emisOption === 'Invalid' ? 'text-rose-600 font-bold' :
+                          emisOption === 'Keluar' ? 'text-amber-700 font-bold' :
+                          emisOption === 'Lulus' ? 'text-blue-700 font-bold' :
+                          emisOption === 'Terdaftar' ? 'text-emerald-700 font-bold' : ''
+                        }>{emisOption}</span>
+                        {isCurrent && (
+                          <span className={`h-1.5 w-1.5 rounded-full ${
+                            emisOption === 'Invalid' ? 'bg-rose-600' :
+                            emisOption === 'Keluar' ? 'bg-amber-600' :
+                            emisOption === 'Lulus' ? 'bg-blue-600' :
+                            emisOption === 'Terdaftar' ? 'bg-emerald-600' : 'bg-slate-600'
+                          }`} />
+                        )}
                       </button>
                     );
                   })}

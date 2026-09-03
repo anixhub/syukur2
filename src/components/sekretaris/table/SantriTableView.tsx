@@ -282,7 +282,7 @@ export default function SantriTableView({
   // Pending selection states for column dropdowns
   const [pendingDomisili, setPendingDomisili] = React.useState<{ [santriId: string]: string }>({});
   const [pendingStatusKeanggotaan, setPendingStatusKeanggotaan] = React.useState<{ [santriId: string]: 'Aktif' | 'Alumni' | 'Meninggal' }>({});
-  const [pendingEmis, setPendingEmis] = React.useState<{ [santriId: string]: 'Terdaftar' | 'Invalid' | 'Belum' }>({});
+  const [pendingEmis, setPendingEmis] = React.useState<{ [santriId: string]: 'Terdaftar' | 'Invalid' | 'Belum' | 'Keluar' | 'Lulus' }>({});
   const [invalidEmisModal, setInvalidEmisModal] = React.useState<{ santri: Santri; note: string } | null>(null);
   const [pendingFormalKelas, setPendingFormalKelas] = React.useState<{ [santriId: string]: { lem: Lembaga | null; cls: Kelas | null } }>({});
 
@@ -1920,6 +1920,8 @@ export default function SantriTableView({
                     const canWrite = s.gender === 'Putri' ? canWritePutri : canWritePutra;
                     const isTerdaftar = (s.statusEmis || 'Belum').toLowerCase() === 'terdaftar';
                     const isInvalid = (s.statusEmis || '').toLowerCase() === 'invalid';
+                    const isKeluar = (s.statusEmis || '').toLowerCase() === 'keluar';
+                    const isLulus = (s.statusEmis || '').toLowerCase() === 'lulus';
                     
                     return (
                       <div className="relative inline-block text-left">
@@ -1935,7 +1937,7 @@ export default function SantriTableView({
                             } else {
                               const rect = e.currentTarget.getBoundingClientRect();
                               const spaceBelow = window.innerHeight - rect.bottom;
-                              const isUpward = spaceBelow < 150;
+                              const isUpward = spaceBelow < 220;
                               setEmisDropdownPos({
                                 top: isUpward ? rect.top - 6 : rect.bottom + 6,
                                 left: Math.max(12, rect.left),
@@ -1955,7 +1957,11 @@ export default function SantriTableView({
                                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300'
                                 : isInvalid
                                   ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 hover:border-rose-300 font-extrabold'
-                                  : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 hover:border-slate-300'
+                                  : isKeluar
+                                    ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 hover:border-amber-300 font-bold'
+                                    : isLulus
+                                      ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:border-blue-300 font-bold'
+                                      : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 hover:border-slate-300'
                           } ${canWrite && !isSelectionMode ? 'cursor-pointer shadow-2xs hover:shadow-xs' : 'cursor-default'}`}
                           title={canWrite && !isSelectionMode ? "Klik untuk mengubah Status EMIS" : undefined}
                         >
@@ -2420,7 +2426,7 @@ export default function SantriTableView({
                     </div>
                   )}
 
-                  {(['Terdaftar', 'Invalid', 'Belum'] as const).map((emisOption) => {
+                  {(['Terdaftar', 'Invalid', 'Belum', 'Keluar', 'Lulus'] as const).map((emisOption) => {
                     const activeVal = pendingEmis[s.id] || currentEmis;
                     const isCurrent = activeVal === emisOption;
                     return (
@@ -2444,12 +2450,32 @@ export default function SantriTableView({
                         }}
                         className={`w-full text-left px-3 py-1.5 transition-colors flex items-center justify-between cursor-pointer ${
                           isCurrent 
-                            ? (emisOption === 'Invalid' ? 'bg-rose-50 text-rose-700 font-bold' : 'bg-emerald-50 text-emerald-700 font-bold') 
+                            ? (emisOption === 'Invalid' 
+                                ? 'bg-rose-50 text-rose-700 font-bold' 
+                                : emisOption === 'Keluar'
+                                  ? 'bg-amber-50 text-amber-700 font-bold'
+                                  : emisOption === 'Lulus'
+                                    ? 'bg-blue-50 text-blue-700 font-bold'
+                                    : emisOption === 'Terdaftar'
+                                      ? 'bg-emerald-50 text-emerald-700 font-bold'
+                                      : 'bg-slate-100 text-slate-700 font-bold') 
                             : 'hover:bg-slate-50 text-slate-600'
                         }`}
                       >
-                        <span className={emisOption === 'Invalid' ? 'text-rose-600 font-bold' : ''}>{emisOption}</span>
-                        {isCurrent && <span className={`h-1.5 w-1.5 rounded-full ${emisOption === 'Invalid' ? 'bg-rose-600' : 'bg-emerald-600'}`} />}
+                        <span className={
+                          emisOption === 'Invalid' ? 'text-rose-600 font-bold' :
+                          emisOption === 'Keluar' ? 'text-amber-700 font-bold' :
+                          emisOption === 'Lulus' ? 'text-blue-700 font-bold' :
+                          emisOption === 'Terdaftar' ? 'text-emerald-700 font-bold' : ''
+                        }>{emisOption}</span>
+                        {isCurrent && (
+                          <span className={`h-1.5 w-1.5 rounded-full ${
+                            emisOption === 'Invalid' ? 'bg-rose-600' :
+                            emisOption === 'Keluar' ? 'bg-amber-600' :
+                            emisOption === 'Lulus' ? 'bg-blue-600' :
+                            emisOption === 'Terdaftar' ? 'bg-emerald-600' : 'bg-slate-600'
+                          }`} />
+                        )}
                       </button>
                     );
                   })}

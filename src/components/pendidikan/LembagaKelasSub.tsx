@@ -161,7 +161,7 @@ export default function LembagaKelasSub({
   const [activeVervalDropdownId, setActiveVervalDropdownId] = useState<string | null>(null);
   const [emisDropdownPos, setEmisDropdownPos] = useState<{ top: number; left: number; isUpward?: boolean } | null>(null);
   const [vervalDropdownPos, setVervalDropdownPos] = useState<{ top: number; left: number; isUpward?: boolean } | null>(null);
-  const [pendingEmis, setPendingEmis] = useState<{ [santriId: string]: 'Terdaftar' | 'Belum' | 'Invalid' }>({});
+  const [pendingEmis, setPendingEmis] = useState<{ [santriId: string]: 'Terdaftar' | 'Belum' | 'Invalid' | 'Keluar' | 'Lulus' }>({});
   const [pendingVerval, setPendingVerval] = useState<{ [santriId: string]: 'Sukses' | 'Proses' }>({});
   const [activeActionKelasId, setActiveActionKelasId] = useState<string | null>(null);
   const [kelasDropdownPos, setKelasDropdownPos] = useState<{ top: number; left: number } | null>(null);
@@ -2136,14 +2136,18 @@ export default function LembagaKelasSub({
   const verifiedPercent = totalStudents > 0 ? Math.round((verifiedCount / totalStudents) * 100) : 0;
   const pendingPercent = totalStudents > 0 ? 100 - verifiedPercent : 0;
 
-  // Compute EMIS stats (3 status: Terdaftar, Invalid, Belum)
+  // Compute EMIS stats (5 status: Terdaftar, Invalid, Belum, Keluar, Lulus)
   const emisTerdaftarCount = currentClassStudents.filter(s => s.statusEmis === 'Terdaftar').length;
   const emisInvalidCount = currentClassStudents.filter(s => s.statusEmis === 'Invalid').length;
-  const emisBelumCount = currentClassStudents.filter(s => !s.statusEmis || s.statusEmis === 'Belum' || (s.statusEmis !== 'Terdaftar' && s.statusEmis !== 'Invalid')).length;
+  const emisKeluarCount = currentClassStudents.filter(s => s.statusEmis === 'Keluar').length;
+  const emisLulusCount = currentClassStudents.filter(s => s.statusEmis === 'Lulus').length;
+  const emisBelumCount = currentClassStudents.filter(s => !s.statusEmis || s.statusEmis === 'Belum').length;
   const emisRegisteredCount = emisTerdaftarCount;
   
   const emisTerdaftarPercent = totalStudents > 0 ? (emisTerdaftarCount / totalStudents) * 100 : 0;
   const emisInvalidPercent = totalStudents > 0 ? (emisInvalidCount / totalStudents) * 100 : 0;
+  const emisKeluarPercent = totalStudents > 0 ? (emisKeluarCount / totalStudents) * 100 : 0;
+  const emisLulusPercent = totalStudents > 0 ? (emisLulusCount / totalStudents) * 100 : 0;
   const emisBelumPercent = totalStudents > 0 ? (emisBelumCount / totalStudents) * 100 : 0;
 
   // Pagination & Students logic calculated at component root for consistent sharing
@@ -3602,6 +3606,20 @@ export default function LembagaKelasSub({
                                     title={`Invalid: ${emisInvalidCount}`}
                                   />
                                 )}
+                                {emisKeluarPercent > 0 && (
+                                  <div 
+                                    className="bg-amber-500 h-full transition-all duration-500" 
+                                    style={{ width: `${emisKeluarPercent}%` }} 
+                                    title={`Keluar: ${emisKeluarCount}`}
+                                  />
+                                )}
+                                {emisLulusPercent > 0 && (
+                                  <div 
+                                    className="bg-blue-500 h-full transition-all duration-500" 
+                                    style={{ width: `${emisLulusPercent}%` }} 
+                                    title={`Lulus: ${emisLulusCount}`}
+                                  />
+                                )}
                                 {emisBelumPercent > 0 && (
                                   <div 
                                     className="bg-slate-300 h-full transition-all duration-500" 
@@ -3612,7 +3630,7 @@ export default function LembagaKelasSub({
                               </div>
 
                               {/* Keterangan jumlah masing-masing di bawah bar */}
-                              <div className="flex items-center justify-between text-[10px] font-bold text-slate-600 pt-0.5">
+                              <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[10px] font-bold text-slate-600 pt-0.5">
                                 <div className="flex items-center gap-1">
                                   <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block shrink-0"></span>
                                   <span>Terdaftar: <strong className="font-black text-slate-800">{emisTerdaftarCount}</strong></span>
@@ -3621,6 +3639,18 @@ export default function LembagaKelasSub({
                                   <span className="w-2 h-2 rounded-full bg-rose-500 inline-block shrink-0"></span>
                                   <span>Invalid: <strong className="font-black text-slate-800">{emisInvalidCount}</strong></span>
                                 </div>
+                                {emisKeluarCount > 0 && (
+                                  <div className="flex items-center gap-1">
+                                    <span className="w-2 h-2 rounded-full bg-amber-500 inline-block shrink-0"></span>
+                                    <span>Keluar: <strong className="font-black text-slate-800">{emisKeluarCount}</strong></span>
+                                  </div>
+                                )}
+                                {emisLulusCount > 0 && (
+                                  <div className="flex items-center gap-1">
+                                    <span className="w-2 h-2 rounded-full bg-blue-500 inline-block shrink-0"></span>
+                                    <span>Lulus: <strong className="font-black text-slate-800">{emisLulusCount}</strong></span>
+                                  </div>
+                                )}
                                 <div className="flex items-center gap-1">
                                   <span className="w-2 h-2 rounded-full bg-slate-400 inline-block shrink-0"></span>
                                   <span>Belum: <strong className="font-black text-slate-800">{emisBelumCount}</strong></span>
@@ -3947,6 +3977,10 @@ export default function LembagaKelasSub({
                                                 ? 'bg-[#E6F4EA] text-[#137333] hover:bg-emerald-100'
                                                 : s.statusEmis === 'Invalid'
                                                 ? 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+                                                : s.statusEmis === 'Keluar'
+                                                ? 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                                                : s.statusEmis === 'Lulus'
+                                                ? 'bg-blue-50 text-blue-700 hover:bg-blue-100'
                                                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                                             }`}
                                           >
@@ -5519,7 +5553,7 @@ export default function LembagaKelasSub({
                     </div>
                   )}
 
-                  {(['Terdaftar', 'Invalid', 'Belum'] as const).map((emisOption) => {
+                  {(['Terdaftar', 'Invalid', 'Belum', 'Keluar', 'Lulus'] as const).map((emisOption) => {
                     const activeVal = pendingEmis[s.id] || currentEmis;
                     const isCurrent = activeVal === emisOption;
                     return (
@@ -5532,12 +5566,32 @@ export default function LembagaKelasSub({
                         }}
                         className={`w-full text-left px-3 py-1.5 transition-colors flex items-center justify-between cursor-pointer ${
                           isCurrent 
-                            ? (emisOption === 'Invalid' ? 'bg-rose-50 text-rose-700 font-bold' : 'bg-emerald-50 text-emerald-700 font-bold') 
+                            ? (emisOption === 'Invalid' 
+                                ? 'bg-rose-50 text-rose-700 font-bold' 
+                                : emisOption === 'Keluar'
+                                  ? 'bg-amber-50 text-amber-700 font-bold'
+                                  : emisOption === 'Lulus'
+                                    ? 'bg-blue-50 text-blue-700 font-bold'
+                                    : emisOption === 'Terdaftar'
+                                      ? 'bg-emerald-50 text-emerald-700 font-bold'
+                                      : 'bg-slate-100 text-slate-700 font-bold') 
                             : 'hover:bg-slate-50 text-slate-600'
                         }`}
                       >
-                        <span className={emisOption === 'Invalid' ? 'text-rose-600 font-bold' : ''}>{emisOption}</span>
-                        {isCurrent && <span className={`h-1.5 w-1.5 rounded-full ${emisOption === 'Invalid' ? 'bg-rose-600' : 'bg-emerald-600'}`} />}
+                        <span className={
+                          emisOption === 'Invalid' ? 'text-rose-600 font-bold' :
+                          emisOption === 'Keluar' ? 'text-amber-700 font-bold' :
+                          emisOption === 'Lulus' ? 'text-blue-700 font-bold' :
+                          emisOption === 'Terdaftar' ? 'text-emerald-700 font-bold' : ''
+                        }>{emisOption}</span>
+                        {isCurrent && (
+                          <span className={`h-1.5 w-1.5 rounded-full ${
+                            emisOption === 'Invalid' ? 'bg-rose-600' :
+                            emisOption === 'Keluar' ? 'bg-amber-600' :
+                            emisOption === 'Lulus' ? 'bg-blue-600' :
+                            emisOption === 'Terdaftar' ? 'bg-emerald-600' : 'bg-slate-600'
+                          }`} />
+                        )}
                       </button>
                     );
                   })}

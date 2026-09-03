@@ -97,7 +97,7 @@ export default function BulkEditModal({
   const [bulkForm, setBulkForm] = useState({
     statusKeanggotaan: 'Aktif' as 'Aktif' | 'Alumni' | 'Meninggal',
     statusDomisili: 'Muqim' as 'Muqim' | 'Kampung',
-    statusEmis: 'Terdaftar' as 'Terdaftar' | 'Belum',
+    statusEmis: 'Terdaftar' as 'Terdaftar' | 'Belum' | 'Invalid' | 'Keluar' | 'Lulus',
     tanggalMasuk: getTodayDateString(),
     tanggalKeluar: getTodayDateString(),
     catatan: '',
@@ -446,6 +446,9 @@ export default function BulkEditModal({
                         className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none disabled:bg-slate-100/70 disabled:text-slate-400 disabled:border-slate-200/60 cursor-pointer"
                       >
                         <option value="Terdaftar">Terdaftar</option>
+                        <option value="Invalid">Invalid</option>
+                        <option value="Keluar">Keluar</option>
+                        <option value="Lulus">Lulus</option>
                         <option value="Belum">Belum Terdaftar</option>
                       </select>
                     </div>

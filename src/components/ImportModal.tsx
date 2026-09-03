@@ -807,6 +807,9 @@ export function ImportModal({
             const seL = rawStatusEmis.toLowerCase();
             const statusEmis = (
               seL === 'terdaftar' ? 'Terdaftar' :
+              seL === 'invalid' ? 'Invalid' :
+              seL === 'keluar' ? 'Keluar' :
+              seL === 'lulus' ? 'Lulus' :
               seL === 'belum' ? 'Belum' :
               rawStatusEmis === '' ? 'Belum' :
               rawStatusEmis
@@ -1029,7 +1032,7 @@ export function ImportModal({
       }
 
       const seLower = (row.statusEmis || "").trim().toLowerCase();
-      if (seLower !== "terdaftar" && seLower !== "belum") {
+      if (seLower !== "terdaftar" && seLower !== "belum" && seLower !== "invalid" && seLower !== "keluar" && seLower !== "lulus") {
         hasCriticalError = true;
       }
 
@@ -1197,8 +1200,8 @@ export function ImportModal({
       }
 
       const seLower = (row.statusEmis || "").trim().toLowerCase();
-      if (seLower !== "terdaftar" && seLower !== "belum") {
-        criticalErrors.statusEmis = "Status Emis harus 'Terdaftar' atau 'Belum'";
+      if (seLower !== "terdaftar" && seLower !== "belum" && seLower !== "invalid" && seLower !== "keluar" && seLower !== "lulus") {
+        criticalErrors.statusEmis = "Status Emis harus 'Terdaftar', 'Belum', 'Invalid', 'Keluar', atau 'Lulus'";
       }
 
       const svLower = (row.statusVerval || "").trim().toLowerCase();
@@ -2307,6 +2310,33 @@ export function ImportModal({
                           const isEditing = editingCell?.idx === idx && editingCell?.field === field;
 
                           if (isEditing) {
+                            if (field === 'statusEmis') {
+                              return (
+                                <td key={field} className="p-1 border-b border-r border-emerald-300 align-middle bg-emerald-50 min-w-[140px]">
+                                  <select
+                                    autoFocus
+                                    value={editingValue}
+                                    onChange={(e) => setEditingValue(e.target.value)}
+                                    onBlur={commitEditing}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        commitEditing();
+                                      } else if (e.key === 'Escape') {
+                                        setEditingCell(null);
+                                      }
+                                    }}
+                                    className="w-full text-xs font-semibold text-slate-900 bg-white border border-emerald-500 rounded px-1.5 py-0.5 focus:outline-hidden focus:ring-1 focus:ring-emerald-500 cursor-pointer"
+                                  >
+                                    <option value="Terdaftar">Terdaftar</option>
+                                    <option value="Invalid">Invalid</option>
+                                    <option value="Keluar">Keluar</option>
+                                    <option value="Lulus">Lulus</option>
+                                    <option value="Belum">Belum</option>
+                                  </select>
+                                </td>
+                              );
+                            }
+
                             if (field === 'pendidikanTerakhir' || field === 'pendidikanAyah' || field === 'pendidikanIbu') {
                               return (
                                 <td key={field} className="p-1 border-b border-r border-emerald-300 align-middle bg-emerald-50 min-w-[140px]">

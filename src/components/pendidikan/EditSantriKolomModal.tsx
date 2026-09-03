@@ -33,7 +33,7 @@ export const EditSantriKolomModal: React.FC<EditSantriKolomModalProps> = ({
     gender: (santri.gender || 'Putra') as 'Putra' | 'Putri',
     namaAyah: santri.namaAyah || '',
     namaIbu: santri.namaIbu || '',
-    statusEmis: (santri.statusEmis || 'Belum') as 'Terdaftar' | 'Belum' | 'Invalid',
+    statusEmis: (santri.statusEmis || 'Belum') as 'Terdaftar' | 'Belum' | 'Invalid' | 'Keluar' | 'Lulus',
     statusVerval: (santri.statusVerval || (santri.nisn ? 'Sukses' : 'Proses')) as 'Sukses' | 'Proses',
     statusKeanggotaan: (santri.statusKeanggotaan || 'Aktif') as 'Aktif' | 'Alumni' | 'Meninggal' | 'Mutasi',
     kelasMhd: santri.kelasMhd || santri.pendidikanInternal || santri.indukMhd || '',
@@ -279,6 +279,8 @@ export const EditSantriKolomModal: React.FC<EditSantriKolomModalProps> = ({
                       <option value="Terdaftar">Terdaftar</option>
                       <option value="Belum">Belum</option>
                       <option value="Invalid">Invalid</option>
+                      <option value="Keluar">Keluar</option>
+                      <option value="Lulus">Lulus</option>
                     </select>
                   </div>
 

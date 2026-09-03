@@ -1171,7 +1171,9 @@ export default function SekretarisView({
     const matchesEmis = emisFilter === 'semua' 
       || (emisFilter === 'Terdaftar' ? s.statusEmis === 'Terdaftar' 
       : (emisFilter === 'Invalid' ? s.statusEmis === 'Invalid' 
-      : (s.statusEmis !== 'Terdaftar' && s.statusEmis !== 'Invalid')));
+      : (emisFilter === 'Keluar' ? s.statusEmis === 'Keluar'
+      : (emisFilter === 'Lulus' ? s.statusEmis === 'Lulus'
+      : (!s.statusEmis || s.statusEmis === 'Belum')))));
 
     let matchesAge = true;
     if (ageFilterConfig.enabled) {
@@ -2438,7 +2440,11 @@ export default function SekretarisView({
                             ? 'EMIS Terdaftar' 
                             : (emisFilter === 'Invalid' 
                               ? 'EMIS Invalid' 
-                              : 'Belum Terdaftar'))}
+                              : (emisFilter === 'Keluar'
+                                ? 'EMIS Keluar'
+                                : (emisFilter === 'Lulus'
+                                  ? 'EMIS Lulus'
+                                  : 'Belum Terdaftar'))))}
                       </span>
                       <ChevronDown className="h-4 w-4 opacity-60 shrink-0" />
                     </button>
@@ -2461,6 +2467,8 @@ export default function SekretarisView({
                                 { value: 'semua', label: 'Semua Status EMIS' },
                                 { value: 'Terdaftar', label: 'EMIS Terdaftar' },
                                 { value: 'Invalid', label: 'EMIS Invalid' },
+                                { value: 'Keluar', label: 'EMIS Keluar' },
+                                { value: 'Lulus', label: 'EMIS Lulus' },
                                 { value: 'Belum', label: 'Belum Terdaftar' }
                               ].map((opt) => {
                                 const isActive = emisFilter === opt.value;
