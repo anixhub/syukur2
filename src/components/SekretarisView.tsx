@@ -35,8 +35,9 @@ import {
   Building2
 } from 'lucide-react';
 import { ALL_COLUMNS, DEFAULT_WAJIB_KEYS, DEFAULT_TABLE_COLUMNS } from '../constants/monitoringColumns';
-import { Santri } from '../types';
-import { formatClassNameOnly } from '../lib/utils';
+import { Santri, Lembaga, Kelas } from '../types';
+import { formatClassNameOnly, getSantriFormalEducationInfo } from '../lib/utils';
+import { fetchTableData } from '../lib/api';
 import { DEFAULT_ROLES, getPermissionsForRole, normalizeRoleId } from '../lib/permissions';
 import { 
   renderSantriAvatar,
@@ -130,6 +131,53 @@ export default function SekretarisView({
   const [showEmisFilterDropdown, setShowEmisFilterDropdown] = useState<boolean>(false);
   const [isAgeModalOpen, setIsAgeModalOpen] = useState(false);
   const [ageFilterConfig, setAgeFilterConfig] = useState<AgeFilterConfig>(DEFAULT_AGE_FILTER_CONFIG);
+
+  // Synchronized Education Data
+  const [lembagasList, setLembagasList] = useState<Lembaga[]>(() => {
+    try {
+      const local = localStorage.getItem('smartsantri_lembagas');
+      return local ? JSON.parse(local) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [kelasList, setKelasList] = useState<Kelas[]>(() => {
+    try {
+      const local = localStorage.getItem('smartsantri_kelas');
+      return local ? JSON.parse(local) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    const loadEducationData = async () => {
+      try {
+        const lems = await fetchTableData<Lembaga>('lembaga', 'smartsantri_lembagas', []);
+        const kls = await fetchTableData<Kelas>('kelas', 'smartsantri_kelas', []);
+        if (lems && lems.length > 0) setLembagasList(lems);
+        if (kls && kls.length > 0) setKelasList(kls);
+      } catch {}
+    };
+    loadEducationData();
+
+    const handleEduSync = () => {
+      try {
+        const lStr = localStorage.getItem('smartsantri_lembagas');
+        if (lStr) setLembagasList(JSON.parse(lStr));
+        const kStr = localStorage.getItem('smartsantri_kelas');
+        if (kStr) setKelasList(JSON.parse(kStr));
+      } catch {}
+    };
+
+    window.addEventListener('smartsantri_education_updated', handleEduSync);
+    window.addEventListener('storage', handleEduSync);
+    return () => {
+      window.removeEventListener('smartsantri_education_updated', handleEduSync);
+      window.removeEventListener('storage', handleEduSync);
+    };
+  }, []);
 
   // Excel Column Specific Filters State
   const [excelColumnFilters, setExcelColumnFilters] = useState<Record<string, string[]>>({});
@@ -918,7 +966,7 @@ export default function SekretarisView({
       { id: 'tanggalLahir', label: 'Tanggal Lahir', isAlwaysVisible: true, getValue: (s: Santri) => s.tanggalLahir || '' },
       { id: 'gender', label: 'Gender', isAlwaysVisible: false, colKey: 'gender', getValue: (s: Santri) => s.gender || '' },
       { id: 'pendidikanTerakhir', label: 'Pendidikan Terakhir', isAlwaysVisible: false, colKey: 'pendidikanTerakhir', getValue: (s: Santri) => s.pendidikanTerakhir || '' },
-      { id: 'pendidikanFormal', label: 'Pendidikan Formal', isAlwaysVisible: false, colKey: 'pendidikanFormal', getValue: (s: Santri) => formatClassNameOnly(s.pendidikanFormal || s.kelas) },
+      { id: 'pendidikanFormal', label: 'Pendidikan Formal', isAlwaysVisible: false, colKey: 'pendidikanFormal', getValue: (s: Santri) => getSantriFormalEducationInfo(s, lembagasList, kelasList).display },
       { id: 'anakKe', label: 'Anak Ke', isAlwaysVisible: false, colKey: 'anakKe', getValue: (s: Santri) => s.anakKe !== undefined ? String(s.anakKe) : '' },
       { id: 'dariBersaudara', label: 'Jumlah Saudara', isAlwaysVisible: false, colKey: 'dariBersaudara', getValue: (s: Santri) => s.dariBersaudara !== undefined ? String(s.dariBersaudara) : '' },
       { id: 'namaAyah', label: 'Nama Ayah', isAlwaysVisible: false, colKey: 'namaAyah', getValue: (s: Santri) => s.namaAyah || '' },
@@ -1205,7 +1253,7 @@ export default function SekretarisView({
     let matchesExcelColumnFilters = true;
     for (const [colKey, allowedVals] of Object.entries(excelColumnFilters)) {
       if (allowedVals && allowedVals.length > 0) {
-        const val = getColumnValueString(s, colKey, ageFilterConfig);
+        const val = getColumnValueString(s, colKey, ageFilterConfig, lembagasList, kelasList);
         if (!allowedVals.includes(val)) {
           matchesExcelColumnFilters = false;
           break;
@@ -1226,6 +1274,14 @@ export default function SekretarisView({
       const ageB = calculateAgeOnDate(b.tanggalLahir, refDate) ?? -1;
       if (ageA < ageB) return sortDirection === 'asc' ? -1 : 1;
       if (ageA > ageB) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    }
+
+    if (sortKey === 'pendidikanFormal') {
+      const valA = getSantriFormalEducationInfo(a, lembagasList, kelasList).display.toLowerCase();
+      const valB = getSantriFormalEducationInfo(b, lembagasList, kelasList).display.toLowerCase();
+      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
       return 0;
     }
 
@@ -2568,6 +2624,8 @@ export default function SekretarisView({
               mandatoryKeys={mandatoryKeys}
               excelColumnFilters={excelColumnFilters}
               onApplyExcelFilter={handleApplyExcelFilter}
+              lembagasList={lembagasList}
+              kelasList={kelasList}
             />
           ) : (
             <SantriCardView

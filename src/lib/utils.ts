@@ -360,6 +360,146 @@ export function isMatchLembagaStrict(l: Lembaga, text?: string | null): boolean 
   return false;
 }
 
+export interface SantriFormalEducationInfo {
+  lembaga: Lembaga | null;
+  kelas: Kelas | null;
+  display: string; // "VII Tsanawiyah A", "Calon Peserta Didik", or "TIDAK TERDAFTAR"
+  fullDisplay: string; // "SPM Wustho - VII Tsanawiyah A" or "TIDAK TERDAFTAR"
+  isFormal: boolean;
+}
+
+/**
+ * Single source of truth for resolving a Santri's Pendidikan Formal.
+ * Guarantees that internal / non-formal pondok classes (Madin, TPQ, Tahfidz)
+ * are NEVER returned as formal education.
+ */
+export function getSantriFormalEducationInfo(
+  s: Santri,
+  lembagasList?: Lembaga[],
+  kelasList?: Kelas[]
+): SantriFormalEducationInfo {
+  let lems = lembagasList;
+  if (!lems || lems.length === 0) {
+    try {
+      const lStr = typeof window !== 'undefined' ? localStorage.getItem('smartsantri_lembagas') : null;
+      if (lStr) lems = JSON.parse(lStr);
+    } catch {}
+  }
+  lems = lems || [];
+
+  let kls = kelasList;
+  if (!kls || kls.length === 0) {
+    try {
+      const kStr = typeof window !== 'undefined' ? localStorage.getItem('smartsantri_kelas') : null;
+      if (kStr) kls = JSON.parse(kStr);
+    } catch {}
+  }
+  kls = kls || [];
+
+  const formalLembagas = lems.filter(l => getLembagaJenis(l) === 'Formal');
+
+  let currentDisplay = 'TIDAK TERDAFTAR';
+  let currentFormalLembaga: Lembaga | null = null;
+  let currentFormalClass: Kelas | null = null;
+
+  const sClasses = s.kelas ? s.kelas.split(',').map(x => x.trim()).filter(Boolean) : [];
+
+  // 1. Check s.pendidikanFormal FIRST (exact institution & class)
+  if (
+    s.pendidikanFormal &&
+    s.pendidikanFormal.trim() !== '' &&
+    s.pendidikanFormal !== 'TIDAK TERDAFTAR' &&
+    s.pendidikanFormal !== 'Belum / Non-Formal' &&
+    s.pendidikanFormal !== '-'
+  ) {
+    const parts = s.pendidikanFormal.split(' - ');
+    const lemName = parts[0]?.trim();
+    const clsName = parts.length > 1 ? parts.slice(1).join(' - ').trim() : '';
+
+    if (lemName) {
+      const matchLem = formalLembagas.find(fl => {
+        const flNama = fl.nama.toLowerCase();
+        const flKode = fl.kode ? fl.kode.toLowerCase() : '';
+        const lNameLower = lemName.toLowerCase();
+        return (
+          flNama === lNameLower ||
+          (flKode && flKode === lNameLower) ||
+          String(fl.id) === lNameLower ||
+          isMatchLembagaStrict(fl, lemName) ||
+          (flNama.length >= 3 && (lNameLower.includes(flNama) || flNama.includes(lNameLower))) ||
+          (flKode && flKode.length >= 2 && (lNameLower.includes(flKode) || flKode.includes(lNameLower)))
+        );
+      });
+      if (matchLem) {
+        currentFormalLembaga = matchLem;
+        const classesOfFl = kls.filter(k => String(k.lembagaId || (k as any).lembaga_id) === String(matchLem.id));
+        const matchCls = classesOfFl.find(k => k.nama && k.nama.trim().toLowerCase() === clsName.toLowerCase());
+        if (matchCls) {
+          currentFormalClass = matchCls;
+          currentDisplay = matchCls.nama;
+        } else {
+          currentDisplay = clsName || 'Calon Peserta Didik';
+        }
+      }
+    }
+  }
+
+  // 2. Fallback: Check if any class in s.kelas matches a formal class
+  if (!currentFormalLembaga && sClasses.length > 0) {
+    for (const fl of formalLembagas) {
+      const classesOfFl = kls.filter(k => String(k.lembagaId || (k as any).lembaga_id) === String(fl.id));
+      const matchedClass = classesOfFl.find(k => k.nama && sClasses.some(sc => sc.toLowerCase() === k.nama.trim().toLowerCase()));
+      if (matchedClass) {
+        currentFormalLembaga = fl;
+        currentFormalClass = matchedClass;
+        currentDisplay = matchedClass.nama;
+        break;
+      }
+    }
+  }
+
+  // 3. Secondary fallback: Check if s.kelas contains formal institution name/code (candidate status)
+  if (!currentFormalLembaga && sClasses.length > 0) {
+    for (const fl of formalLembagas) {
+      if (sClasses.some(sc => sc.toLowerCase().includes(fl.nama.toLowerCase()) || (fl.kode && sc.toLowerCase().includes(fl.kode.toLowerCase())) || isMatchLembagaStrict(fl, sc))) {
+        currentFormalLembaga = fl;
+        currentDisplay = 'Calon Peserta Didik';
+        break;
+      }
+    }
+  }
+
+  // 4. Tertiary fallback: indukWustho / indukUlya matching formal tiers
+  if (!currentFormalLembaga) {
+    if (s.indukWustho && s.indukWustho.trim() !== '' && s.indukWustho !== '-') {
+      const wusthoLem = formalLembagas.find(l => (l.nama || '').toLowerCase().includes('wustho') || (l.kode || '').toLowerCase().includes('wustho'));
+      if (wusthoLem) {
+        currentFormalLembaga = wusthoLem;
+        currentDisplay = 'Calon Peserta Didik';
+      }
+    } else if (s.indukUlya && s.indukUlya.trim() !== '' && s.indukUlya !== '-') {
+      const ulyaLem = formalLembagas.find(l => (l.nama || '').toLowerCase().includes('ulya') || (l.kode || '').toLowerCase().includes('ulya'));
+      if (ulyaLem) {
+        currentFormalLembaga = ulyaLem;
+        currentDisplay = 'Calon Peserta Didik';
+      }
+    }
+  }
+
+  const isFormal = !!currentFormalLembaga;
+  const fullDisplay = isFormal
+    ? `${currentFormalLembaga!.nama} - ${currentDisplay}`
+    : 'TIDAK TERDAFTAR';
+
+  return {
+    lembaga: currentFormalLembaga,
+    kelas: currentFormalClass,
+    display: isFormal ? currentDisplay : 'TIDAK TERDAFTAR',
+    fullDisplay,
+    isFormal
+  };
+}
+
 export function demoteSantriToCalonPesertaDidik(
   santri: Santri,
   lembagasList?: Lembaga[],

@@ -24,7 +24,7 @@ import {
   Filter
 } from 'lucide-react';
 import { Santri, Lembaga, Kelas, isGenderMatch } from '../../../types';
-import { PENDIDIKAN_OPTIONS, normalizePendidikan, formatDateDDMMYYYY, parseCatatanInvalid, formatCatatanWithInvalid, parseCatatanInvalidParts, formatCatatanParts } from '../../../lib/utils';
+import { PENDIDIKAN_OPTIONS, normalizePendidikan, formatDateDDMMYYYY, parseCatatanInvalid, formatCatatanWithInvalid, parseCatatanInvalidParts, formatCatatanParts, getSantriFormalEducationInfo, getLembagaJenis } from '../../../lib/utils';
 import { renderSantriAvatar, getFormalKelasDisplay } from '../../SekretarisHelper';
 import { MembershipBadge } from '../components/HelperComponents';
 import { AgeFilterConfig, calculateAgeOnDate } from '../AgeFilterModal';
@@ -62,6 +62,8 @@ interface SantriTableViewProps {
   mandatoryKeys?: (keyof Santri)[];
   excelColumnFilters?: Record<string, string[]>;
   onApplyExcelFilter?: (colKey: string, selectedValues: string[] | undefined) => void;
+  lembagasList?: Lembaga[];
+  kelasList?: Kelas[];
 }
 
 const isSantriDataComplete = (s: Santri): boolean => {
@@ -214,7 +216,9 @@ export default function SantriTableView({
   mandatoryKeys = [],
   allSantri,
   excelColumnFilters,
-  onApplyExcelFilter
+  onApplyExcelFilter,
+  lembagasList: propLembagas,
+  kelasList: propKelas
 }: SantriTableViewProps) {
   const shouldShowColumn = (colKey: string): boolean => {
     if (colKey === 'nama') return true;
@@ -290,6 +294,7 @@ export default function SantriTableView({
   const [editingError, setEditingError] = React.useState<string | null>(null);
 
   const [lembagasList, setLembagasList] = React.useState<Lembaga[]>(() => {
+    if (propLembagas && propLembagas.length > 0) return propLembagas;
     try {
       const local = localStorage.getItem('smartsantri_lembagas');
       return local ? JSON.parse(local) : [];
@@ -299,6 +304,7 @@ export default function SantriTableView({
   });
 
   const [kelasList, setKelasList] = React.useState<Kelas[]>(() => {
+    if (propKelas && propKelas.length > 0) return propKelas;
     try {
       const local = localStorage.getItem('smartsantri_kelas');
       return local ? JSON.parse(local) : [];
@@ -306,6 +312,18 @@ export default function SantriTableView({
       return [];
     }
   });
+
+  React.useEffect(() => {
+    if (propLembagas && propLembagas.length > 0) {
+      setLembagasList(propLembagas);
+    }
+  }, [propLembagas]);
+
+  React.useEffect(() => {
+    if (propKelas && propKelas.length > 0) {
+      setKelasList(propKelas);
+    }
+  }, [propKelas]);
 
   React.useEffect(() => {
     const loadEducationData = async () => {
@@ -317,6 +335,18 @@ export default function SantriTableView({
       } catch {}
     };
     loadEducationData();
+
+    const handleEduSync = () => {
+      try {
+        const lStr = localStorage.getItem('smartsantri_lembagas');
+        if (lStr) setLembagasList(JSON.parse(lStr));
+        const kStr = localStorage.getItem('smartsantri_kelas');
+        if (kStr) setKelasList(JSON.parse(kStr));
+      } catch {}
+    };
+
+    window.addEventListener('smartsantri_education_updated', handleEduSync);
+    window.addEventListener('storage', handleEduSync);
 
     const handleCloseDropdowns = (e?: Event) => {
       if (e && e.target) {
@@ -339,6 +369,8 @@ export default function SantriTableView({
     window.addEventListener('click', handleCloseDropdowns, true);
     window.addEventListener('scroll', handleCloseDropdowns, true);
     return () => {
+      window.removeEventListener('smartsantri_education_updated', handleEduSync);
+      window.removeEventListener('storage', handleEduSync);
       window.removeEventListener('click', handleCloseDropdowns, true);
       window.removeEventListener('scroll', handleCloseDropdowns, true);
     };
@@ -1506,85 +1538,11 @@ export default function SantriTableView({
                       const canWrite = s.gender === 'Putri' ? canWritePutri : canWritePutra;
                       const isEmis = (s.statusEmis || 'Belum').toLowerCase() === 'terdaftar';
                       
-                      const getLembagaJenis = (l: Lembaga): 'Formal' | 'Internal' => {
-                        if (l.jenis && (l.jenis === 'Formal' || l.jenis === 'Internal')) return l.jenis;
-                        const lower = (l.nama || '').toLowerCase();
-                        if (
-                          lower.includes('madin') || lower.includes('diniyah') || lower.includes('tpq') ||
-                          lower.includes('tahfidz') || lower.includes('pondok') || lower.includes('kitab') ||
-                          lower.includes('internal') || (l.kode && l.kode.toLowerCase().includes('madin'))
-                        ) {
-                          return 'Internal';
-                        }
-                        return 'Formal';
-                      };
-
+                      const formalInfo = getSantriFormalEducationInfo(s, lembagasList, kelasList);
+                      const currentDisplay = formalInfo.display;
+                      const currentFormalLembaga = formalInfo.lembaga;
+                      const currentFormalClass = formalInfo.kelas;
                       const formalLembagas = lembagasList.filter(l => getLembagaJenis(l) === 'Formal');
-                      
-                      // Compute current formal display label
-                      let currentDisplay = 'TIDAK TERDAFTAR';
-                      let currentFormalLembaga: Lembaga | null = null;
-                      let currentFormalClass: Kelas | null = null;
-
-                      const sClasses = s.kelas ? s.kelas.split(',').map(x => x.trim()) : [];
-
-                      // 1. Check s.pendidikanFormal FIRST (exact institution & class)
-                      if (s.pendidikanFormal && s.pendidikanFormal.trim() !== '' && s.pendidikanFormal !== 'TIDAK TERDAFTAR') {
-                        const parts = s.pendidikanFormal.split(' - ');
-                        const lemName = parts[0]?.trim();
-                        const clsName = parts.length > 1 ? parts.slice(1).join(' - ').trim() : '';
-
-                        if (lemName) {
-                          const matchLem = formalLembagas.find(fl => {
-                            const flNama = fl.nama.toLowerCase();
-                            const flKode = fl.kode ? fl.kode.toLowerCase() : '';
-                            const lNameLower = lemName.toLowerCase();
-                            return (
-                              flNama === lNameLower ||
-                              (flKode && flKode === lNameLower) ||
-                              String(fl.id) === lNameLower ||
-                              (flNama.length >= 3 && (lNameLower.includes(flNama) || flNama.includes(lNameLower))) ||
-                              (flKode && flKode.length >= 2 && (lNameLower.includes(flKode) || flKode.includes(lNameLower)))
-                            );
-                          });
-                          if (matchLem) {
-                            currentFormalLembaga = matchLem;
-                            const classesOfFl = kelasList.filter(k => String(k.lembagaId || (k as any).lembaga_id) === String(matchLem.id));
-                            const matchCls = classesOfFl.find(k => k.nama && k.nama.trim().toLowerCase() === clsName.toLowerCase());
-                            if (matchCls) {
-                              currentFormalClass = matchCls;
-                              currentDisplay = matchCls.nama;
-                            } else {
-                              currentDisplay = clsName || "Calon Peserta Didik";
-                            }
-                          }
-                        }
-                      }
-
-                      // 2. Fallback: Check if any class in s.kelas matches a formal class
-                      if (!currentFormalLembaga && sClasses.length > 0) {
-                        for (const fl of formalLembagas) {
-                          const classesOfFl = kelasList.filter(k => String(k.lembagaId || (k as any).lembaga_id) === String(fl.id));
-                          const matchedClass = classesOfFl.find(k => k.nama && sClasses.some(sc => sc.toLowerCase() === k.nama.trim().toLowerCase()));
-                          if (matchedClass) {
-                            currentFormalLembaga = fl;
-                            currentFormalClass = matchedClass;
-                            currentDisplay = matchedClass.nama;
-                            break;
-                          }
-                        }
-                      }
-
-                      // 3. Secondary fallback: Check if s.kelas contains institution name/code
-                      if (!currentFormalLembaga && sClasses.length > 0) {
-                        for (const fl of formalLembagas) {
-                          if (sClasses.some(sc => sc.toLowerCase().includes(fl.nama.toLowerCase()) || (fl.kode && sc.toLowerCase().includes(fl.kode.toLowerCase())))) {
-                            currentFormalLembaga = fl;
-                            currentDisplay = "Calon Peserta Didik";
-                            break;
-                          }
-                        }
-                      }
 
                       const isOpen = activeFormalKelasDropdownId === s.id;
 
@@ -2674,78 +2632,11 @@ export default function SantriTableView({
             {(() => {
               const s = paginatedSantri.find(item => item.id === activeFormalKelasDropdownId);
               if (!s) return null;
-              const getLembagaJenis = (l: Lembaga): 'Formal' | 'Internal' => {
-                if (l.jenis && (l.jenis === 'Formal' || l.jenis === 'Internal')) return l.jenis;
-                const lower = (l.nama || '').toLowerCase();
-                if (
-                  lower.includes('madin') || lower.includes('diniyah') || lower.includes('tpq') ||
-                  lower.includes('tahfidz') || lower.includes('pondok') || lower.includes('kitab') ||
-                  lower.includes('internal') || (l.kode && l.kode.toLowerCase().includes('madin'))
-                ) {
-                  return 'Internal';
-                }
-                return 'Formal';
-              };
-
+              const formalInfo = getSantriFormalEducationInfo(s, lembagasList, kelasList);
+              const currentFormalLembaga = formalInfo.lembaga;
+              const currentFormalClass = formalInfo.kelas;
               const formalLembagas = lembagasList.filter(l => getLembagaJenis(l) === 'Formal');
               const isEmis = (s.statusEmis || 'Belum').toLowerCase() === 'terdaftar';
-              
-              let currentFormalLembaga: Lembaga | null = null;
-              let currentFormalClass: Kelas | null = null;
-              const sClasses = s.kelas ? s.kelas.split(',').map(x => x.trim()) : [];
-
-              // 1. Check s.pendidikanFormal FIRST (exact institution & class)
-              if (s.pendidikanFormal && s.pendidikanFormal.trim() !== '' && s.pendidikanFormal !== 'TIDAK TERDAFTAR') {
-                const parts = s.pendidikanFormal.split(' - ');
-                const lemName = parts[0]?.trim();
-                const clsName = parts.length > 1 ? parts.slice(1).join(' - ').trim() : '';
-
-                if (lemName) {
-                  const matchLem = formalLembagas.find(fl => {
-                    const flNama = fl.nama.toLowerCase();
-                    const flKode = fl.kode ? fl.kode.toLowerCase() : '';
-                    const lNameLower = lemName.toLowerCase();
-                    return (
-                      flNama === lNameLower ||
-                      (flKode && flKode === lNameLower) ||
-                      String(fl.id) === lNameLower ||
-                      (flNama.length >= 3 && (lNameLower.includes(flNama) || flNama.includes(lNameLower))) ||
-                      (flKode && flKode.length >= 2 && (lNameLower.includes(flKode) || flKode.includes(lNameLower)))
-                    );
-                  });
-                  if (matchLem) {
-                    currentFormalLembaga = matchLem;
-                    const classesOfFl = kelasList.filter(k => String(k.lembagaId || (k as any).lembaga_id) === String(matchLem.id));
-                    const matchCls = classesOfFl.find(k => k.nama && k.nama.trim().toLowerCase() === clsName.toLowerCase());
-                    if (matchCls) {
-                      currentFormalClass = matchCls;
-                    }
-                  }
-                }
-              }
-
-              // 2. Fallback: Check if any class in s.kelas matches a formal class
-              if (!currentFormalLembaga && sClasses.length > 0) {
-                for (const fl of formalLembagas) {
-                  const classesOfFl = kelasList.filter(k => String(k.lembagaId || (k as any).lembaga_id) === String(fl.id));
-                  const matchedClass = classesOfFl.find(k => k.nama && sClasses.some(sc => sc.toLowerCase() === k.nama.trim().toLowerCase()));
-                  if (matchedClass) {
-                    currentFormalLembaga = fl;
-                    currentFormalClass = matchedClass;
-                    break;
-                  }
-                }
-              }
-
-              // 3. Secondary fallback: Check if s.kelas contains institution name/code
-              if (!currentFormalLembaga && sClasses.length > 0) {
-                for (const fl of formalLembagas) {
-                  if (sClasses.some(sc => sc.toLowerCase().includes(fl.nama.toLowerCase()) || (fl.kode && sc.toLowerCase().includes(fl.kode.toLowerCase())))) {
-                    currentFormalLembaga = fl;
-                    break;
-                  }
-                }
-              }
 
               const pendingState = pendingFormalKelas[s.id] || {
                 lem: currentFormalLembaga,
@@ -3096,6 +2987,8 @@ export default function SantriTableView({
           }}
           anchorRect={headerFilterAnchor}
           ageFilterConfig={ageFilterConfig}
+          lembagasList={lembagasList}
+          kelasList={kelasList}
         />
       )}
     </div>

@@ -12,11 +12,18 @@ import {
   CheckSquare,
   Square
 } from 'lucide-react';
-import { Santri } from '../../types';
+import { Santri, Lembaga, Kelas } from '../../types';
 import { ALL_COLUMNS, ColumnConfig } from '../../constants/monitoringColumns';
 import { AgeFilterConfig, calculateAgeOnDate } from './AgeFilterModal';
+import { getLembagaJenis, getSantriFormalEducationInfo } from '../../lib/utils';
 
-export function getColumnValueString(s: Santri, key: string, ageFilterConfig?: AgeFilterConfig): string {
+export function getColumnValueString(
+  s: Santri, 
+  key: string, 
+  ageFilterConfig?: AgeFilterConfig,
+  lembagasList?: Lembaga[],
+  kelasList?: Kelas[]
+): string {
   if (key === 'umur') {
     if (!s.tanggalLahir) return '(Kosong)';
     const refDate = ageFilterConfig?.refType === 'custom' && ageFilterConfig?.customDate
@@ -26,8 +33,8 @@ export function getColumnValueString(s: Santri, key: string, ageFilterConfig?: A
     return age !== null ? `${age} Tahun` : '(Kosong)';
   }
   if (key === 'pendidikanFormal') {
-    const val = s.pendidikanFormal || s.kelas;
-    return val && val.trim() !== '' && val.trim() !== '-' ? val.trim() : '(Kosong)';
+    const formalInfo = getSantriFormalEducationInfo(s, lembagasList, kelasList);
+    return formalInfo.display;
   }
   const raw = (s as any)[key];
   if (raw === undefined || raw === null || String(raw).trim() === '' || String(raw).trim() === '-') {
@@ -59,6 +66,8 @@ interface ExcelFilterPopoverProps {
   onClose: () => void;
   anchorRect: { top: number; left: number; right?: number; bottom?: number; width?: number; height?: number } | null;
   ageFilterConfig?: AgeFilterConfig;
+  lembagasList?: Lembaga[];
+  kelasList?: Kelas[];
 }
 
 export function ExcelFilterPopover({
@@ -72,7 +81,9 @@ export function ExcelFilterPopover({
   onApplySort,
   onClose,
   anchorRect,
-  ageFilterConfig
+  ageFilterConfig,
+  lembagasList,
+  kelasList
 }: ExcelFilterPopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -80,8 +91,84 @@ export function ExcelFilterPopover({
   // Extract all distinct values and item counts for this column
   const distinctStats = useMemo(() => {
     const counts: Record<string, number> = {};
+
+    // Special synchronized handling for Pendidikan Formal
+    if (colKey === 'pendidikanFormal') {
+      // 1. Resolve lembaga & kelas lists
+      let lems = lembagasList;
+      if (!lems || lems.length === 0) {
+        try {
+          const lStr = typeof window !== 'undefined' ? localStorage.getItem('smartsantri_lembagas') : null;
+          if (lStr) lems = JSON.parse(lStr);
+        } catch {}
+      }
+      let kls = kelasList;
+      if (!kls || kls.length === 0) {
+        try {
+          const kStr = typeof window !== 'undefined' ? localStorage.getItem('smartsantri_kelas') : null;
+          if (kStr) kls = JSON.parse(kStr);
+        } catch {}
+      }
+      lems = lems || [];
+      kls = kls || [];
+
+      // 2. Count actual formal education distribution across santri
+      santriList.forEach(s => {
+        const val = getColumnValueString(s, colKey, ageFilterConfig, lems, kls);
+        counts[val] = (counts[val] || 0) + 1;
+      });
+
+      // 3. Ensure all formal classes from Modul Pendidikan are represented
+      const formalLembagas = lems.filter(l => getLembagaJenis(l) === 'Formal');
+      const formalLembagaIds = formalLembagas.map(l => String(l.id));
+
+      kls
+        .filter(k => formalLembagaIds.includes(String(k.lembagaId || (k as any).lembaga_id)))
+        .forEach(k => {
+          if (k.nama && k.nama.trim()) {
+            const lower = k.nama.trim().toLowerCase();
+            if (
+              lower !== 'calon peserta didik' && 
+              lower !== 'calon pelajar' && 
+              lower !== 'tanpa kelas' &&
+              lower !== '-'
+            ) {
+              const clsName = k.nama.trim();
+              if (!(clsName in counts)) {
+                counts[clsName] = 0;
+              }
+            }
+          }
+        });
+
+      // 4. Ensure 'Calon Peserta Didik' is present if formal lembagas exist
+      if (formalLembagas.length > 0 && !('Calon Peserta Didik' in counts)) {
+        counts['Calon Peserta Didik'] = 0;
+      }
+
+      // 5. Ensure 'TIDAK TERDAFTAR' is present
+      if (!('TIDAK TERDAFTAR' in counts)) {
+        counts['TIDAK TERDAFTAR'] = 0;
+      }
+
+      // Sort: Formal classes alphabetically, then 'Calon Peserta Didik', then 'TIDAK TERDAFTAR'
+      const sortedVals = Object.keys(counts).sort((a, b) => {
+        if (a === 'TIDAK TERDAFTAR' || a === '(Kosong)') return 1;
+        if (b === 'TIDAK TERDAFTAR' || b === '(Kosong)') return -1;
+        if (a === 'Calon Peserta Didik') return 1;
+        if (b === 'Calon Peserta Didik') return -1;
+        return a.localeCompare(b, 'id', { numeric: true, sensitivity: 'base' });
+      });
+
+      return sortedVals.map(val => ({
+        value: val,
+        count: counts[val]
+      }));
+    }
+
+    // Default for all other columns
     santriList.forEach(s => {
-      const val = getColumnValueString(s, colKey, ageFilterConfig);
+      const val = getColumnValueString(s, colKey, ageFilterConfig, lembagasList, kelasList);
       counts[val] = (counts[val] || 0) + 1;
     });
 
@@ -95,7 +182,7 @@ export function ExcelFilterPopover({
       value: val,
       count: counts[val]
     }));
-  }, [santriList, colKey, ageFilterConfig]);
+  }, [santriList, colKey, ageFilterConfig, lembagasList, kelasList]);
 
   const allPossibleValues = useMemo(() => distinctStats.map(s => s.value), [distinctStats]);
 
@@ -349,6 +436,8 @@ interface ExcelColumnFilterModalProps {
   sortDirection: 'asc' | 'desc';
   onApplySort: (colKey: string, dir: 'asc' | 'desc') => void;
   ageFilterConfig?: AgeFilterConfig;
+  lembagasList?: Lembaga[];
+  kelasList?: Kelas[];
 }
 
 export function ExcelColumnFilterModal({
@@ -361,7 +450,9 @@ export function ExcelColumnFilterModal({
   sortKey,
   sortDirection,
   onApplySort,
-  ageFilterConfig
+  ageFilterConfig,
+  lembagasList,
+  kelasList
 }: ExcelColumnFilterModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeColKey, setActiveColKey] = useState<string | null>(null);
@@ -551,6 +642,8 @@ export function ExcelColumnFilterModal({
           }}
           anchorRect={colAnchorRect}
           ageFilterConfig={ageFilterConfig}
+          lembagasList={lembagasList}
+          kelasList={kelasList}
         />
       )}
     </div>,
