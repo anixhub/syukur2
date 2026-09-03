@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Eye, EyeOff, LogIn, Flag, Shield, Info, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { Eye, EyeOff, LogIn, Flag, Info, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { fetchTableData, insertTableRow, updateTableRow, getApiUrl } from '../lib/api';
 import { fetchAndSyncPermissionsFromSupabase, normalizeRoleId } from '../lib/permissions';
 import { AppCredentials } from '../types';
@@ -719,24 +719,6 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                 )}
 
 
-
-                {/* Quick-fill default credentials reminder for testing */}
-                <div className="mb-4 p-3 rounded-xl bg-emerald-50/70 border border-emerald-200/70 text-xs flex flex-wrap items-center justify-between gap-2 text-slate-600">
-                  <div className="flex items-center gap-2">
-                    <Shield className="h-4 w-4 text-emerald-600 shrink-0" />
-                    <span>Akun Default: <strong className="text-slate-800 font-mono font-bold">superadmin@attaroqqy.com</strong> (PIN: <strong className="text-slate-800 font-mono font-bold">1234</strong>)</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEmail('superadmin@attaroqqy.com');
-                      setPassword('1234');
-                    }}
-                    className="text-xs font-bold text-emerald-700 hover:text-emerald-800 hover:underline cursor-pointer shrink-0"
-                  >
-                    Gunakan Akun Ini
-                  </button>
-                </div>
 
                 {/* Login Form */}
                 <form onSubmit={handleSubmit} className="space-y-4">
