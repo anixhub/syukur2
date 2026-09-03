@@ -2518,7 +2518,14 @@ export default function SekretarisView({
       {/* VIEW RENDERER (TABLE, CARD, or OVERVIEW MODE) */}
       <div className="min-h-[400px]">
         {subTab === 'overview' ? (
-          <OverviewSubModule santriList={santriList} />
+          <OverviewSubModule 
+            santriList={santriList} 
+            onSelectSantri={setSelectedSantri}
+            onAddSantriClick={() => {
+              setEditingSantri(null);
+              setIsAddSantriOpen(true);
+            }}
+          />
         ) : (
           filteredSantri.length === 0 ? (
             <EmptyState message="Santri tidak ditemukan dengan kriteria pencarian ini." />

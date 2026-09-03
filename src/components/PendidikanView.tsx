@@ -849,40 +849,6 @@ export default function PendidikanView({
     setKelasList(keepClasses);
   };
 
-  const handleResetAllLembagaStudents = async () => {
-    // Reset candidate students & data induk across all institutions
-    const updatedSantriList = santriList.map(s => ({
-      ...s,
-      pendidikanFormal: '',
-      pendidikanInternal: '',
-      calonLembagaId: undefined,
-      indukWustho: '',
-      indukUlya: '',
-      indukMhd: '',
-      nism: '',
-      kelas: 'Tanpa Kelas'
-    }));
-
-    updatedSantriList.forEach(st => {
-      onUpdateSantri(st);
-    });
-
-    try {
-      localStorage.setItem('smartsantri_education_reset_v2026', 'true');
-      localStorage.setItem('smartsantri_santriList', JSON.stringify(updatedSantriList));
-      localStorage.setItem('smartsantri_rombel_assignments', JSON.stringify([]));
-      setAssignmentsList([]);
-
-      const batchSize = 15;
-      for (let i = 0; i < updatedSantriList.length; i += batchSize) {
-        const batch = updatedSantriList.slice(i, i + batchSize);
-        await Promise.all(batch.map(st => updateTableRow('santri', 'smartsantri_santriList', st.id, st)));
-      }
-    } catch (err) {
-      console.error('Failed to sync student reset:', err);
-    }
-  };
-
   // 3. ROMBEL CATEGORY CALLBACKS
   const handleAddCategory = async (newCat: KategoriRombel) => {
     const saved = await insertTableRow('kategori_rombel', 'smartsantri_rombel_categories', newCat);
@@ -1863,7 +1829,6 @@ export default function PendidikanView({
               onAddAssignment={handleAddAssignment}
               onRemoveAssignment={handleRemoveAssignment}
               onResetAllClasses={handleResetAllClasses}
-              onResetAllLembagaStudents={handleResetAllLembagaStudents}
             />
           )}
 
