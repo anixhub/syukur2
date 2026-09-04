@@ -224,84 +224,102 @@ export function getApiUrl(endpoint: string): string {
   return cleanEndpoint;
 }
 
+// In-flight deduplication map for simultaneous table queries
+const inFlightTableFetches = new Map<string, Promise<any>>();
+
 // Fetch list of items from table
 export async function fetchTableData<T>(table: string, localKey?: string, defaultValue: T[] = []): Promise<T[]> {
-  try {
-    const url = getApiUrl(`/api/db/${table}?_t=${Date.now()}`);
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
-    const res = await fetch(url, {
-      cache: 'no-store',
-      signal: controller.signal,
-      headers: {
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache'
-      }
-    });
-    clearTimeout(timeoutId);
-    if (res.ok) {
-      const result = await safeJsonParse(res);
-      if (result.success && Array.isArray(result.data)) {
-        const camelCasedData = snakeToCamel(result.data) as T[];
-        const uniqueMap = new Map<any, T>();
-        camelCasedData.forEach((item: any) => {
-          if (item && item.id !== undefined && item.id !== null) {
-            const key = String(item.id);
-            uniqueMap.set(key, { ...item, id: key });
-          } else if (item) {
-            uniqueMap.set(Math.random().toString(), item);
-          }
-        });
-        const fetchedData = Array.from(uniqueMap.values());
+  const dedupKey = `${table}:${localKey || ''}`;
+  if (inFlightTableFetches.has(dedupKey)) {
+    return inFlightTableFetches.get(dedupKey)!;
+  }
 
-        // If server returned non-empty data, update localStorage
-        if (fetchedData.length > 0) {
+  const fetchPromise = (async () => {
+    try {
+      const url = getApiUrl(`/api/db/${table}?_t=${Date.now()}`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const res = await fetch(url, {
+        cache: 'no-store',
+        signal: controller.signal,
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const result = await safeJsonParse(res);
+        if (result.success && Array.isArray(result.data)) {
+          const camelCasedData = snakeToCamel(result.data) as T[];
+          const uniqueMap = new Map<any, T>();
+          camelCasedData.forEach((item: any) => {
+            if (item && item.id !== undefined && item.id !== null) {
+              const key = String(item.id);
+              uniqueMap.set(key, { ...item, id: key });
+            } else if (item) {
+              uniqueMap.set(Math.random().toString(), item);
+            }
+          });
+          const fetchedData = Array.from(uniqueMap.values());
+
+          // If server returned non-empty data, update localStorage
+          if (fetchedData.length > 0) {
+            if (localKey) {
+              safeLocalStorageSetItem(localKey, JSON.stringify(fetchedData));
+            }
+            return fetchedData;
+          }
+
+          // If server returned empty array (0 items), check if localStorage has existing cached data
           if (localKey) {
-            safeLocalStorageSetItem(localKey, JSON.stringify(fetchedData));
+            try {
+              const localStr = localStorage.getItem(localKey);
+              if (localStr) {
+                const localList = JSON.parse(localStr);
+                if (Array.isArray(localList) && localList.length > 0) {
+                  console.log(`[Perlindungan Data] Server mengembalikan data kosong untuk tabel '${table}', tetapi localStorage memiliki ${localList.length} item. Menggunakan data lokal dan menyinkronkan ulang ke server.`);
+                  // Auto-sync back to server in background
+                  fetch(getApiUrl(`/api/db/${table}`), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(camelToSnake(localList))
+                  }).catch(() => {});
+                  return localList;
+                }
+              }
+            } catch (e) {}
+            safeLocalStorageSetItem(localKey, JSON.stringify([]));
           }
           return fetchedData;
         }
-
-        // If server returned empty array (0 items), check if localStorage has existing cached data
-        if (localKey) {
-          try {
-            const localStr = localStorage.getItem(localKey);
-            if (localStr) {
-              const localList = JSON.parse(localStr);
-              if (Array.isArray(localList) && localList.length > 0) {
-                console.log(`[Perlindungan Data] Server mengembalikan data kosong untuk tabel '${table}', tetapi localStorage memiliki ${localList.length} item. Menggunakan data lokal dan menyinkronkan ulang ke server.`);
-                // Auto-sync back to server in background
-                fetch(getApiUrl(`/api/db/${table}`), {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(camelToSnake(localList))
-                }).catch(() => {});
-                return localList;
-              }
-            }
-          } catch (e) {}
-          safeLocalStorageSetItem(localKey, JSON.stringify([]));
-        }
-        return fetchedData;
       }
+    } catch (err) {
+      console.warn(`Fetch query failed for table ${table}.`, err);
     }
-  } catch (err) {
-    console.warn(`Fetch query failed for table ${table}.`, err);
-  }
 
-  if (localKey) {
-    try {
-      const localStr = localStorage.getItem(localKey);
-      if (localStr) {
-        const parsed = JSON.parse(localStr);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+    if (localKey) {
+      try {
+        const localStr = localStorage.getItem(localKey);
+        if (localStr) {
+          const parsed = JSON.parse(localStr);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
         }
-      }
-    } catch (e) {}
-  }
+      } catch (e) {}
+    }
 
-  return defaultValue;
+    return defaultValue;
+  })().finally(() => {
+    // Release in-flight lock after execution
+    setTimeout(() => {
+      inFlightTableFetches.delete(dedupKey);
+    }, 150);
+  });
+
+  inFlightTableFetches.set(dedupKey, fetchPromise);
+  return fetchPromise;
 }
 
 // Insert single row

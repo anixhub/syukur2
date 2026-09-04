@@ -137,6 +137,28 @@ const tableColumnsCache = new Map<string, Set<string>>();
 let permissionsTablesSeeded = false;
 let mySQLThrottleUntil = 0;
 
+// High-speed In-Memory Query Cache with TTL and Write Invalidation
+interface QueryCacheEntry {
+  data: any;
+  timestamp: number;
+  etag: string;
+}
+const tableQueryCache = new Map<string, QueryCacheEntry>();
+const CACHE_TTL_MS = 15000; // 15 seconds TTL
+
+export function invalidateTableCache(table?: string) {
+  if (table) {
+    tableQueryCache.delete(table);
+    for (const key of Array.from(tableQueryCache.keys())) {
+      if (key === table || key.startsWith(`${table}:`)) {
+        tableQueryCache.delete(key);
+      }
+    }
+  } else {
+    tableQueryCache.clear();
+  }
+}
+
 const DB_BACKUP_PATH = path.join(getPersistentRootDir(), 'database_backup.json');
 
 function loadMemoryStoreFromDisk() {
@@ -257,19 +279,20 @@ export function getMySQLPool(): mysql.Pool | null {
 
   if (!mysqlPool) {
     try {
+      const connLimit = Number(process.env.DB_CONNECTION_LIMIT || process.env.MYSQL_CONNECTION_LIMIT || 10);
       mysqlPool = mysql.createPool({
         host,
         user,
         password,
         database,
         port,
-        connectTimeout: 2000,
-        waitForConnections: false,
-        connectionLimit: 2,
-        maxIdle: 2,
-        idleTimeout: 600000,
+        connectTimeout: 3000,
+        waitForConnections: true,
+        connectionLimit: connLimit,
+        maxIdle: connLimit,
+        idleTimeout: 60000,
         enableKeepAlive: true,
-        keepAliveInitialDelay: 0,
+        keepAliveInitialDelay: 10000,
         queueLimit: 0,
         dateStrings: true
       });
@@ -1370,33 +1393,76 @@ app.get("/api/db/:table", async (req, res) => {
     return res.status(400).json({ success: false, error: `Tabel '${table}' tidak valid` });
   }
 
+  const page = req.query.page ? Math.max(1, parseInt(req.query.page as string, 10)) : 0;
+  const limit = req.query.limit ? Math.max(1, parseInt(req.query.limit as string, 10)) : 0;
+  const cacheKey = limit > 0 ? `${table}:p${page}:l${limit}` : table;
+
+  // 1. Check in-memory query cache for instant sub-millisecond response
+  const cached = tableQueryCache.get(cacheKey);
+  const now = Date.now();
+  if (cached && (now - cached.timestamp < CACHE_TTL_MS)) {
+    res.setHeader("ETag", cached.etag);
+    res.setHeader("Cache-Control", "public, max-age=15, stale-while-revalidate=30");
+    if (req.headers["if-none-match"] === cached.etag) {
+      return res.status(304).end();
+    }
+    return res.json(cached.data);
+  }
+
   const pool = getMySQLPool();
   if (pool) {
     await ensureTableExists(table, pool).catch(() => {});
   }
 
+  let rawRows: any[] = [];
   const mysqlRes = await tryMySQLQuery(`SELECT * FROM \`${table}\``);
   if (mysqlRes.success && Array.isArray(mysqlRes.rows) && mysqlRes.rows.length > 0) {
     memoryStore.set(table, mysqlRes.rows);
     saveMemoryStoreToDisk();
-    let finalData = stripPassword(table, mysqlRes.rows || []);
-    if (table === "santri") {
-      finalData = unpackPendidikanFormal(finalData);
-    } else if (table === "lembaga") {
-      finalData = unpackLembaga(finalData);
-    }
-    return res.json({ success: true, data: finalData });
+    rawRows = mysqlRes.rows;
+  } else {
+    // Fallback memory store (loaded from disk/offline store)
+    rawRows = memoryStore.get(table) || [];
   }
 
-  // Fallback memory store (loaded from disk/offline store)
-  let data = memoryStore.get(table) || [];
-  let finalData = stripPassword(table, data);
+  let finalData = stripPassword(table, rawRows);
   if (table === "santri") {
     finalData = unpackPendidikanFormal(finalData);
   } else if (table === "lembaga") {
     finalData = unpackLembaga(finalData);
   }
-  res.json({ success: true, data: finalData });
+
+  let responseBody: any;
+  if (limit > 0) {
+    const total = finalData.length;
+    const totalPages = Math.ceil(total / limit);
+    const offset = (page - 1) * limit;
+    const pagedSlice = finalData.slice(offset, offset + limit);
+    responseBody = {
+      success: true,
+      data: pagedSlice,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages
+      }
+    };
+  } else {
+    responseBody = { success: true, data: finalData };
+  }
+
+  // Cache response with ETag
+  const etag = `W/"${table}-${finalData.length}-${now.toString(36)}"`;
+  tableQueryCache.set(cacheKey, {
+    data: responseBody,
+    timestamp: now,
+    etag
+  });
+
+  res.setHeader("ETag", etag);
+  res.setHeader("Cache-Control", "public, max-age=15, stale-while-revalidate=30");
+  return res.json(responseBody);
 });
 
 // POST /api/db/:table
@@ -1478,6 +1544,8 @@ app.post("/api/db/:table", async (req, res) => {
   } else if (table === "lembaga") {
     resultData = unpackLembaga(resultData);
   }
+
+  invalidateTableCache(table);
 
   // Realtime WebSocket broadcast
   broadcastWebSocketMessage({
@@ -1568,6 +1636,8 @@ app.put("/api/db/:table/:id", async (req, res) => {
     resultData = unpackLembaga(resultData);
   }
 
+  invalidateTableCache(table);
+
   // Realtime WebSocket broadcast
   broadcastWebSocketMessage({
     event: "db_change",
@@ -1634,6 +1704,14 @@ app.delete("/api/db/:table/:id", async (req, res) => {
   let list = memoryStore.get(table) || [];
   memoryStore.set(table, list.filter((item: any) => item.id !== id));
   saveMemoryStoreToDisk();
+
+  invalidateTableCache(table);
+  if (table === "santri") {
+    invalidateTableCache("rombel_assignment");
+    invalidateTableCache("perizinan");
+    invalidateTableCache("keamanan");
+    invalidateTableCache("bendahara");
+  }
 
   // Realtime WebSocket broadcast
   broadcastWebSocketMessage({
@@ -1722,6 +1800,10 @@ app.post("/api/sync-role-permissions", async (req, res) => {
     console.warn("Error sync role permissions MemoryStore:", e);
   }
 
+  invalidateTableCache("roles");
+  invalidateTableCache("permissions");
+  invalidateTableCache("role_has_permissions");
+
   broadcastWebSocketMessage({
     event: "db_change",
     table: "role_has_permissions",
@@ -1789,6 +1871,7 @@ app.post("/api/db-truncate-all", async (req, res) => {
   }
 
   memoryStore.clear();
+  invalidateTableCache();
 
   broadcastWebSocketMessage({
     event: "db_change",

@@ -130,8 +130,10 @@ export default function HomeView({
     let isMounted = true;
     const loadKamarData = async () => {
       try {
-        const kData = await fetchTableData<Kompleks>('kompleks', 'smartsantri_kompleks', INITIAL_KOMPLEKS);
-        const rmData = await fetchTableData<Kamar>('kamar', 'smartsantri_kamar', INITIAL_KAMAR);
+        const [kData, rmData] = await Promise.all([
+          fetchTableData<Kompleks>('kompleks', 'smartsantri_kompleks', INITIAL_KOMPLEKS),
+          fetchTableData<Kamar>('kamar', 'smartsantri_kamar', INITIAL_KAMAR)
+        ]);
         if (isMounted) {
           setKompleksList(kData || []);
           setKamarList(rmData || []);

@@ -310,23 +310,20 @@ export default function PendidikanView({
         if (showLoading) {
           setIsInitialLoading(true);
         }
-        const lemData = await fetchTableData<Lembaga>('lembaga', 'smartsantri_lembagas', INITIAL_LEMBAGA);
-        const uniqueLems = lemData.filter((item, idx, arr) => arr.findIndex(x => x.id === item.id) === idx);
-        
-        const processedLems = uniqueLems.map(deserializeLembaga);
-
-        if (isMounted) setLembagasList(processedLems);
-
-        const kelData = await fetchTableData<Kelas>('kelas', 'smartsantri_kelas', INITIAL_KELAS);
-        const uniqueKels = kelData.filter((item, idx, arr) => arr.findIndex(x => x.id === item.id) === idx).map(deserializeKelas);
-
-        if (isMounted) setKelasList(uniqueKels);
-
-        const [catData, grpData, assData] = await Promise.all([
+        const [lemData, kelData, catData, grpData, assData] = await Promise.all([
+          fetchTableData<Lembaga>('lembaga', 'smartsantri_lembagas', INITIAL_LEMBAGA),
+          fetchTableData<Kelas>('kelas', 'smartsantri_kelas', INITIAL_KELAS),
           fetchTableData<KategoriRombel>('kategori_rombel', 'smartsantri_rombel_categories', INITIAL_ROMBEL_CAT),
           fetchTableData<KelompokRombel>('kelompok_rombel', 'smartsantri_rombel_groups', INITIAL_ROMBEL_GROUP),
           fetchTableData<RombelAssignment>('rombel_assignment', 'smartsantri_rombel_assignments', INITIAL_ASSIGNMENTS)
         ]);
+
+        const uniqueLems = lemData.filter((item, idx, arr) => arr.findIndex(x => x.id === item.id) === idx);
+        const processedLems = uniqueLems.map(deserializeLembaga);
+        if (isMounted) setLembagasList(processedLems);
+
+        const uniqueKels = kelData.filter((item, idx, arr) => arr.findIndex(x => x.id === item.id) === idx).map(deserializeKelas);
+        if (isMounted) setKelasList(uniqueKels);
 
         if (isMounted) {
           const uniqueCat = catData.filter((item, idx, arr) => arr.findIndex(x => x.id === item.id) === idx);

@@ -70,8 +70,10 @@ export default function SantriCardView({
     if ((!lembagasList || lembagasList.length === 0) || (!kelasList || kelasList.length === 0)) {
       const loadEdu = async () => {
         try {
-          const lems = await fetchTableData<Lembaga>('lembaga', 'smartsantri_lembagas', []);
-          const kls = await fetchTableData<Kelas>('kelas', 'smartsantri_kelas', []);
+          const [lems, kls] = await Promise.all([
+            fetchTableData<Lembaga>('lembaga', 'smartsantri_lembagas', []),
+            fetchTableData<Kelas>('kelas', 'smartsantri_kelas', [])
+          ]);
           if (lems && lems.length > 0) setInternalLembagas(lems);
           if (kls && kls.length > 0) setInternalKelas(kls);
         } catch {}
@@ -480,6 +482,8 @@ export default function SantriCardView({
                     src={s.filePasFoto} 
                     className="w-full h-full object-cover" 
                     alt={s.nama} 
+                    loading="lazy"
+                    decoding="async"
                     referrerPolicy="no-referrer"
                   />
                 ) : (

@@ -8,17 +8,17 @@ import HelpModal from './components/HelpModal';
 import AdminChatDrawer from './components/AdminChatDrawer';
 import { fetchTableData, insertTableRow, insertTableRows, updateTableRow, deleteTableRow, subscribeRealtimeChanges, snakeToCamel, safeLocalStorageSetItem } from './lib/api';
 
-// Views
-import HomeView from './components/HomeView';
-import SekretarisView from './components/SekretarisView';
-import BendaharaView from './components/BendaharaView';
-import PendidikanView from './components/PendidikanView';
-import HumasyView from './components/HumasyView';
-import KeamananView from './components/KeamananView';
-import PengaturanView from './components/PengaturanView';
-import LoginView from './components/LoginView';
-import SantriDetailModal from './components/sekretaris/SantriDetailModal';
-import PendingRegistrationsModal from './components/PendingRegistrationsModal';
+// Views (Lazy-loaded for code splitting and instant initial page load)
+const HomeView = React.lazy(() => import('./components/HomeView'));
+const SekretarisView = React.lazy(() => import('./components/SekretarisView'));
+const BendaharaView = React.lazy(() => import('./components/BendaharaView'));
+const PendidikanView = React.lazy(() => import('./components/PendidikanView'));
+const HumasyView = React.lazy(() => import('./components/HumasyView'));
+const KeamananView = React.lazy(() => import('./components/KeamananView'));
+const PengaturanView = React.lazy(() => import('./components/PengaturanView'));
+const LoginView = React.lazy(() => import('./components/LoginView'));
+const SantriDetailModal = React.lazy(() => import('./components/sekretaris/SantriDetailModal'));
+const PendingRegistrationsModal = React.lazy(() => import('./components/PendingRegistrationsModal'));
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { formatBigDigit, mergeIdField } from './lib/utils';
 import { logAdminActivity } from './lib/activityLogger';
@@ -901,13 +901,28 @@ export default function App() {
 
     return (
       <ErrorBoundary key={activeModule} moduleName={moduleLabel}>
-        {viewContent}
+        <React.Suspense fallback={
+          <div className="w-full min-h-[360px] flex flex-col items-center justify-center gap-3 text-slate-400">
+            <div className="w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+            <p className="text-xs font-semibold text-slate-500">Memuat modul {moduleLabel}...</p>
+          </div>
+        }>
+          {viewContent}
+        </React.Suspense>
       </ErrorBoundary>
     );
   };
 
   if (!isLoggedIn) {
-    return <LoginView onLoginSuccess={() => setIsLoggedIn(true)} />;
+    return (
+      <React.Suspense fallback={
+        <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">
+          <div className="w-8 h-8 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+      }>
+        <LoginView onLoginSuccess={() => setIsLoggedIn(true)} />
+      </React.Suspense>
+    );
   }
 
   return (
@@ -942,20 +957,26 @@ export default function App() {
         />
 
         {/* Modal Pending User Registrations for Superadmin */}
-        <PendingRegistrationsModal
-          isOpen={showPendingModal}
-          onClose={() => setShowPendingModal(false)}
-          pendingList={pendingRegistrations}
-          onApprove={handleApprovePendingUser}
-          onReject={handleRejectPendingUser}
-        />
+        {showPendingModal && (
+          <React.Suspense fallback={null}>
+            <PendingRegistrationsModal
+              isOpen={showPendingModal}
+              onClose={() => setShowPendingModal(false)}
+              pendingList={pendingRegistrations}
+              onApprove={handleApprovePendingUser}
+              onReject={handleRejectPendingUser}
+            />
+          </React.Suspense>
+        )}
 
         {/* Modal Santri Detail from Global Header Search */}
         {headerSelectedSantri && (
-          <SantriDetailModal
-            selectedSantri={headerSelectedSantri}
-            onClose={() => setHeaderSelectedSantri(null)}
-          />
+          <React.Suspense fallback={null}>
+            <SantriDetailModal
+              selectedSantri={headerSelectedSantri}
+              onClose={() => setHeaderSelectedSantri(null)}
+            />
+          </React.Suspense>
         )}
 
         {/* Admin Obrolan Chat Drawer */}

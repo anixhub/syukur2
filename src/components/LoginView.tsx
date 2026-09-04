@@ -839,12 +839,17 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
         <div className="hidden md:block relative bg-slate-900 overflow-hidden">
           {/* Overlay gradient to soften the contrast */}
           <div className="absolute inset-0 bg-gradient-to-r from-white/10 to-transparent z-10" />
-          <img
-            src="login_bg.jpeg"
-            alt="Lansekap Pondok Pesantren"
-            referrerPolicy="no-referrer"
-            className="absolute inset-0 w-full h-full object-cover select-none scale-105 hover:scale-100 transition-transform duration-[4000ms]"
-          />
+          <picture className="absolute inset-0 w-full h-full">
+            <source srcSet="login_bg.webp" type="image/webp" />
+            <img
+              src="login_bg.jpeg"
+              alt="Lansekap Pondok Pesantren"
+              loading="lazy"
+              decoding="async"
+              referrerPolicy="no-referrer"
+              className="w-full h-full object-cover select-none scale-105 hover:scale-100 transition-transform duration-[4000ms]"
+            />
+          </picture>
           {/* Minimal Caption */}
           <div className="absolute bottom-6 right-6 left-6 text-right z-20 drop-shadow-md">
             <p className="text-[10px] font-bold text-white/70 uppercase tracking-widest">

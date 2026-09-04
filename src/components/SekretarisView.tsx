@@ -154,8 +154,10 @@ export default function SekretarisView({
   useEffect(() => {
     const loadEducationData = async () => {
       try {
-        const lems = await fetchTableData<Lembaga>('lembaga', 'smartsantri_lembagas', []);
-        const kls = await fetchTableData<Kelas>('kelas', 'smartsantri_kelas', []);
+        const [lems, kls] = await Promise.all([
+          fetchTableData<Lembaga>('lembaga', 'smartsantri_lembagas', []),
+          fetchTableData<Kelas>('kelas', 'smartsantri_kelas', [])
+        ]);
         if (lems && lems.length > 0) setLembagasList(lems);
         if (kls && kls.length > 0) setKelasList(kls);
       } catch {}
