@@ -1,4 +1,4 @@
-import { Santri, Lembaga, Kelas } from '../types';
+import { Santri, Lembaga, Kelas, isCalonClass, isGenderMatch, isDefaultClass } from '../types';
 
 export function formatBigDigit(val: any): string {
   if (val === undefined || val === null || val === '') return '';
@@ -272,6 +272,66 @@ export function getLembagaJenis(l: Lembaga): 'Formal' | 'Internal' {
 }
 
 /**
+ * Returns the standardized candidate class name for a given Lembaga and gender.
+ * Matches user requirements:
+ * - SPM Wustho (Putra)  -> "CALON WUSHTO PA"
+ * - SPM Wustho (Putri)  -> "CALON WUSTHO PI"
+ * - SPM Ulya (Putra)    -> "CALON ULYA PA"
+ * - SPM Ulya (Putri)    -> "CALON ULYA PI"
+ * - Formal Non Pondok   -> "CALON FORMAL NON PONDOK"
+ * - Internal / Other    -> "CALON <KODE/NAMA> PA/PI"
+ */
+export function getDefaultCalonClassName(lembaga?: Lembaga | null, gender?: string | null): string {
+  if (!lembaga) return 'CALON PESERTA DIDIK';
+  const rawNama = (lembaga.nama || '').trim().toLowerCase();
+  const rawKode = (lembaga.kode || '').trim().toLowerCase();
+  const lemGender = (gender || lembaga.gender || '').trim().toLowerCase();
+  const isPutri = lemGender === 'putri' || lemGender === 'perempuan' || lemGender === 'p' || rawKode.includes('pi') || rawNama.includes('putri');
+  const suffix = isPutri ? 'PI' : 'PA';
+
+  // 1. Formal Non Pondok (user specified: CALON FORMAL NON PONDOK)
+  if (
+    rawNama.includes('formal non pondok') ||
+    rawNama.includes('non pondok') ||
+    rawKode.includes('fnp') ||
+    rawKode === 'fnpa' ||
+    rawKode === 'fnpi'
+  ) {
+    return 'CALON FORMAL NON PONDOK';
+  }
+
+  // 2. Wustho
+  if (
+    rawNama.includes('wustho') ||
+    rawNama.includes('wushto') ||
+    rawNama.includes('wusto') ||
+    rawKode.includes('spmw') ||
+    rawKode.includes('spwu') ||
+    rawKode.includes('wst')
+  ) {
+    return isPutri ? 'CALON WUSTHO PI' : 'CALON WUSHTO PA';
+  }
+
+  // 3. Ulya
+  if (
+    rawNama.includes('ulya') ||
+    rawNama.includes('ulia') ||
+    rawKode.includes('spmu') ||
+    rawKode.includes('ulpi') ||
+    rawKode.includes('uly')
+  ) {
+    return isPutri ? 'CALON ULYA PI' : 'CALON ULYA PA';
+  }
+
+  // 4. Internal institutions or generic
+  const shortName = (lembaga.kode ? lembaga.kode.toUpperCase() : lembaga.nama.toUpperCase().slice(0, 15)).trim();
+  if (lemGender) {
+    return `CALON ${shortName} ${suffix}`.trim();
+  }
+  return `CALON ${shortName}`.trim();
+}
+
+/**
  * Rigorous helper to match an institution against a text string (e.g. from pendidikanFormal or pendidikanInternal prefix).
  * Guarantees strict isolation across tiers (Wustho vs Ulya vs Ula) so candidates of one tier NEVER leak into another.
  */
@@ -295,9 +355,35 @@ export function isMatchLembagaStrict(l: Lembaga, text?: string | null): boolean 
   const targetKode = (l.kode || '').trim().toLowerCase();
   const targetKodeNorm = normalizeSpelling(targetKode.replace(/[-_]/g, ' ').replace(/\s+/g, ' '));
 
+  // Check gender markers in text (PA vs PI)
+  const isMale = (g: string) => g === 'putra' || g === 'laki-laki' || g === 'l';
+  const isFemale = (g: string) => g === 'putri' || g === 'perempuan' || g === 'p';
+  const isTextPa = /\b(pa|putra)\b/i.test(raw);
+  const isTextPi = /\b(pi|putri)\b/i.test(raw);
+  if (l.gender) {
+    const lG = l.gender.trim().toLowerCase();
+    if (isTextPa && isFemale(lG)) return false;
+    if (isTextPi && isMale(lG)) return false;
+  }
+
   // 1. Direct exact matches
   if (raw === targetId || n === targetNama) return true;
   if (targetKode && (raw === targetKode || n === targetKodeNorm)) return true;
+
+  // Formal non pondok matching
+  const isTextFnp = raw.includes('formal non pondok') || raw.includes('non pondok') || /\b(fnpa|fnpi|fnp)\b/i.test(raw);
+  const isTargetFnp = targetNama.includes('formal non pondok') || targetNama.includes('non pondok') || /\b(fnpa|fnpi|fnp)\b/i.test(targetKode);
+  if (isTextFnp && isTargetFnp) return true;
+  if (isTextFnp && !isTargetFnp) return false;
+  if (!isTextFnp && isTargetFnp) return false;
+
+  // Check candidate class matches
+  if (isCalonClass(raw)) {
+    const defaultCalon = getDefaultCalonClassName(l).toLowerCase();
+    const defaultCalonAlt = defaultCalon.replace('wustho', 'wushto');
+    const defaultCalonAlt2 = defaultCalon.replace('wushto', 'wustho');
+    if (raw === defaultCalon || raw === defaultCalonAlt || raw === defaultCalonAlt2) return true;
+  }
 
   // 2. Strict Academic Tier Disambiguation (Mutually exclusive levels)
   const EXCLUSIVE_TIER_GROUPS = [
@@ -437,6 +523,7 @@ export function getSantriFormalEducationInfo(
 
       if (lemName) {
         const matchLem = formalLembagas.find(fl => {
+          if (!isGenderMatch(fl.gender, s.gender)) return false;
           const flNama = fl.nama.toLowerCase();
           const flKode = fl.kode ? fl.kode.toLowerCase() : '';
           const lNameLower = lemName.toLowerCase();
@@ -463,14 +550,13 @@ export function getSantriFormalEducationInfo(
             currentDisplay = matchCls.nama;
           } else if (
             clsName &&
-            clsName.toLowerCase() !== 'calon peserta didik' &&
-            clsName.toLowerCase() !== 'calon pelajar' &&
+            !isCalonClass(clsName) &&
             clsName.toLowerCase() !== 'tanpa kelas' &&
             clsName !== '-'
           ) {
             currentDisplay = clsName;
           } else {
-            currentDisplay = 'Calon Peserta Didik';
+            currentDisplay = getDefaultCalonClassName(matchLem, s.gender);
           }
         }
       }
@@ -480,6 +566,7 @@ export function getSantriFormalEducationInfo(
   // 2. Fallback: Check if any class in s.kelas matches a formal class
   if (!currentFormalLembaga && sClasses.length > 0) {
     for (const fl of formalLembagas) {
+      if (!isGenderMatch(fl.gender, s.gender)) continue;
       const classesOfFl = kls.filter(k => String(k.lembagaId || (k as any).lembaga_id) === String(fl.id));
       const matchedClass = classesOfFl.find(k => k.nama && sClasses.some(sc => sc.toLowerCase() === k.nama.trim().toLowerCase()));
       if (matchedClass) {
@@ -494,9 +581,10 @@ export function getSantriFormalEducationInfo(
   // 3. Secondary fallback: Check if s.kelas contains formal institution name/code (candidate status)
   if (!currentFormalLembaga && sClasses.length > 0) {
     for (const fl of formalLembagas) {
+      if (!isGenderMatch(fl.gender, s.gender)) continue;
       if (sClasses.some(sc => sc.toLowerCase().includes(fl.nama.toLowerCase()) || (fl.kode && sc.toLowerCase().includes(fl.kode.toLowerCase())) || isMatchLembagaStrict(fl, sc))) {
         currentFormalLembaga = fl;
-        currentDisplay = 'Calon Peserta Didik';
+        currentDisplay = getDefaultCalonClassName(fl, s.gender);
         break;
       }
     }
@@ -505,16 +593,16 @@ export function getSantriFormalEducationInfo(
   // 4. Tertiary fallback: indukWustho / indukUlya matching formal tiers
   if (!currentFormalLembaga) {
     if (s.indukWustho && s.indukWustho.trim() !== '' && s.indukWustho !== '-') {
-      const wusthoLem = formalLembagas.find(l => (l.nama || '').toLowerCase().includes('wustho') || (l.kode || '').toLowerCase().includes('wustho'));
+      const wusthoLem = formalLembagas.find(l => isGenderMatch(l.gender, s.gender) && ((l.nama || '').toLowerCase().includes('wustho') || (l.kode || '').toLowerCase().includes('wustho')));
       if (wusthoLem) {
         currentFormalLembaga = wusthoLem;
-        currentDisplay = 'Calon Peserta Didik';
+        currentDisplay = getDefaultCalonClassName(wusthoLem, s.gender);
       }
     } else if (s.indukUlya && s.indukUlya.trim() !== '' && s.indukUlya !== '-') {
-      const ulyaLem = formalLembagas.find(l => (l.nama || '').toLowerCase().includes('ulya') || (l.kode || '').toLowerCase().includes('ulya'));
+      const ulyaLem = formalLembagas.find(l => isGenderMatch(l.gender, s.gender) && ((l.nama || '').toLowerCase().includes('ulya') || (l.kode || '').toLowerCase().includes('ulya')));
       if (ulyaLem) {
         currentFormalLembaga = ulyaLem;
-        currentDisplay = 'Calon Peserta Didik';
+        currentDisplay = getDefaultCalonClassName(ulyaLem, s.gender);
       }
     }
   }
@@ -575,7 +663,7 @@ export function demoteSantriToCalonPesertaDidik(
   // Filter out formal classes & old default labels from currentClasses
   const nonFormalClasses = currentClasses.filter(c => {
     const lower = c.toLowerCase();
-    if (lower === 'tanpa kelas' || lower === 'calon peserta didik' || lower === 'calon pelajar') {
+    if (lower === 'tanpa kelas' || isCalonClass(lower)) {
       return false;
     }
     if (formalClassNamesSet.has(lower)) {
@@ -584,41 +672,55 @@ export function demoteSantriToCalonPesertaDidik(
     return true;
   });
 
-  // Combine 'Calon Peserta Didik' + non-formal classes
-  const newClasses = Array.from(new Set(['Calon Peserta Didik', ...nonFormalClasses]));
-  const finalKelasString = newClasses.join(', ');
-
-  // Update pendidikanFormal
-  let newFormal = santri.pendidikanFormal;
+  // Determine matched formal lembaga
+  let matchedLem: Lembaga | undefined;
   if (santri.pendidikanFormal && santri.pendidikanFormal.trim() !== '') {
     const parts = santri.pendidikanFormal.split(' - ');
     const lemName = parts[0].trim();
-    if (lemName && lemName.toLowerCase() !== 'calon peserta didik' && lemName.toLowerCase() !== 'calon pelajar') {
-      newFormal = `${lemName} - Calon Peserta Didik`;
-    } else {
-      newFormal = 'Calon Peserta Didik';
-    }
-  } else if (formalLembagas.length > 0) {
-    let matchedLem: Lembaga | undefined;
+    matchedLem = formalLembagas.find(l => isGenderMatch(l.gender, santri.gender) && (
+      l.nama.toLowerCase() === lemName.toLowerCase() ||
+      isMatchLembagaStrict(l, lemName)
+    ));
+  }
+  if (!matchedLem && formalLembagas.length > 0) {
     if (kelasList && currentClasses.length > 0) {
       for (const cName of currentClasses) {
         const foundCls = kelasList.find(k => k.nama.trim().toLowerCase() === cName.toLowerCase());
         if (foundCls) {
           const lemId = String(foundCls.lembagaId || (foundCls as any).lembaga_id || '');
-          matchedLem = formalLembagas.find(l => String(l.id) === lemId);
+          matchedLem = formalLembagas.find(l => String(l.id) === lemId && isGenderMatch(l.gender, santri.gender));
           if (matchedLem) break;
         }
       }
     }
     if (!matchedLem && santri.indukWustho) {
-      matchedLem = formalLembagas.find(l => (l.nama || '').toLowerCase().includes('wustho'));
+      matchedLem = formalLembagas.find(l => isGenderMatch(l.gender, santri.gender) && (l.nama || '').toLowerCase().includes('wustho'));
     }
     if (!matchedLem && santri.indukUlya) {
-      matchedLem = formalLembagas.find(l => (l.nama || '').toLowerCase().includes('ulya'));
+      matchedLem = formalLembagas.find(l => isGenderMatch(l.gender, santri.gender) && (l.nama || '').toLowerCase().includes('ulya'));
     }
-    if (matchedLem) {
-      newFormal = `${matchedLem.nama} - Calon Peserta Didik`;
+  }
+
+  const targetCalonName = getDefaultCalonClassName(matchedLem, santri.gender);
+
+  // Combine target candidate class + non-formal classes
+  const newClasses = Array.from(new Set([targetCalonName, ...nonFormalClasses]));
+  const finalKelasString = newClasses.join(', ');
+
+  // Update pendidikanFormal
+  let newFormal = santri.pendidikanFormal;
+  if (matchedLem) {
+    newFormal = `${matchedLem.nama} - ${targetCalonName}`;
+  } else if (santri.pendidikanFormal && santri.pendidikanFormal.trim() !== '') {
+    const parts = santri.pendidikanFormal.split(' - ');
+    const lemName = parts[0].trim();
+    if (lemName && !isCalonClass(lemName)) {
+      newFormal = `${lemName} - ${targetCalonName}`;
+    } else {
+      newFormal = targetCalonName;
     }
+  } else {
+    newFormal = targetCalonName;
   }
 
   return {

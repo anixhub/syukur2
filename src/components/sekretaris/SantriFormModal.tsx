@@ -5,7 +5,7 @@ import {
   X, ChevronLeft, ChevronRight, Upload, Trash2, UserPlus, 
   FileText, User, GraduationCap, CheckCircle2, Eye, AlertTriangle, AlertCircle, Sparkles, RotateCcw, Lock
 } from 'lucide-react';
-import { Santri, Lembaga, Kelas, isDefaultClass } from '../../types';
+import { Santri, Lembaga, Kelas, isDefaultClass, isCalonClass } from '../../types';
 import { 
   PROVINSI_OPTIONS, KABUPATEN_MAP, KECAMATAN_MAP, DESA_MAP, 
   PUTRA_AVATAR, PUTRI_AVATAR 
@@ -13,7 +13,7 @@ import {
 import { BirthDatePicker } from './BirthDatePicker';
 import { SearchableSelect } from './SearchableSelect';
 import { uploadFileToStorage, fetchTableData } from '../../lib/api';
-import { formatBigDigit, processUploadedFile, parseCatatanInvalid, formatCatatanWithInvalid, parseCatatanInvalidParts, formatCatatanParts, isMatchLembagaStrict } from '../../lib/utils';
+import { formatBigDigit, processUploadedFile, parseCatatanInvalid, formatCatatanWithInvalid, parseCatatanInvalidParts, formatCatatanParts, isMatchLembagaStrict, getDefaultCalonClassName } from '../../lib/utils';
 
 function escapeHtml(str: string): string {
   if (!str) return '';
@@ -577,7 +577,7 @@ export default function SantriFormModal({
         );
         if (matchLem) {
           let matchClassId = 'calon';
-          if (clsName && clsName.toLowerCase() !== 'calon peserta didik' && clsName.toLowerCase() !== 'calon pelajar') {
+          if (clsName && !isCalonClass(clsName)) {
             const matchCls = kelas.find(k => 
               getLemId(k) === String(matchLem.id) &&
               k.nama.trim().toLowerCase() === clsName.toLowerCase()
@@ -594,7 +594,7 @@ export default function SantriFormModal({
       for (const cName of santriClasses) {
         const lowerC = cName.toLowerCase();
         // Ignore generic classes so they do not falsely map to the first institution in the table
-        if (lowerC === 'calon peserta didik' || lowerC === 'calon pelajar' || lowerC === 'tanpa kelas') {
+        if (isCalonClass(lowerC) || lowerC === 'tanpa kelas') {
           continue;
         }
         const matchCls = kelas.find(k => k.nama.trim().toLowerCase() === lowerC);
@@ -1376,7 +1376,7 @@ export default function SantriFormModal({
     if (form.pendidikanFormalLembagaId) {
       const targetLembaga = lembagasList.find(l => String(l.id) === String(form.pendidikanFormalLembagaId));
       if (targetLembaga) {
-        let targetClassName = 'Calon Peserta Didik';
+        let targetClassName = getDefaultCalonClassName(targetLembaga, form.gender);
         if (form.pendidikanFormalClassId && form.pendidikanFormalClassId !== 'calon') {
           const targetClass = kelasList.find(k => 
             String(k.id) === String(form.pendidikanFormalClassId) || 
@@ -1412,7 +1412,7 @@ export default function SantriFormModal({
     for (const internalId of internalLembagaIds) {
       const hasClassForThisInternal = finalClasses.some(clsName => {
         const lower = clsName.toLowerCase();
-        if (lower === 'calon peserta didik' || lower === 'calon pelajar') return true;
+        if (isCalonClass(lower)) return true;
         const cls = kelasList.find(k => k.nama.toLowerCase() === lower);
         if (cls) {
           return getLemId(cls) === internalId;
@@ -1421,24 +1421,25 @@ export default function SantriFormModal({
       });
 
       if (!hasClassForThisInternal) {
-        const defaultClass = kelasList.find(k => getLemId(k) === internalId && isDefaultClass(k));
+        const lemObj = lembagasList.find(l => String(l.id) === internalId);
+        const defaultClass = kelasList.find(k => getLemId(k) === internalId && (isDefaultClass(k) || isCalonClass(k.nama)));
         if (defaultClass) {
           finalClasses.push(defaultClass.nama);
         } else {
-          finalClasses.push('Calon Peserta Didik');
+          finalClasses.push(getDefaultCalonClassName(lemObj, form.gender));
         }
       }
     }
 
-    // If santri has a specific class (e.g. "7A"), strip out any leftover "Calon Peserta Didik"
+    // If santri has a specific class (e.g. "7A"), strip out any leftover candidate classes
     const hasSpecificClass = finalClasses.some(c => {
       const lower = c.trim().toLowerCase();
-      return lower !== 'calon peserta didik' && lower !== 'calon pelajar' && lower !== 'tanpa kelas';
+      return !isCalonClass(lower) && lower !== 'tanpa kelas';
     });
     if (hasSpecificClass) {
       finalClasses = finalClasses.filter(c => {
         const lower = c.trim().toLowerCase();
-        return lower !== 'calon peserta didik' && lower !== 'calon pelajar';
+        return !isCalonClass(lower);
       });
     }
 
@@ -2428,12 +2429,15 @@ export default function SantriFormModal({
                               }}
                               className="w-full rounded-xl border border-slate-200 bg-white p-3.5 text-sm focus:border-emerald-500 outline-none cursor-pointer"
                             >
-                              <option value="calon">Calon Peserta Didik</option>
+                              {(() => {
+                                const selectedFormalLem = lembagasList.find(l => String(l.id) === String(form.pendidikanFormalLembagaId));
+                                const calonLabel = getDefaultCalonClassName(selectedFormalLem, form.gender);
+                                return <option value="calon">{calonLabel}</option>;
+                              })()}
                               {kelasList
                                 .filter(k => 
                                   getLemId(k) === String(form.pendidikanFormalLembagaId) &&
-                                  k.nama.trim().toLowerCase() !== 'calon peserta didik' &&
-                                  k.nama.trim().toLowerCase() !== 'calon pelajar'
+                                  !isCalonClass(k.nama.trim().toLowerCase())
                                 )
                                 .map(k => (
                                   <option 

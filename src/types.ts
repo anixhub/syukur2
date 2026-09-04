@@ -154,13 +154,35 @@ export interface Kelas {
   isDefault?: boolean;
 }
 
+export const isCalonClass = (className?: string | null): boolean => {
+  if (!className) return false;
+  const lower = className.trim().toLowerCase();
+  return (
+    lower === 'calon pelajar' ||
+    lower === 'calon peserta didik' ||
+    lower.startsWith('calon ') ||
+    lower.startsWith('calon-') ||
+    lower.includes('calon wustho') ||
+    lower.includes('calon wushto') ||
+    lower.includes('calon ulya') ||
+    lower.includes('calon formal')
+  );
+};
+
 export const isDefaultClass = (c: { id?: string; nama?: string; isDefault?: boolean; pillType?: string } | null | undefined): boolean => {
   if (!c) return false;
   if (c.pillType === 'induk' || c.pillType === 'calon' || c.pillType === 'all' || c.pillType === 'unassigned') return true;
   if (c.id && (c.id === 'default-induk' || c.id === 'default-calon' || c.id.endsWith('-default') || c.id.includes('-default') || c.id === 'all' || c.id === 'unassigned')) return true;
   if (c.nama) {
     const lower = c.nama.trim().toLowerCase();
-    if (lower === 'data induk' || lower === 'calon pelajar' || lower === 'calon peserta didik' || lower === 'semua santri' || lower === 'tanpa kelas') return true;
+    if (
+      lower === 'data induk' ||
+      lower === 'calon pelajar' ||
+      lower === 'calon peserta didik' ||
+      lower === 'semua santri' ||
+      lower === 'tanpa kelas' ||
+      isCalonClass(lower)
+    ) return true;
   }
   if (c.isDefault !== undefined) return Boolean(c.isDefault);
   return false;

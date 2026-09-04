@@ -5,7 +5,7 @@ import {
   Sparkles, ChevronRight, ClipboardCheck, Award, Activity, Loader2
 } from 'lucide-react';
 import { 
-  Lembaga, Kelas, KategoriRombel, KelompokRombel, RombelAssignment, Santri, KelasPendidikan, isDefaultClass 
+  Lembaga, Kelas, KategoriRombel, KelompokRombel, RombelAssignment, Santri, KelasPendidikan, isDefaultClass, isCalonClass 
 } from '../types';
 import { INITIAL_ASSIGNMENTS } from '../data';
 import { DEFAULT_ROLES } from '../lib/permissions';
@@ -15,7 +15,7 @@ import LembagaKelasSub from './pendidikan/LembagaKelasSub';
 import RombelSub from './pendidikan/RombelSub';
 import DataAkademikSub from './pendidikan/DataAkademikSub';
 import { fetchTableData, insertTableRow, updateTableRow, deleteTableRow, safeLocalStorageSetItem, subscribeRealtimeChanges, snakeToCamel } from '../lib/api';
-import { cleanWaliKelas, isMatchLembagaStrict } from '../lib/utils';
+import { cleanWaliKelas, isMatchLembagaStrict, getDefaultCalonClassName } from '../lib/utils';
 
 // Initial Mock Data matching SQL seeds
 const INITIAL_LEMBAGA: Lembaga[] = [];
@@ -801,11 +801,12 @@ export default function PendidikanView({
     
     for (const lem of lembagasList) {
       const lemClasses = kelasList.filter(k => k.lembagaId === lem.id);
-      const defaultClass = lemClasses.find(k => k.id.includes('-default') || k.nama.toLowerCase() === 'calon pelajar' || k.nama.toLowerCase() === 'calon peserta didik');
+      const expectedCalonName = getDefaultCalonClassName(lem);
+      const defaultClass = lemClasses.find(k => k.id.includes('-default') || isDefaultClass(k) || isCalonClass(k.nama));
       
       if (defaultClass) {
-        if (defaultClass.nama !== 'Calon Peserta Didik') {
-          defaultClass.nama = 'Calon Peserta Didik';
+        if (defaultClass.nama !== expectedCalonName) {
+          defaultClass.nama = expectedCalonName;
           updateTableRow('kelas', 'smartsantri_kelas', defaultClass.id, serializeKelas(defaultClass)).catch(() => {});
         }
         keepClasses.push(defaultClass);
@@ -818,9 +819,9 @@ export default function PendidikanView({
         const defaultClassPayload: Kelas = {
           id: 'K-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7) + '-default',
           lembagaId: lem.id,
-          nama: 'Calon Peserta Didik',
+          nama: expectedCalonName,
           waliKelas: '-',
-          tingkatan: 'Lainnya',
+          tingkatan: 'Calon Pelajar',
           isDefault: true,
           batasUsiaHari: 1,
           batasUsiaBulan: 7,
@@ -923,7 +924,7 @@ export default function PendidikanView({
       // SINGLE FORMAL INSTITUTION & CLASS RULE: Remove ALL formal classes across all formal institutions
       currentClasses = currentClasses.filter(cls => {
         const lowerCls = cls.trim().toLowerCase();
-        if (lowerCls === 'calon pelajar' || lowerCls === 'calon peserta didik' || lowerCls === 'tanpa kelas' || isDefaultClass({ nama: cls })) return false;
+        if (isCalonClass(lowerCls) || lowerCls === 'tanpa kelas' || isDefaultClass({ nama: cls })) return false;
         if (allFormalClassNamesLower.includes(lowerCls)) return false;
         if (formalLembagas.some(fl => isMatchLembagaStrict(fl, lowerCls) || lowerCls.includes((fl.nama || '').toLowerCase()) || (fl.kode && lowerCls.includes(fl.kode.toLowerCase())))) return false;
         return true;
@@ -931,8 +932,7 @@ export default function PendidikanView({
 
       if (
         classText !== 'Tanpa Kelas' && 
-        classText !== 'Calon Peserta Didik' && 
-        classText !== 'Calon Pelajar' && 
+        !isCalonClass(classText) && 
         classText !== '-' && 
         classText
       ) {
@@ -942,7 +942,7 @@ export default function PendidikanView({
       if (lembagaId) {
         currentClasses = currentClasses.filter(cls => {
           const lowerCls = cls.trim().toLowerCase();
-          if (lowerCls === 'calon peserta didik' || lowerCls === 'calon pelajar') return false;
+          if (isCalonClass(lowerCls)) return false;
           const c = kelasList.find(x => x.nama.trim().toLowerCase() === lowerCls && String(x.lembagaId || (x as any).lembaga_id) === String(lembagaId));
           return !c || String(c.lembagaId || (c as any).lembaga_id) !== String(lembagaId);
         });
@@ -953,7 +953,7 @@ export default function PendidikanView({
       if (targetLembagaId) {
         currentClasses = currentClasses.filter(cls => {
           const lowerCls = cls.trim().toLowerCase();
-          if (lowerCls === 'calon pelajar' || lowerCls === 'calon peserta didik' || isDefaultClass({ nama: cls })) return false;
+          if (isCalonClass(lowerCls) || isDefaultClass({ nama: cls })) return false;
           const c = kelasList.find(x => 
             x.nama.trim().toLowerCase() === lowerCls && 
             String(x.lembagaId || (x as any).lembaga_id) === String(targetLembagaId)
@@ -963,7 +963,7 @@ export default function PendidikanView({
         });
       }
       
-      if (classText && classText !== '-' && !currentClasses.some(cls => cls.trim().toLowerCase() === classText.trim().toLowerCase())) {
+      if (classText && classText !== '-' && !isCalonClass(classText) && !currentClasses.some(cls => cls.trim().toLowerCase() === classText.trim().toLowerCase())) {
         currentClasses.push(classText.trim());
       }
     }
@@ -989,9 +989,10 @@ export default function PendidikanView({
         return !isMatchLembagaStrict(targetLembagaObj, prefix) && prefix !== String(targetLembagaObj.id);
       });
       if (classText !== 'Tanpa Kelas' && classText !== '-' && classText) {
-        const entryStr = (classText !== 'Calon Peserta Didik' && classText !== 'Calon Pelajar')
+        const targetCalonName = getDefaultCalonClassName(targetLembagaObj, target.gender);
+        const entryStr = !isCalonClass(classText)
           ? `${targetLembagaObj.nama} - ${classText}`
-          : `${targetLembagaObj.nama} - Calon Peserta Didik`;
+          : `${targetLembagaObj.nama} - ${targetCalonName}`;
         internalArr.push(entryStr);
       }
     }
@@ -1004,9 +1005,10 @@ export default function PendidikanView({
         newFormal = '';
       }
     } else if (isTargetFormal && targetLembagaObj) {
-      newFormal = (classText !== 'Calon Peserta Didik' && classText !== 'Calon Pelajar') 
+      const targetCalonName = getDefaultCalonClassName(targetLembagaObj, target.gender);
+      newFormal = !isCalonClass(classText) 
         ? `${targetLembagaObj.nama} - ${classText}` 
-        : `${targetLembagaObj.nama} - Calon Peserta Didik`;
+        : `${targetLembagaObj.nama} - ${targetCalonName}`;
     }
     
     onUpdateSantri({
@@ -1048,7 +1050,7 @@ export default function PendidikanView({
             // SINGLE FORMAL INSTITUTION RULE: Remove ALL formal classes across all formal institutions
             currentClasses = currentClasses.filter(cls => {
               const lowerCls = cls.trim().toLowerCase();
-              if (lowerCls === 'calon pelajar' || lowerCls === 'calon peserta didik' || lowerCls === 'tanpa kelas' || isDefaultClass({ nama: cls })) return false;
+              if (isCalonClass(lowerCls) || lowerCls === 'tanpa kelas' || isDefaultClass({ nama: cls })) return false;
               if (allFormalClassNamesLower.includes(lowerCls)) return false;
               if (formalLembagas.some(fl => isMatchLembagaStrict(fl, lowerCls) || lowerCls.includes((fl.nama || '').toLowerCase()) || (fl.kode && lowerCls.includes(fl.kode.toLowerCase())))) return false;
               return true;
@@ -1056,7 +1058,7 @@ export default function PendidikanView({
           } else {
             currentClasses = currentClasses.filter(cls => {
               const lowerCls = cls.trim().toLowerCase();
-              if (lowerCls === 'calon pelajar' || lowerCls === 'calon peserta didik' || isDefaultClass({ nama: cls })) return false;
+              if (isCalonClass(lowerCls) || isDefaultClass({ nama: cls })) return false;
               const c = kelasList.find(x => x.nama.trim().toLowerCase() === lowerCls && String(x.lembagaId || (x as any).lembaga_id) === String(targetLembaga.id));
               if (c && String(c.lembagaId || (c as any).lembaga_id) === String(targetLembaga.id)) return false;
               return true;
@@ -1066,8 +1068,7 @@ export default function PendidikanView({
         
         if (
           targetClassName !== 'Tanpa Kelas' && 
-          targetClassName !== 'Calon Peserta Didik' && 
-          targetClassName !== 'Calon Pelajar' && 
+          !isCalonClass(targetClassName) && 
           targetClassName !== '-' && 
           targetClassName &&
           !currentClasses.some(cls => cls.trim().toLowerCase() === targetClassName.trim().toLowerCase())
@@ -1096,9 +1097,10 @@ export default function PendidikanView({
           });
 
           if (targetClassName !== 'Tanpa Kelas' && targetClassName !== '-' && targetClassName) {
-            const entryStr = (targetClassName !== 'Calon Peserta Didik' && targetClassName !== 'Calon Pelajar')
+            const targetCalonName = getDefaultCalonClassName(targetLembaga, s.gender);
+            const entryStr = !isCalonClass(targetClassName)
               ? `${targetLembaga.nama} - ${targetClassName}`
-              : `${targetLembaga.nama} - Calon Peserta Didik`;
+              : `${targetLembaga.nama} - ${targetCalonName}`;
             internalArr.push(entryStr);
           }
         }
@@ -1113,9 +1115,10 @@ export default function PendidikanView({
             newBatchFormal = '';
           }
         } else if (isBatchFormal && targetLembaga) {
-          newBatchFormal = (targetClassName !== 'Calon Peserta Didik' && targetClassName !== 'Calon Pelajar') 
+          const targetCalonName = getDefaultCalonClassName(targetLembaga, s.gender);
+          newBatchFormal = !isCalonClass(targetClassName) 
             ? `${targetLembaga.nama} - ${targetClassName}` 
-            : `${targetLembaga.nama} - Calon Peserta Didik`;
+            : `${targetLembaga.nama} - ${targetCalonName}`;
         }
 
         return {

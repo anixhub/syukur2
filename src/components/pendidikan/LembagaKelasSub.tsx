@@ -10,8 +10,8 @@ import {
   ChevronDown, ChevronsUpDown, Printer, Sparkles, Home, Loader2, Upload, ArrowRight,
   FileSpreadsheet, ClipboardList, Filter, RotateCcw, AlertTriangle
 } from 'lucide-react';
-import { Lembaga, Kelas, Santri, KategoriRombel, KelompokRombel, RombelAssignment, isDefaultClass, isEmisTerdaftar, getClsLembagaId, isGenderMatch } from '../../types';
-import { compressImage, parseCatatanInvalid, formatCatatanWithInvalid, cleanWaliKelas, isMatchLembagaStrict, getLembagaJenis } from '../../lib/utils';
+import { Lembaga, Kelas, Santri, KategoriRombel, KelompokRombel, RombelAssignment, isDefaultClass, isCalonClass, isEmisTerdaftar, getClsLembagaId, isGenderMatch } from '../../types';
+import { compressImage, parseCatatanInvalid, formatCatatanWithInvalid, cleanWaliKelas, isMatchLembagaStrict, getLembagaJenis, getDefaultCalonClassName } from '../../lib/utils';
 import { uploadFileToStorage, getApiUrl } from '../../lib/api';
 import SantriDetailModal from '../sekretaris/SantriDetailModal';
 import { PUTRA_AVATAR, PUTRI_AVATAR, renderSantriAvatar, calculateRealtimeAge, getPesantrenProfile } from '../SekretarisHelper';
@@ -755,6 +755,7 @@ export default function LembagaKelasSub({
   const isStudentInLembaga = (s: Santri, l: Lembaga): boolean => {
     if (!s || !l) return false;
     if (s.statusKeanggotaan === 'Meninggal') return false;
+    if (!isGenderMatch(l.gender, s.gender)) return false;
     
     const isFormal = getLembagaJenis(l) === 'Formal';
     const norm = (str?: string | null) => (str || '').trim().toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ');
@@ -765,6 +766,15 @@ export default function LembagaKelasSub({
     // 1. Direct explicit calonLembagaId match
     if ((s as any).calonLembagaId && String((s as any).calonLembagaId) === String(l.id)) {
       return true;
+    }
+
+    // Check candidate class in s.kelas or s.pendidikanFormal
+    const targetCalonName = getDefaultCalonClassName(l, s.gender).toLowerCase();
+    if (s.kelas) {
+      const sClassesRaw = s.kelas.split(',').map(x => x.trim().toLowerCase());
+      if (sClassesRaw.includes(targetCalonName)) {
+        return true;
+      }
     }
 
     if (isFormal) {
@@ -914,7 +924,7 @@ export default function LembagaKelasSub({
             if (dashParts.length > 1) {
               specificClassForThisLembaga = dashParts.slice(1).join('-').trim();
             } else {
-              specificClassForThisLembaga = 'Calon Peserta Didik';
+              specificClassForThisLembaga = getDefaultCalonClassName(l, s.gender);
             }
             break;
           }
@@ -930,7 +940,7 @@ export default function LembagaKelasSub({
             if (dashParts.length > 1) {
               specificClassForThisLembaga = dashParts.slice(1).join('-').trim();
             } else {
-              specificClassForThisLembaga = 'Calon Peserta Didik';
+              specificClassForThisLembaga = getDefaultCalonClassName(l, s.gender);
             }
             break;
           }
@@ -1204,10 +1214,11 @@ export default function LembagaKelasSub({
     };
 
     // 2. "Calon peserta didik" default pill (representing all students not in custom classes)
+    const calonClassName = getDefaultCalonClassName(selectedLembaga, selectedGender);
     const calonPill: any = {
       id: 'default-calon',
-      nama: 'Calon peserta didik',
-      displayName: 'CALON PESERTA DIDIK',
+      nama: calonClassName,
+      displayName: calonClassName.toUpperCase(),
       pillType: 'calon',
       count: calonStudentsOfLembaga.length,
       waliKelas: '-',
@@ -1770,15 +1781,16 @@ export default function LembagaKelasSub({
 
   const handleRemoveStudentFromCalon = (student: Santri) => {
     if (!selectedLembaga) return;
+    const calonName = getDefaultCalonClassName(selectedLembaga, student.gender || selectedGender);
     setConfirmRemoveData({
       type: 'single',
       studentName: student.nama,
       studentId: student.id,
       label: 'calon peserta didik',
-      className: 'Calon Peserta Didik',
+      className: calonName,
       onConfirm: () => {
         onUpdateSantriClass(student.id, 'Tanpa Kelas', selectedLembaga.id);
-        showToast(`${student.nama} berhasil dikeluarkan dari daftar calon peserta didik.`);
+        showToast(`${student.nama} berhasil dikeluarkan dari daftar ${calonName}.`);
       }
     });
     setConfirmRemoveOpen(true);
@@ -1806,12 +1818,13 @@ export default function LembagaKelasSub({
     } else {
       let destClassObj = kelasList.find(c => c.id === destClassId);
       if (!destClassObj && (destClassId.startsWith('default-') || destClassId.startsWith('calon-'))) {
+        const targetLem = lembagasList.find(l => l.id === targetLemId) || selectedLembaga;
         destClassObj = {
           id: destClassId,
           lembagaId: String(targetLemId),
-          nama: 'Calon Peserta Didik',
+          nama: getDefaultCalonClassName(targetLem, transferStudent.gender || selectedGender),
           waliKelas: '-',
-          tingkatan: 'Lainnya',
+          tingkatan: 'Calon Pelajar',
           isDefault: true
         };
       }
@@ -2141,7 +2154,7 @@ export default function LembagaKelasSub({
   const paginatedStudents = filteredStudents.slice(startIndex, endIndex);
 
   const isIndukPage = !!(effectiveSelectedKelas && (effectiveSelectedKelas.pillType === 'induk' || effectiveSelectedKelas.id === 'default-induk' || effectiveSelectedKelas.pillType === 'all' || effectiveSelectedKelas.id === 'all' || (effectiveSelectedKelas.nama && effectiveSelectedKelas.nama.trim().toLowerCase() === 'data induk')));
-  const isCalonPelajarPage = !!(effectiveSelectedKelas && (effectiveSelectedKelas.pillType === 'calon' || effectiveSelectedKelas.id === 'default-calon' || (effectiveSelectedKelas.nama && (effectiveSelectedKelas.nama.trim().toLowerCase() === 'calon peserta didik' || effectiveSelectedKelas.nama.trim().toLowerCase() === 'calon pelajar'))));
+  const isCalonPelajarPage = !!(effectiveSelectedKelas && (effectiveSelectedKelas.pillType === 'calon' || effectiveSelectedKelas.id === 'default-calon' || isDefaultClass(effectiveSelectedKelas) || isCalonClass(effectiveSelectedKelas.nama)));
   const isLulusanPage = !!(effectiveSelectedKelas && (effectiveSelectedKelas.isLulusan || effectiveSelectedKelas.pillType === 'lulusan'));
   const isCurrentFormal = activeTab === 'Formal' || (selectedLembaga && getLembagaJenis(selectedLembaga) === 'Formal');
   const gridColsClass = 'grid-cols-[55px_240px_110px_110px_100px_100px_50px]';
@@ -2244,13 +2257,14 @@ export default function LembagaKelasSub({
       }
     } else {
       let destClassObj = kelasList.find(c => c.id === bulkDestClassId);
-      if (!destClassObj && bulkDestClassId.startsWith('default-')) {
+      if (!destClassObj && (bulkDestClassId.startsWith('default-') || bulkDestClassId.startsWith('calon-'))) {
+        const targetLem = lembagasList.find(l => l.id === targetLemId) || selectedLembaga;
         destClassObj = {
           id: bulkDestClassId,
           lembagaId: String(targetLemId),
-          nama: 'Calon Peserta Didik',
+          nama: getDefaultCalonClassName(targetLem, selectedGender),
           waliKelas: '-',
-          tingkatan: 'Lainnya',
+          tingkatan: 'Calon Pelajar',
           isDefault: true
         };
       }
@@ -3414,10 +3428,10 @@ export default function LembagaKelasSub({
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5 shrink-0">
                     <div>
                       <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider">
-                        {isIndukPill ? 'DATA INDUK SANTRI' : isCalonPill ? 'CALON PESERTA DIDIK' : (activeTab === 'Rombel' ? 'DETAIL ROMBEL' : 'DETAIL KELAS')}
+                        {isIndukPill ? 'DATA INDUK SANTRI' : isCalonPill ? (selectedKelas.displayName || selectedKelas.nama || 'CALON PESERTA DIDIK') : (activeTab === 'Rombel' ? 'DETAIL ROMBEL' : 'DETAIL KELAS')}
                       </span>
                       <h2 className="text-2xl lg:text-3xl font-black text-slate-800 tracking-tight leading-none uppercase mt-0.5">
-                        {isIndukPill ? `Data Induk (${selectedLembaga.nama})` : isCalonPill ? `Calon Peserta Didik (${selectedLembaga.nama})` : selectedKelas.nama}
+                        {isIndukPill ? `Data Induk (${selectedLembaga.nama})` : isCalonPill ? `${selectedKelas.nama} (${selectedLembaga.nama})` : selectedKelas.nama}
                       </h2>
                     </div>
 
@@ -3532,7 +3546,7 @@ export default function LembagaKelasSub({
                                <AlertCircle className="h-4.5 w-4.5 text-amber-600" />
                              </div>
                              <span className="text-sm font-extrabold text-amber-800">
-                               Calon Peserta Didik
+                               {selectedKelas.nama || 'Calon Peserta Didik'}
                              </span>
                            </div>
                          </div>
@@ -4563,8 +4577,8 @@ export default function LembagaKelasSub({
       {/* C. PINDAH KELAS / TRANSFER STUDENT MODAL */}
       <AnimatePresence>
         {transferStudent && (selectedKelas || selectedLembaga) && (() => {
-          const effectiveCurrentClass = selectedKelas || subClasses.find(c => isDefaultClass(c)) || { id: 'calon-' + selectedLembaga?.id, nama: 'Calon Peserta Didik' };
           const studentGender = transferStudent.gender || selectedGender;
+          const effectiveCurrentClass = selectedKelas || subClasses.find(c => isDefaultClass(c)) || { id: 'calon-' + selectedLembaga?.id, nama: getDefaultCalonClassName(selectedLembaga, studentGender) };
           const targetKind = activeTab === 'Rombel' ? 'Internal' : 'Formal';
           const eligibleLembagas = lembagasList.filter(l => 
             getLembagaJenis(l) === targetKind && isGenderMatch(l.gender, studentGender)
@@ -4582,6 +4596,24 @@ export default function LembagaKelasSub({
             }
             return true;
           });
+
+          if (currentLemObj) {
+            const targetCalonName = getDefaultCalonClassName(currentLemObj, studentGender);
+            const hasCalon = targetClasses.some(c => isDefaultClass(c) || c.nama.toLowerCase() === targetCalonName.toLowerCase());
+            if (!hasCalon && targetCalonName.toLowerCase() !== effectiveCurrentClass.nama.toLowerCase()) {
+              targetClasses = [
+                {
+                  id: 'default-calon-' + currentLemObj.id,
+                  lembagaId: currentLemObj.id,
+                  nama: targetCalonName,
+                  waliKelas: '-',
+                  tingkatan: 'Calon Pelajar',
+                  isDefault: true
+                } as Kelas,
+                ...targetClasses
+              ];
+            }
+          }
 
           return (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 animate-fade-in">
@@ -4699,6 +4731,24 @@ export default function LembagaKelasSub({
             }
             return true;
           });
+
+          if (currentBulkLemObj) {
+            const targetCalonName = getDefaultCalonClassName(currentBulkLemObj, selectedGender);
+            const hasCalon = targetBulkClasses.some(c => isDefaultClass(c) || c.nama.toLowerCase() === targetCalonName.toLowerCase());
+            if (!hasCalon && targetCalonName.toLowerCase() !== selectedKelas.nama.toLowerCase()) {
+              targetBulkClasses = [
+                {
+                  id: 'default-calon-' + currentBulkLemObj.id,
+                  lembagaId: currentBulkLemObj.id,
+                  nama: targetCalonName,
+                  waliKelas: '-',
+                  tingkatan: 'Calon Pelajar',
+                  isDefault: true
+                } as Kelas,
+                ...targetBulkClasses
+              ];
+            }
+          }
 
           return (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 animate-fade-in">

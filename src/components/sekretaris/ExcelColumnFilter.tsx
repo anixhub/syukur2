@@ -12,10 +12,10 @@ import {
   CheckSquare,
   Square
 } from 'lucide-react';
-import { Santri, Lembaga, Kelas } from '../../types';
+import { Santri, Lembaga, Kelas, isCalonClass } from '../../types';
 import { ALL_COLUMNS, ColumnConfig } from '../../constants/monitoringColumns';
 import { AgeFilterConfig, calculateAgeOnDate } from './AgeFilterModal';
-import { getLembagaJenis, getSantriFormalEducationInfo } from '../../lib/utils';
+import { getLembagaJenis, getSantriFormalEducationInfo, getDefaultCalonClassName } from '../../lib/utils';
 
 export function getColumnValueString(
   s: Santri, 
@@ -143,9 +143,8 @@ export function ExcelFilterPopover({
           if (k.nama && k.nama.trim()) {
             const lower = k.nama.trim().toLowerCase();
             if (
-              lower !== 'calon peserta didik' && 
-              lower !== 'calon pelajar' && 
-              lower !== 'tanpa kelas' &&
+              !isCalonClass(lower) && 
+              lower !== 'tanpa kelas' && 
               lower !== '-'
             ) {
               const clsName = k.nama.trim();
@@ -159,11 +158,12 @@ export function ExcelFilterPopover({
           }
         });
 
-      // 4. Ensure 'Kode Lembaga - Calon Peserta Didik' is present for each formal institution
+      // 4. Ensure 'Kode Lembaga - Calon Class' is present for each formal institution
       formalLembagas.forEach(fl => {
         const lemKode = (fl.kode && fl.kode.trim()) || fl.nama.trim();
         if (lemKode) {
-          const calonVal = `${lemKode} - Calon Peserta Didik`;
+          const calonName = getDefaultCalonClassName(fl);
+          const calonVal = `${lemKode} - ${calonName}`;
           if (!(calonVal in counts)) {
             counts[calonVal] = 0;
           }
@@ -175,12 +175,12 @@ export function ExcelFilterPopover({
         counts['TIDAK TERDAFTAR'] = 0;
       }
 
-      // Sort: Formal classes alphabetically (grouped by lembaga code then class), then 'Calon Peserta Didik', then 'TIDAK TERDAFTAR'
+      // Sort: Formal classes alphabetically (grouped by lembaga code then class), then Calon classes, then 'TIDAK TERDAFTAR'
       const sortedVals = Object.keys(counts).sort((a, b) => {
         if (a === 'TIDAK TERDAFTAR' || a === '(Kosong)') return 1;
         if (b === 'TIDAK TERDAFTAR' || b === '(Kosong)') return -1;
-        const aIsCalon = a.endsWith('Calon Peserta Didik');
-        const bIsCalon = b.endsWith('Calon Peserta Didik');
+        const aIsCalon = isCalonClass(a);
+        const bIsCalon = isCalonClass(b);
         if (aIsCalon && !bIsCalon) return 1;
         if (!aIsCalon && bIsCalon) return -1;
         return a.localeCompare(b, 'id', { numeric: true, sensitivity: 'base' });

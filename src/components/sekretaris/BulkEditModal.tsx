@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, GraduationCap } from 'lucide-react';
-import { Santri, Lembaga, Kelas, isDefaultClass } from '../../types';
+import { Santri, Lembaga, Kelas, isDefaultClass, isCalonClass } from '../../types';
 import { fetchTableData } from '../../lib/api';
+import { getDefaultCalonClassName } from '../../lib/utils';
 
 interface BulkEditModalProps {
   isOpen: boolean;
@@ -134,24 +135,25 @@ export default function BulkEditModal({
 
       const alreadyHasInternalClass = currentClasses.some(cls => {
         const lower = cls.trim().toLowerCase();
-        return internalClassNames.includes(lower) || lower === 'calon peserta didik' || lower === 'calon pelajar';
+        return internalClassNames.includes(lower) || isCalonClass(lower);
       });
 
       if (!alreadyHasInternalClass) {
-        const defaultCls = kelases.find(k => getLemId(k) === String(internalId) && isDefaultClass(k));
-        const newClsName = defaultCls ? defaultCls.nama : 'Calon Peserta Didik';
+        const lemObj = lembagas.find(l => String(l.id) === String(internalId));
+        const defaultCls = kelases.find(k => getLemId(k) === String(internalId) && (isDefaultClass(k) || isCalonClass(k.nama)));
+        const newClsName = defaultCls ? defaultCls.nama : getDefaultCalonClassName(lemObj, santri.gender);
         currentClasses.push(newClsName);
       }
     }
 
     const hasSpecificClass = currentClasses.some(c => {
       const lower = c.trim().toLowerCase();
-      return lower !== 'calon peserta didik' && lower !== 'calon pelajar' && lower !== 'tanpa kelas';
+      return !isCalonClass(lower) && lower !== 'tanpa kelas';
     });
     if (hasSpecificClass) {
       currentClasses = currentClasses.filter(c => {
         const lower = c.trim().toLowerCase();
-        return lower !== 'calon peserta didik' && lower !== 'calon pelajar';
+        return !isCalonClass(lower);
       });
     }
 

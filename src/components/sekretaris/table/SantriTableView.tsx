@@ -23,8 +23,8 @@ import {
   School,
   Filter
 } from 'lucide-react';
-import { Santri, Lembaga, Kelas, isGenderMatch } from '../../../types';
-import { PENDIDIKAN_OPTIONS, normalizePendidikan, formatDateDDMMYYYY, parseCatatanInvalid, formatCatatanWithInvalid, parseCatatanInvalidParts, formatCatatanParts, getSantriFormalEducationInfo, getLembagaJenis } from '../../../lib/utils';
+import { Santri, Lembaga, Kelas, isGenderMatch, isCalonClass } from '../../../types';
+import { PENDIDIKAN_OPTIONS, normalizePendidikan, formatDateDDMMYYYY, parseCatatanInvalid, formatCatatanWithInvalid, parseCatatanInvalidParts, formatCatatanParts, getSantriFormalEducationInfo, getLembagaJenis, getDefaultCalonClassName } from '../../../lib/utils';
 import { renderSantriAvatar, getFormalKelasDisplay } from '../../SekretarisHelper';
 import { MembershipBadge } from '../components/HelperComponents';
 import { AgeFilterConfig, calculateAgeOnDate } from '../AgeFilterModal';
@@ -454,8 +454,7 @@ export default function SantriTableView({
     currentClasses = currentClasses.filter(clsName => {
       const lowerCls = clsName.trim().toLowerCase();
       if (
-        lowerCls === 'calon pelajar' ||
-        lowerCls === 'calon peserta didik' ||
+        isCalonClass(lowerCls) ||
         lowerCls === 'tanpa kelas' ||
         lowerCls === 'tidak mengikuti' ||
         lowerCls === 'belum' ||
@@ -481,8 +480,9 @@ export default function SantriTableView({
         currentClasses.push(targetClass.nama.trim());
         formalStr = `${targetLembaga.nama} - ${targetClass.nama.trim()}`;
       } else {
-        currentClasses.push('Calon Peserta Didik');
-        formalStr = `${targetLembaga.nama} - Calon Peserta Didik`;
+        const calonName = getDefaultCalonClassName(targetLembaga, s.gender);
+        currentClasses.push(calonName);
+        formalStr = `${targetLembaga.nama} - ${calonName}`;
       }
     }
 
@@ -2750,12 +2750,11 @@ export default function SantriTableView({
                         <option value="">Pilih Lembaga Terlebih Dahulu</option>
                       ) : (
                         <>
-                          <option value="calon">Calon Peserta Didik</option>
+                          <option value="calon">{getDefaultCalonClassName(pendingState.lem, s.gender)}</option>
                           {kelasList
                             .filter(k => 
                               String(k.lembagaId || (k as any).lembaga_id) === String(pendingState.lem?.id) &&
-                              k.nama.trim().toLowerCase() !== 'calon peserta didik' &&
-                              k.nama.trim().toLowerCase() !== 'calon pelajar'
+                              !isCalonClass(k.nama.trim().toLowerCase())
                             )
                             .map((k) => (
                               <option
