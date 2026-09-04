@@ -490,15 +490,24 @@ export default function DataAkademikSub({
     const cleanClassName = (raw: string): string => {
       let str = raw.trim();
       if (str.includes(' - ')) {
-        const parts = str.split(' - ');
-        str = parts.slice(1).join(' - ').trim();
+        const parts = str.split(' - ').map(p => p.trim()).filter(Boolean);
+        if (parts.length >= 3 && /^(?:at[- ]?taroqqy|taroqqy)$/i.test(parts[1])) {
+          str = parts.slice(2).join(' - ').trim();
+        } else {
+          str = parts.slice(1).join(' - ').trim();
+        }
       } else if (str.includes('-')) {
-        const parts = str.split('-');
-        const candidate = parts.slice(1).join('-').trim();
-        if (candidate && !/^\d{6,}$/.test(candidate)) {
-          str = candidate;
+        const parts = str.split('-').map(p => p.trim()).filter(Boolean);
+        if (parts.length >= 3 && /^(?:at[- ]?taroqqy|taroqqy)$/i.test(parts[1])) {
+          str = parts.slice(2).join('-').trim();
+        } else {
+          const candidate = parts.slice(1).join('-').trim();
+          if (candidate && !/^\d{6,}$/.test(candidate)) {
+            str = candidate;
+          }
         }
       }
+      str = str.replace(/^(?:at[- ]?taroqqy|taroqqy)\s*[-:]\s*/i, '').trim();
       return str || raw;
     };
 
@@ -690,21 +699,6 @@ export default function DataAkademikSub({
       if (val) valuesSet.add(val);
     });
 
-    if (colKey.startsWith('lembaga_')) {
-      const lemId = colKey.replace('lembaga_', '');
-      const lem = activeLembagas.find(l => String(l.id) === lemId);
-      if (lem) {
-        const classesForLem = kelasList.filter(k => String(k.lembagaId || (k as any).lembaga_id) === String(lem.id));
-        classesForLem.forEach(k => {
-          if (k.nama && k.nama.trim()) valuesSet.add(k.nama.trim());
-        });
-        if (getLembagaJenis(lem) === 'Formal') {
-          valuesSet.add(getDefaultCalonClassName(lem, genderFilter));
-        }
-        valuesSet.add('Tanpa Kelas');
-      }
-    }
-
     return Array.from(valuesSet).sort((a, b) => a.localeCompare(b, 'id', { numeric: true, sensitivity: 'base' }));
   };
 
@@ -830,6 +824,65 @@ export default function DataAkademikSub({
 
     return true;
   });
+
+  // Filter options for Kelas dropdown based on actual students in the current view
+  // Only displays classes with at least 1 santri (count > 0) to avoid 48 empty clutter items.
+  const availableKelasOptions = useMemo(() => {
+    // 1. Base list of students considering current academic type and gender filter
+    const baseStudents = santriList.filter(s => {
+      if (academicType === 'formal') {
+        if (s.statusKeanggotaan === 'Meninggal') return false;
+      } else {
+        if (s.statusKeanggotaan === 'Alumni' || s.statusKeanggotaan === 'Meninggal') return false;
+      }
+      return isGenderMatch(s.gender, genderFilter);
+    });
+
+    // 2. Count actual active students per class display string
+    const countsMap = new Map<string, number>();
+    baseStudents.forEach(s => {
+      if (academicType === 'formal') {
+        const fInfo = getSantriFormalEducationInfo(s, lembagasList, kelasList);
+        if (fInfo.display && fInfo.display !== 'TIDAK TERDAFTAR' && fInfo.display !== 'Tanpa Kelas') {
+          // If a specific lembaga filter is selected, check if student belongs to that lembaga
+          if (selectedLembagaFilter !== 'semua') {
+            const matchesLembaga = (fInfo.lembaga && String(fInfo.lembaga.id) === String(selectedLembagaFilter)) ||
+              activeLembagas.some(al => String(al.id) === String(selectedLembagaFilter) && getStudentClassInLembaga(s, al) !== null);
+            if (!matchesLembaga) return;
+          }
+          const key = fInfo.display.trim();
+          countsMap.set(key, (countsMap.get(key) || 0) + 1);
+        }
+      } else {
+        const cInfo = getStudentClassInfo(s);
+        cInfo.forEach(c => {
+          if (selectedLembagaFilter !== 'semua' && String(c.lembagaId) !== String(selectedLembagaFilter)) {
+            return;
+          }
+          const key = c.className.trim();
+          countsMap.set(key, (countsMap.get(key) || 0) + 1);
+        });
+      }
+    });
+
+    // 3. Collect distinct options with count > 0
+    const options: { id: string; name: string; count: number; lembagaKode?: string }[] = [];
+    countsMap.forEach((count, name) => {
+      if (count > 0) {
+        // Resolve associated lembaga code if possible
+        const matchedClass = kelasList.find(k => k.nama.trim().toLowerCase() === name.toLowerCase());
+        const lemObj = matchedClass ? lembagasList.find(l => String(l.id) === String(matchedClass.lembagaId || (matchedClass as any).lembaga_id)) : null;
+        options.push({
+          id: matchedClass ? String(matchedClass.id) : name,
+          name,
+          count,
+          lembagaKode: lemObj ? (lemObj.kode || lemObj.nama) : undefined
+        });
+      }
+    });
+
+    return options.sort((a, b) => a.name.localeCompare(b.name, 'id', { numeric: true, sensitivity: 'base' }));
+  }, [santriList, academicType, genderFilter, selectedLembagaFilter, lembagasList, kelasList, activeLembagas]);
 
   // Sort filtered list dynamically
   const sortedSantri = [...filteredSantri].sort((a, b) => {
@@ -1555,33 +1608,18 @@ export default function DataAkademikSub({
     const countMap = new Map<string, number>();
     baseList.forEach(s => {
       const val = getStudentColumnValue(s, key);
-      countMap.set(val, (countMap.get(val) || 0) + 1);
+      if (val) {
+        countMap.set(val, (countMap.get(val) || 0) + 1);
+      }
     });
 
-    if (key.startsWith('lembaga_')) {
-      const lemId = key.replace('lembaga_', '');
-      const lem = activeLembagas.find(l => String(l.id) === lemId);
-      if (lem) {
-        const classesForLem = kelasList.filter(k => String(k.lembagaId || (k as any).lembaga_id) === String(lem.id));
-        classesForLem.forEach(k => {
-          if (k.nama && k.nama.trim() && !countMap.has(k.nama.trim())) {
-            countMap.set(k.nama.trim(), 0);
-          }
-        });
-        const calonName = getDefaultCalonClassName(lem, genderFilter);
-        if (getLembagaJenis(lem) === 'Formal' && !countMap.has(calonName)) {
-          countMap.set(calonName, 0);
-        }
-        if (!countMap.has('Tanpa Kelas')) {
-          countMap.set('Tanpa Kelas', 0);
-        }
-      }
-    }
-
-    return Array.from(countMap.entries()).map(([value, count]) => ({
-      value,
-      count
-    })).sort((a, b) => a.value.localeCompare(b.value, 'id', { numeric: true, sensitivity: 'base' }));
+    return Array.from(countMap.entries())
+      .filter(([_, count]) => count > 0)
+      .map(([value, count]) => ({
+        value,
+        count
+      }))
+      .sort((a, b) => a.value.localeCompare(b.value, 'id', { numeric: true, sensitivity: 'base' }));
   }, [openExcelFilterCol, santriList, academicType, genderFilter, activeLembagas, assignmentsList, groupsList, categoriesList, kelasList]);
 
   const renderSortHeader = (key: string, label: string, isSticky: boolean = false, extraClasses: string = '', styleOverride?: React.CSSProperties) => {
@@ -2159,37 +2197,39 @@ export default function DataAkademikSub({
                                     <span>Semua Kelas</span>
                                     {selectedKelasFilter === 'semua' && <Check className="h-3.5 w-3.5 text-indigo-700 shrink-0" />}
                                   </button>
-                                  {kelasList
-                                    .filter(c => {
-                                      const lemObj = lembagasList.find(l => l.id === c.lembagaId);
-                                      const lg = lemObj?.gender as string | undefined;
-                                      const matchesGender = !lemObj || !lg || lg === genderFilter || lg === 'Campuran' || lg === 'Semua';
-                                      const matchesLembaga = selectedLembagaFilter === 'semua' || c.lembagaId === selectedLembagaFilter;
-                                      const matchesType = !lemObj || getLembagaJenis(lemObj) === (academicType === 'formal' ? 'Formal' : 'Internal');
-                                      return matchesGender && matchesLembaga && matchesType;
-                                    })
-                                    .map(cls => {
-                                      const isActive = selectedKelasFilter === cls.nama;
-                                      return (
-                                        <button
-                                          key={cls.id}
-                                          type="button"
-                                          onClick={() => {
-                                            setSelectedKelasFilter(cls.nama);
-                                            setIsKelasDropdownOpen(false);
-                                          }}
-                                          className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-left text-xs font-bold transition-colors cursor-pointer ${
-                                            isActive
-                                              ? 'bg-indigo-50 text-indigo-800 font-bold'
-                                              : 'hover:bg-slate-50 text-slate-600'
-                                          }`}
-                                        >
-                                          <span>{cls.nama}</span>
+                                  {availableKelasOptions.map(cls => {
+                                    const isActive = selectedKelasFilter === cls.name;
+                                    return (
+                                      <button
+                                        key={cls.id}
+                                        type="button"
+                                        onClick={() => {
+                                          setSelectedKelasFilter(cls.name);
+                                          setIsKelasDropdownOpen(false);
+                                        }}
+                                        className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-left text-xs font-bold transition-colors cursor-pointer ${
+                                          isActive
+                                            ? 'bg-indigo-50 text-indigo-800 font-bold'
+                                            : 'hover:bg-slate-50 text-slate-600'
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-1.5 min-w-0">
+                                          <span className="truncate">{cls.name}</span>
+                                          {cls.lembagaKode && selectedLembagaFilter === 'semua' && (
+                                            <span className="text-[10px] text-slate-400 font-normal">
+                                              ({cls.lembagaKode})
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                                          <span className="px-1.5 py-0.5 rounded-md bg-slate-100 text-[10px] font-bold text-slate-600">
+                                            {cls.count}
+                                          </span>
                                           {isActive && <Check className="h-3.5 w-3.5 text-indigo-700 shrink-0" />}
-                                        </button>
-                                      );
-                                    })
-                                  }
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
                                 </div>
                               </motion.div>
                             </>

@@ -202,13 +202,24 @@ export function formatClassNameOnly(rawClassOrFormal?: string | null): string {
   if (!rawClassOrFormal || rawClassOrFormal.trim() === '' || rawClassOrFormal === 'TIDAK TERDAFTAR' || rawClassOrFormal === 'Belum / Non-Formal') {
     return 'TIDAK TERDAFTAR';
   }
-  const str = rawClassOrFormal.trim();
+  let str = rawClassOrFormal.trim();
   if (str.includes(' - ')) {
-    const parts = str.split(' - ');
-    const clsPart = parts.slice(1).join(' - ').trim();
-    if (clsPart) return clsPart;
+    const parts = str.split(' - ').map(p => p.trim()).filter(Boolean);
+    if (parts.length >= 3 && /^(?:at[- ]?taroqqy|taroqqy)$/i.test(parts[1])) {
+      str = parts.slice(2).join(' - ').trim();
+    } else {
+      str = parts.slice(1).join(' - ').trim();
+    }
+  } else if (str.includes('-')) {
+    const parts = str.split('-').map(p => p.trim()).filter(Boolean);
+    if (parts.length >= 3 && /^(?:at[- ]?taroqqy|taroqqy)$/i.test(parts[1])) {
+      str = parts.slice(2).join('-').trim();
+    } else {
+      str = parts.slice(1).join('-').trim();
+    }
   }
-  return str;
+  str = str.replace(/^(?:at[- ]?taroqqy|taroqqy)\s*[-:]\s*/i, '').trim();
+  return str || 'TIDAK TERDAFTAR';
 }
 
 /**
@@ -510,15 +521,29 @@ export function getSantriFormalEducationInfo(
       let clsName = '';
 
       if (entry.includes(' - ')) {
-        const parts = entry.split(' - ');
-        lemName = parts[0]?.trim() || '';
-        clsName = parts.slice(1).join(' - ').trim();
+        const parts = entry.split(' - ').map(p => p.trim()).filter(Boolean);
+        lemName = parts[0] || '';
+        if (parts.length >= 3 && /^(?:at[- ]?taroqqy|taroqqy)$/i.test(parts[1])) {
+          clsName = parts.slice(2).join(' - ').trim();
+        } else {
+          clsName = parts.slice(1).join(' - ').trim();
+        }
       } else if (entry.includes('-')) {
-        const parts = entry.split('-');
-        lemName = parts[0]?.trim() || '';
-        clsName = parts.slice(1).join('-').trim();
+        const parts = entry.split('-').map(p => p.trim()).filter(Boolean);
+        lemName = parts[0] || '';
+        if (parts.length >= 3 && /^(?:at[- ]?taroqqy|taroqqy)$/i.test(parts[1])) {
+          clsName = parts.slice(2).join('-').trim();
+        } else {
+          clsName = parts.slice(1).join('-').trim();
+        }
       } else {
         lemName = entry.trim();
+      }
+
+      // Strip redundant TAROQQY prefix from clsName
+      clsName = clsName.replace(/^(?:at[- ]?taroqqy|taroqqy)\s*[-:]\s*/i, '').trim();
+      if (/^(?:at[- ]?taroqqy|taroqqy)$/i.test(clsName)) {
+        clsName = '';
       }
 
       if (lemName) {
@@ -542,12 +567,13 @@ export function getSantriFormalEducationInfo(
           const classesOfFl = kls.filter(k => String(k.lembagaId || (k as any).lembaga_id) === String(matchLem.id));
           const matchCls = classesOfFl.find(k => k.nama && (
             k.nama.trim().toLowerCase() === clsName.toLowerCase() ||
-            k.nama.trim().toLowerCase().replace(/\s+/g, '') === clsName.toLowerCase().replace(/\s+/g, '')
+            k.nama.trim().toLowerCase().replace(/\s+/g, '') === clsName.toLowerCase().replace(/\s+/g, '') ||
+            k.nama.trim().toLowerCase().replace(/^(?:at[- ]?taroqqy|taroqqy)\s*[-:]\s*/i, '') === clsName.toLowerCase()
           ));
 
           if (matchCls) {
             currentFormalClass = matchCls;
-            currentDisplay = matchCls.nama;
+            currentDisplay = matchCls.nama.replace(/^(?:at[- ]?taroqqy|taroqqy)\s*[-:]\s*/i, '').trim();
           } else if (
             clsName &&
             !isCalonClass(clsName) &&
@@ -572,7 +598,7 @@ export function getSantriFormalEducationInfo(
       if (matchedClass) {
         currentFormalLembaga = fl;
         currentFormalClass = matchedClass;
-        currentDisplay = matchedClass.nama;
+        currentDisplay = matchedClass.nama.replace(/^(?:at[- ]?taroqqy|taroqqy)\s*[-:]\s*/i, '').trim();
         break;
       }
     }
@@ -607,6 +633,9 @@ export function getSantriFormalEducationInfo(
     }
   }
 
+  // Sanitize currentDisplay
+  currentDisplay = currentDisplay.replace(/^(?:at[- ]?taroqqy|taroqqy)\s*[-:]\s*/i, '').trim();
+
   const isFormal = !!currentFormalLembaga;
   const fullDisplay = isFormal
     ? `${currentFormalLembaga!.nama} - ${currentDisplay}`
@@ -616,10 +645,15 @@ export function getSantriFormalEducationInfo(
     ? ((currentFormalLembaga.kode && currentFormalLembaga.kode.trim()) || currentFormalLembaga.nama.trim())
     : '';
 
+  let cleanDisplayForFilter = currentDisplay;
+  if (lemKode && cleanDisplayForFilter.toLowerCase().startsWith(`${lemKode.toLowerCase()} - `)) {
+    cleanDisplayForFilter = cleanDisplayForFilter.slice(lemKode.length + 3).trim();
+  }
+
   const filterDisplay = isFormal
-    ? (currentDisplay === 'TIDAK TERDAFTAR'
+    ? (cleanDisplayForFilter === 'TIDAK TERDAFTAR'
         ? 'TIDAK TERDAFTAR'
-        : (lemKode ? `${lemKode} - ${currentDisplay}` : currentDisplay))
+        : (lemKode ? `${lemKode} - ${cleanDisplayForFilter}` : cleanDisplayForFilter))
     : 'TIDAK TERDAFTAR';
 
   return {

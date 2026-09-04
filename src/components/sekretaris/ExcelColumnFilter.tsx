@@ -117,74 +117,24 @@ export function ExcelFilterPopover({
       // 2. Count actual formal education distribution across santri
       santriList.forEach(s => {
         const val = getColumnValueString(s, colKey, ageFilterConfig, lems, kls);
-        counts[val] = (counts[val] || 0) + 1;
-      });
-
-      // 3. Ensure all formal classes from Modul Pendidikan are represented
-      const santriGenders = new Set(santriList.map(s => s.gender).filter(Boolean));
-      const isPutraOnly = santriGenders.size === 1 && santriGenders.has('Putra');
-      const isPutriOnly = santriGenders.size === 1 && santriGenders.has('Putri');
-
-      const formalLembagas = lems.filter(l => {
-        if (getLembagaJenis(l) !== 'Formal') return false;
-        const g = l.gender as string | undefined;
-        if (isPutraOnly && g && g !== 'Putra' && g !== 'Campuran' && g !== 'Semua') return false;
-        if (isPutriOnly && g && g !== 'Putri' && g !== 'Campuran' && g !== 'Semua') return false;
-        return true;
-      });
-      const formalLembagaIds = formalLembagas.map(l => String(l.id));
-
-      kls
-        .filter(k => {
-          const lId = String(k.lembagaId || (k as any).lembaga_id);
-          return formalLembagaIds.includes(lId);
-        })
-        .forEach(k => {
-          if (k.nama && k.nama.trim()) {
-            const lower = k.nama.trim().toLowerCase();
-            if (
-              !isCalonClass(lower) && 
-              lower !== 'tanpa kelas' && 
-              lower !== '-'
-            ) {
-              const clsName = k.nama.trim();
-              const targetLem = formalLembagas.find(l => String(l.id) === String(k.lembagaId || (k as any).lembaga_id));
-              const lemKode = targetLem ? ((targetLem.kode && targetLem.kode.trim()) || targetLem.nama.trim()) : '';
-              const formattedVal = lemKode ? `${lemKode} - ${clsName}` : clsName;
-              if (!(formattedVal in counts)) {
-                counts[formattedVal] = 0;
-              }
-            }
-          }
-        });
-
-      // 4. Ensure 'Kode Lembaga - Calon Class' is present for each formal institution
-      formalLembagas.forEach(fl => {
-        const lemKode = (fl.kode && fl.kode.trim()) || fl.nama.trim();
-        if (lemKode) {
-          const calonName = getDefaultCalonClassName(fl);
-          const calonVal = `${lemKode} - ${calonName}`;
-          if (!(calonVal in counts)) {
-            counts[calonVal] = 0;
-          }
+        if (val) {
+          counts[val] = (counts[val] || 0) + 1;
         }
       });
 
-      // 5. Ensure 'TIDAK TERDAFTAR' is present
-      if (!('TIDAK TERDAFTAR' in counts)) {
-        counts['TIDAK TERDAFTAR'] = 0;
-      }
-
-      // Sort: Formal classes alphabetically (grouped by lembaga code then class), then Calon classes, then 'TIDAK TERDAFTAR'
-      const sortedVals = Object.keys(counts).sort((a, b) => {
-        if (a === 'TIDAK TERDAFTAR' || a === '(Kosong)') return 1;
-        if (b === 'TIDAK TERDAFTAR' || b === '(Kosong)') return -1;
-        const aIsCalon = isCalonClass(a);
-        const bIsCalon = isCalonClass(b);
-        if (aIsCalon && !bIsCalon) return 1;
-        if (!aIsCalon && bIsCalon) return -1;
-        return a.localeCompare(b, 'id', { numeric: true, sensitivity: 'base' });
-      });
+      // ONLY keep values that have at least 1 santri in the current list (count > 0).
+      // This prevents inflating the filter to 48 items with empty/useless 0-count dummy entries.
+      const sortedVals = Object.keys(counts)
+        .filter(val => counts[val] > 0)
+        .sort((a, b) => {
+          if (a === 'TIDAK TERDAFTAR' || a === '(Kosong)') return 1;
+          if (b === 'TIDAK TERDAFTAR' || b === '(Kosong)') return -1;
+          const aIsCalon = isCalonClass(a);
+          const bIsCalon = isCalonClass(b);
+          if (aIsCalon && !bIsCalon) return 1;
+          if (!aIsCalon && bIsCalon) return -1;
+          return a.localeCompare(b, 'id', { numeric: true, sensitivity: 'base' });
+        });
 
       return sortedVals.map(val => ({
         value: val,
@@ -195,14 +145,18 @@ export function ExcelFilterPopover({
     // Default for all other columns
     santriList.forEach(s => {
       const val = getColumnValueString(s, colKey, ageFilterConfig, lembagasList, kelasList);
-      counts[val] = (counts[val] || 0) + 1;
+      if (val) {
+        counts[val] = (counts[val] || 0) + 1;
+      }
     });
 
-    const sortedVals = Object.keys(counts).sort((a, b) => {
-      if (a === '(Kosong)') return 1;
-      if (b === '(Kosong)') return -1;
-      return a.localeCompare(b, 'id', { numeric: true, sensitivity: 'base' });
-    });
+    const sortedVals = Object.keys(counts)
+      .filter(val => counts[val] > 0)
+      .sort((a, b) => {
+        if (a === '(Kosong)') return 1;
+        if (b === '(Kosong)') return -1;
+        return a.localeCompare(b, 'id', { numeric: true, sensitivity: 'base' });
+      });
 
     return sortedVals.map(val => ({
       value: val,
