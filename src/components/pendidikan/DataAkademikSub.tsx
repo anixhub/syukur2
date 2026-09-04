@@ -29,7 +29,7 @@ import {
   GraduationCap
 } from 'lucide-react';
 import { Santri, Lembaga, Kelas, KategoriRombel, KelompokRombel, RombelAssignment, isGenderMatch } from '../../types';
-import { parseCatatanInvalid, cleanWaliKelas, isMatchLembagaStrict, getLembagaJenis } from '../../lib/utils';
+import { parseCatatanInvalid, cleanWaliKelas, isMatchLembagaStrict, getLembagaJenis, getSantriFormalEducationInfo } from '../../lib/utils';
 import { renderSantriAvatar, getPesantrenProfile, calculateRealtimeAge } from '../SekretarisHelper';
 import SantriDetailModal from '../sekretaris/SantriDetailModal';
 import { ExportModal } from '../ExportModal';
@@ -690,6 +690,21 @@ export default function DataAkademikSub({
       if (val) valuesSet.add(val);
     });
 
+    if (colKey.startsWith('lembaga_')) {
+      const lemId = colKey.replace('lembaga_', '');
+      const lem = activeLembagas.find(l => String(l.id) === lemId);
+      if (lem) {
+        const classesForLem = kelasList.filter(k => String(k.lembagaId || (k as any).lembaga_id) === String(lem.id));
+        classesForLem.forEach(k => {
+          if (k.nama && k.nama.trim()) valuesSet.add(k.nama.trim());
+        });
+        if (getLembagaJenis(lem) === 'Formal') {
+          valuesSet.add('Calon Peserta Didik');
+        }
+        valuesSet.add('Tanpa Kelas');
+      }
+    }
+
     return Array.from(valuesSet).sort((a, b) => a.localeCompare(b, 'id', { numeric: true, sensitivity: 'base' }));
   };
 
@@ -727,7 +742,41 @@ export default function DataAkademikSub({
     if (!matchesSearch) return false;
 
     // 3. Mode specific filtering
-    if (academicType === 'internal') {
+    if (academicType === 'formal') {
+      const formalInfo = getSantriFormalEducationInfo(s, lembagasList, kelasList);
+      const hasFormalPlacement = formalInfo.isFormal && 
+        formalInfo.kelas !== null && 
+        formalInfo.display !== 'Calon Peserta Didik' && 
+        formalInfo.display !== 'TIDAK TERDAFTAR' && 
+        formalInfo.display !== 'Tanpa Kelas';
+
+      const isCandidate = formalInfo.display === 'Calon Peserta Didik' || 
+        activeLembagas.some(al => getStudentClassInLembaga(s, al) === 'Calon Peserta Didik');
+
+      // Assignment Status Filter
+      if (assignmentStatusFilter === 'sudah' && !hasFormalPlacement) return false;
+      if (assignmentStatusFilter === 'calon' && !isCandidate) return false;
+      if (assignmentStatusFilter === 'belum' && hasFormalPlacement) return false;
+
+      // Lembaga Filter
+      if (selectedLembagaFilter !== 'semua') {
+        const matchesLembaga = (formalInfo.lembaga && String(formalInfo.lembaga.id) === String(selectedLembagaFilter)) ||
+          activeLembagas.some(al => String(al.id) === String(selectedLembagaFilter) && getStudentClassInLembaga(s, al) !== null);
+        if (!matchesLembaga) return false;
+      }
+
+      // Kelas Filter
+      if (selectedKelasFilter !== 'semua') {
+        const targetClsLower = selectedKelasFilter.trim().toLowerCase();
+        const matchesKelas = (formalInfo.display && formalInfo.display.trim().toLowerCase() === targetClsLower) ||
+          (formalInfo.kelas && formalInfo.kelas.nama.trim().toLowerCase() === targetClsLower) ||
+          activeLembagas.some(al => {
+            const clsInLem = getStudentClassInLembaga(s, al);
+            return clsInLem && clsInLem.trim().toLowerCase() === targetClsLower;
+          });
+        if (!matchesKelas) return false;
+      }
+    } else if (academicType === 'internal') {
       const hasClass = classInfo.some(c => activeLembagas.some(al => al.id === c.lembagaId));
       
       // Assignment Status Filter
@@ -735,16 +784,16 @@ export default function DataAkademikSub({
       if (assignmentStatusFilter === 'belum' && hasClass) return false;
 
       // Lembaga Filter
-      if (selectedLembagaFilter !== 'semua' && hasClass) {
+      if (selectedLembagaFilter !== 'semua') {
         const matchesLembaga = classInfo.some(c => {
           const foundClass = kelasList.find(cls => cls.nama.toLowerCase() === c.className.toLowerCase());
-          return foundClass && foundClass.lembagaId === selectedLembagaFilter;
+          return foundClass && String(foundClass.lembagaId) === String(selectedLembagaFilter);
         });
         if (!matchesLembaga) return false;
       }
 
       // Kelas Filter
-      if (selectedKelasFilter !== 'semua' && hasClass) {
+      if (selectedKelasFilter !== 'semua') {
         const matchesKelas = classInfo.some(c => c.className.toLowerCase() === selectedKelasFilter.toLowerCase());
         if (!matchesKelas) return false;
       }
@@ -757,13 +806,13 @@ export default function DataAkademikSub({
       if (assignmentStatusFilter === 'belum' && hasRombel) return false;
 
       // Category Filter
-      if (selectedCategoryFilter !== 'semua' && hasRombel) {
+      if (selectedCategoryFilter !== 'semua') {
         const matchesCat = assignmentsList.some(a => a.santriId === s.id && a.kategoriId === selectedCategoryFilter);
         if (!matchesCat) return false;
       }
 
       // Group Filter
-      if (selectedGroupFilter !== 'semua' && hasRombel) {
+      if (selectedGroupFilter !== 'semua') {
         const matchesGroup = assignmentsList.some(a => a.santriId === s.id && a.kelompokId === selectedGroupFilter);
         if (!matchesGroup) return false;
       }
@@ -1507,11 +1556,30 @@ export default function DataAkademikSub({
       countMap.set(val, (countMap.get(val) || 0) + 1);
     });
 
+    if (key.startsWith('lembaga_')) {
+      const lemId = key.replace('lembaga_', '');
+      const lem = activeLembagas.find(l => String(l.id) === lemId);
+      if (lem) {
+        const classesForLem = kelasList.filter(k => String(k.lembagaId || (k as any).lembaga_id) === String(lem.id));
+        classesForLem.forEach(k => {
+          if (k.nama && k.nama.trim() && !countMap.has(k.nama.trim())) {
+            countMap.set(k.nama.trim(), 0);
+          }
+        });
+        if (getLembagaJenis(lem) === 'Formal' && !countMap.has('Calon Peserta Didik')) {
+          countMap.set('Calon Peserta Didik', 0);
+        }
+        if (!countMap.has('Tanpa Kelas')) {
+          countMap.set('Tanpa Kelas', 0);
+        }
+      }
+    }
+
     return Array.from(countMap.entries()).map(([value, count]) => ({
       value,
       count
     })).sort((a, b) => a.value.localeCompare(b.value, 'id', { numeric: true, sensitivity: 'base' }));
-  }, [openExcelFilterCol, santriList, academicType, genderFilter, activeLembagas, assignmentsList, groupsList, categoriesList]);
+  }, [openExcelFilterCol, santriList, academicType, genderFilter, activeLembagas, assignmentsList, groupsList, categoriesList, kelasList]);
 
   const renderSortHeader = (key: string, label: string, isSticky: boolean = false, extraClasses: string = '', styleOverride?: React.CSSProperties) => {
     const isSorted = sortKey === key;
@@ -1887,8 +1955,10 @@ export default function DataAkademikSub({
                         {assignmentStatusFilter === 'semua'
                           ? 'Semua Status'
                           : assignmentStatusFilter === 'sudah'
-                          ? 'Sudah Ditempatkan'
-                          : 'Belum Ditempatkan ⚠️'}
+                          ? (academicType === 'formal' ? 'Sudah Ada Kelas Formal' : 'Sudah Ditempatkan')
+                          : assignmentStatusFilter === 'calon'
+                          ? 'Calon Peserta Didik'
+                          : (academicType === 'formal' ? 'Belum / Tanpa Kelas ⚠️' : 'Belum Ditempatkan ⚠️')}
                       </span>
                       <ChevronDown className="h-4 w-4 opacity-60 shrink-0" />
                     </button>
@@ -1907,11 +1977,16 @@ export default function DataAkademikSub({
                             className="absolute left-0 mt-2 w-full min-w-[200px] rounded-2xl border border-slate-100 bg-white p-2.5 shadow-xl z-[120] text-slate-700 font-sans"
                           >
                             <div className="space-y-1">
-                              {[
+                              {(academicType === 'formal' ? [
+                                { value: 'semua', label: 'Semua Status' },
+                                { value: 'sudah', label: 'Sudah Ada Kelas Formal' },
+                                { value: 'calon', label: 'Calon Peserta Didik' },
+                                { value: 'belum', label: 'Belum / Tanpa Kelas ⚠️' }
+                              ] : [
                                 { value: 'semua', label: 'Semua Status' },
                                 { value: 'sudah', label: 'Sudah Ditempatkan' },
                                 { value: 'belum', label: 'Belum Ditempatkan ⚠️' }
-                              ].map((opt) => {
+                              ]).map((opt) => {
                                 const isActive = assignmentStatusFilter === opt.value;
                                 return (
                                   <button
@@ -1941,12 +2016,12 @@ export default function DataAkademikSub({
                 </div>
 
                 {/* 2 & 3. Cascading inputs depending on academicType */}
-                {academicType === 'internal' ? (
+                {(academicType === 'internal' || academicType === 'formal') ? (
                   <>
                     {/* Lembaga Filter */}
                     <div>
                       <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                        Lembaga Internal Pondok
+                        {academicType === 'formal' ? 'Lembaga Pendidikan Formal' : 'Lembaga Internal Pondok'}
                       </label>
                       <div className="relative">
                         <button
@@ -1999,7 +2074,7 @@ export default function DataAkademikSub({
                                     {selectedLembagaFilter === 'semua' && <Check className="h-3.5 w-3.5 text-indigo-700 shrink-0" />}
                                   </button>
                                   {lembagasList
-                                    .filter(l => (!l.gender || l.gender === (genderFilter as string) || (l.gender as string) === 'Campuran' || (l.gender as string) === 'Semua') && getLembagaJenis(l) === 'Internal')
+                                    .filter(l => (!l.gender || l.gender === (genderFilter as string) || (l.gender as string) === 'Campuran' || (l.gender as string) === 'Semua') && getLembagaJenis(l) === (academicType === 'formal' ? 'Formal' : 'Internal'))
                                     .map(lem => {
                                       const isActive = selectedLembagaFilter === lem.id;
                                       return (
@@ -2033,7 +2108,9 @@ export default function DataAkademikSub({
 
                     {/* Kelas Filter */}
                     <div>
-                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Kelas</label>
+                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                        {academicType === 'formal' ? 'Kelas Formal' : 'Kelas'}
+                      </label>
                       <div className="relative">
                         <button
                           type="button"
@@ -2082,9 +2159,10 @@ export default function DataAkademikSub({
                                   {kelasList
                                     .filter(c => {
                                       const lemObj = lembagasList.find(l => l.id === c.lembagaId);
-                                      const matchesGender = !lemObj || !lemObj.gender || lemObj.gender === genderFilter;
+                                      const lg = lemObj?.gender as string | undefined;
+                                      const matchesGender = !lemObj || !lg || lg === genderFilter || lg === 'Campuran' || lg === 'Semua';
                                       const matchesLembaga = selectedLembagaFilter === 'semua' || c.lembagaId === selectedLembagaFilter;
-                                      const matchesType = !lemObj || getLembagaJenis(lemObj) === 'Internal';
+                                      const matchesType = !lemObj || getLembagaJenis(lemObj) === (academicType === 'formal' ? 'Formal' : 'Internal');
                                       return matchesGender && matchesLembaga && matchesType;
                                     })
                                     .map(cls => {

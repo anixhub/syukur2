@@ -34,7 +34,9 @@ export function getColumnValueString(
   }
   if (key === 'pendidikanFormal') {
     const formalInfo = getSantriFormalEducationInfo(s, lembagasList, kelasList);
-    return formalInfo.display;
+    return formalInfo.filterDisplay || (formalInfo.isFormal && formalInfo.lembaga 
+      ? `${(formalInfo.lembaga.kode?.trim() || formalInfo.lembaga.nama.trim())} - ${formalInfo.display}` 
+      : formalInfo.display);
   }
   const raw = (s as any)[key];
   if (raw === undefined || raw === null || String(raw).trim() === '' || String(raw).trim() === '-') {
@@ -119,11 +121,24 @@ export function ExcelFilterPopover({
       });
 
       // 3. Ensure all formal classes from Modul Pendidikan are represented
-      const formalLembagas = lems.filter(l => getLembagaJenis(l) === 'Formal');
+      const santriGenders = new Set(santriList.map(s => s.gender).filter(Boolean));
+      const isPutraOnly = santriGenders.size === 1 && santriGenders.has('Putra');
+      const isPutriOnly = santriGenders.size === 1 && santriGenders.has('Putri');
+
+      const formalLembagas = lems.filter(l => {
+        if (getLembagaJenis(l) !== 'Formal') return false;
+        const g = l.gender as string | undefined;
+        if (isPutraOnly && g && g !== 'Putra' && g !== 'Campuran' && g !== 'Semua') return false;
+        if (isPutriOnly && g && g !== 'Putri' && g !== 'Campuran' && g !== 'Semua') return false;
+        return true;
+      });
       const formalLembagaIds = formalLembagas.map(l => String(l.id));
 
       kls
-        .filter(k => formalLembagaIds.includes(String(k.lembagaId || (k as any).lembaga_id)))
+        .filter(k => {
+          const lId = String(k.lembagaId || (k as any).lembaga_id);
+          return formalLembagaIds.includes(lId);
+        })
         .forEach(k => {
           if (k.nama && k.nama.trim()) {
             const lower = k.nama.trim().toLowerCase();
@@ -134,29 +149,40 @@ export function ExcelFilterPopover({
               lower !== '-'
             ) {
               const clsName = k.nama.trim();
-              if (!(clsName in counts)) {
-                counts[clsName] = 0;
+              const targetLem = formalLembagas.find(l => String(l.id) === String(k.lembagaId || (k as any).lembaga_id));
+              const lemKode = targetLem ? ((targetLem.kode && targetLem.kode.trim()) || targetLem.nama.trim()) : '';
+              const formattedVal = lemKode ? `${lemKode} - ${clsName}` : clsName;
+              if (!(formattedVal in counts)) {
+                counts[formattedVal] = 0;
               }
             }
           }
         });
 
-      // 4. Ensure 'Calon Peserta Didik' is present if formal lembagas exist
-      if (formalLembagas.length > 0 && !('Calon Peserta Didik' in counts)) {
-        counts['Calon Peserta Didik'] = 0;
-      }
+      // 4. Ensure 'Kode Lembaga - Calon Peserta Didik' is present for each formal institution
+      formalLembagas.forEach(fl => {
+        const lemKode = (fl.kode && fl.kode.trim()) || fl.nama.trim();
+        if (lemKode) {
+          const calonVal = `${lemKode} - Calon Peserta Didik`;
+          if (!(calonVal in counts)) {
+            counts[calonVal] = 0;
+          }
+        }
+      });
 
       // 5. Ensure 'TIDAK TERDAFTAR' is present
       if (!('TIDAK TERDAFTAR' in counts)) {
         counts['TIDAK TERDAFTAR'] = 0;
       }
 
-      // Sort: Formal classes alphabetically, then 'Calon Peserta Didik', then 'TIDAK TERDAFTAR'
+      // Sort: Formal classes alphabetically (grouped by lembaga code then class), then 'Calon Peserta Didik', then 'TIDAK TERDAFTAR'
       const sortedVals = Object.keys(counts).sort((a, b) => {
         if (a === 'TIDAK TERDAFTAR' || a === '(Kosong)') return 1;
         if (b === 'TIDAK TERDAFTAR' || b === '(Kosong)') return -1;
-        if (a === 'Calon Peserta Didik') return 1;
-        if (b === 'Calon Peserta Didik') return -1;
+        const aIsCalon = a.endsWith('Calon Peserta Didik');
+        const bIsCalon = b.endsWith('Calon Peserta Didik');
+        if (aIsCalon && !bIsCalon) return 1;
+        if (!aIsCalon && bIsCalon) return -1;
         return a.localeCompare(b, 'id', { numeric: true, sensitivity: 'base' });
       });
 

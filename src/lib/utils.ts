@@ -364,6 +364,7 @@ export interface SantriFormalEducationInfo {
   lembaga: Lembaga | null;
   kelas: Kelas | null;
   display: string; // "VII Tsanawiyah A", "Calon Peserta Didik", or "TIDAK TERDAFTAR"
+  filterDisplay?: string; // "WST - VII Tsanawiyah A" ("kode singkatan lembaga - kelas")
   fullDisplay: string; // "SPM Wustho - VII Tsanawiyah A" or "TIDAK TERDAFTAR"
   isFormal: boolean;
 }
@@ -412,33 +413,65 @@ export function getSantriFormalEducationInfo(
     s.pendidikanFormal !== 'Belum / Non-Formal' &&
     s.pendidikanFormal !== '-'
   ) {
-    const parts = s.pendidikanFormal.split(' - ');
-    const lemName = parts[0]?.trim();
-    const clsName = parts.length > 1 ? parts.slice(1).join(' - ').trim() : '';
+    const rawFormal = s.pendidikanFormal.trim();
+    // Split by comma in case multiple formal entries exist
+    const formalEntries = rawFormal.split(',').map(x => x.trim()).filter(Boolean);
 
-    if (lemName) {
-      const matchLem = formalLembagas.find(fl => {
-        const flNama = fl.nama.toLowerCase();
-        const flKode = fl.kode ? fl.kode.toLowerCase() : '';
-        const lNameLower = lemName.toLowerCase();
-        return (
-          flNama === lNameLower ||
-          (flKode && flKode === lNameLower) ||
-          String(fl.id) === lNameLower ||
-          isMatchLembagaStrict(fl, lemName) ||
-          (flNama.length >= 3 && (lNameLower.includes(flNama) || flNama.includes(lNameLower))) ||
-          (flKode && flKode.length >= 2 && (lNameLower.includes(flKode) || flKode.includes(lNameLower)))
-        );
-      });
-      if (matchLem) {
-        currentFormalLembaga = matchLem;
-        const classesOfFl = kls.filter(k => String(k.lembagaId || (k as any).lembaga_id) === String(matchLem.id));
-        const matchCls = classesOfFl.find(k => k.nama && k.nama.trim().toLowerCase() === clsName.toLowerCase());
-        if (matchCls) {
-          currentFormalClass = matchCls;
-          currentDisplay = matchCls.nama;
-        } else {
-          currentDisplay = clsName || 'Calon Peserta Didik';
+    for (const entry of formalEntries) {
+      if (currentFormalLembaga) break;
+
+      let lemName = '';
+      let clsName = '';
+
+      if (entry.includes(' - ')) {
+        const parts = entry.split(' - ');
+        lemName = parts[0]?.trim() || '';
+        clsName = parts.slice(1).join(' - ').trim();
+      } else if (entry.includes('-')) {
+        const parts = entry.split('-');
+        lemName = parts[0]?.trim() || '';
+        clsName = parts.slice(1).join('-').trim();
+      } else {
+        lemName = entry.trim();
+      }
+
+      if (lemName) {
+        const matchLem = formalLembagas.find(fl => {
+          const flNama = fl.nama.toLowerCase();
+          const flKode = fl.kode ? fl.kode.toLowerCase() : '';
+          const lNameLower = lemName.toLowerCase();
+          return (
+            flNama === lNameLower ||
+            (flKode && flKode === lNameLower) ||
+            String(fl.id) === lNameLower ||
+            isMatchLembagaStrict(fl, lemName) ||
+            (flNama.length >= 3 && (lNameLower.includes(flNama) || flNama.includes(lNameLower))) ||
+            (flKode && flKode.length >= 2 && (lNameLower.includes(flKode) || flKode.includes(lNameLower)))
+          );
+        });
+
+        if (matchLem) {
+          currentFormalLembaga = matchLem;
+          const classesOfFl = kls.filter(k => String(k.lembagaId || (k as any).lembaga_id) === String(matchLem.id));
+          const matchCls = classesOfFl.find(k => k.nama && (
+            k.nama.trim().toLowerCase() === clsName.toLowerCase() ||
+            k.nama.trim().toLowerCase().replace(/\s+/g, '') === clsName.toLowerCase().replace(/\s+/g, '')
+          ));
+
+          if (matchCls) {
+            currentFormalClass = matchCls;
+            currentDisplay = matchCls.nama;
+          } else if (
+            clsName &&
+            clsName.toLowerCase() !== 'calon peserta didik' &&
+            clsName.toLowerCase() !== 'calon pelajar' &&
+            clsName.toLowerCase() !== 'tanpa kelas' &&
+            clsName !== '-'
+          ) {
+            currentDisplay = clsName;
+          } else {
+            currentDisplay = 'Calon Peserta Didik';
+          }
         }
       }
     }
@@ -491,10 +524,21 @@ export function getSantriFormalEducationInfo(
     ? `${currentFormalLembaga!.nama} - ${currentDisplay}`
     : 'TIDAK TERDAFTAR';
 
+  const lemKode = currentFormalLembaga
+    ? ((currentFormalLembaga.kode && currentFormalLembaga.kode.trim()) || currentFormalLembaga.nama.trim())
+    : '';
+
+  const filterDisplay = isFormal
+    ? (currentDisplay === 'TIDAK TERDAFTAR'
+        ? 'TIDAK TERDAFTAR'
+        : (lemKode ? `${lemKode} - ${currentDisplay}` : currentDisplay))
+    : 'TIDAK TERDAFTAR';
+
   return {
     lembaga: currentFormalLembaga,
     kelas: currentFormalClass,
     display: isFormal ? currentDisplay : 'TIDAK TERDAFTAR',
+    filterDisplay,
     fullDisplay,
     isFormal
   };

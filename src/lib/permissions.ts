@@ -19,6 +19,7 @@ export interface AccountRole {
 export function normalizeRoleId(roleId: string): string {
   if (!roleId) return 'superadmin';
   const lowered = roleId.toLowerCase().trim();
+  if (lowered === 'admin') return 'superadmin';
   if (lowered === 'humas_putra') return 'humasy_putra';
   if (lowered === 'humas_putri') return 'humasy_putri';
   return lowered;

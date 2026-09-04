@@ -228,13 +228,17 @@ export function getApiUrl(endpoint: string): string {
 export async function fetchTableData<T>(table: string, localKey?: string, defaultValue: T[] = []): Promise<T[]> {
   try {
     const url = getApiUrl(`/api/db/${table}?_t=${Date.now()}`);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
     const res = await fetch(url, {
       cache: 'no-store',
+      signal: controller.signal,
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache'
       }
     });
+    clearTimeout(timeoutId);
     if (res.ok) {
       const result = await safeJsonParse(res);
       if (result.success && Array.isArray(result.data)) {

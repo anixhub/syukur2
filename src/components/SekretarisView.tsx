@@ -282,10 +282,17 @@ export default function SekretarisView({
     const activeRole = localStorage.getItem('smartsantri_active_role') || 'superadmin';
     if (normalizeRoleId(activeRole) !== 'superadmin') {
       const perms = getPermissionsForRole(activeRole);
-      canViewPutra = !!perms['sekretaris_putra.view'];
-      canViewPutri = !!perms['sekretaris_putri.view'];
-      canWritePutra = !!perms['sekretaris_putra.write'];
-      canWritePutri = !!perms['sekretaris_putri.write'];
+      if (perms && Object.keys(perms).length > 0) {
+        canViewPutra = perms['sekretaris_putra.view'] !== undefined ? !!perms['sekretaris_putra.view'] : true;
+        canViewPutri = perms['sekretaris_putri.view'] !== undefined ? !!perms['sekretaris_putri.view'] : true;
+        canWritePutra = !!perms['sekretaris_putra.write'];
+        canWritePutri = !!perms['sekretaris_putri.write'];
+      }
+    }
+    // Safety fallback: if neither can be viewed (e.g. unconfigured role), default to allowing view
+    if (!canViewPutra && !canViewPutri) {
+      canViewPutra = true;
+      canViewPutri = true;
     }
   } catch (e) {
     console.error('Error parsing permissions in SekretarisView:', e);
@@ -300,6 +307,8 @@ export default function SekretarisView({
       list.push('Putra');
     } else if (canViewPutri) {
       list.push('Putri');
+    } else {
+      list.push('semua', 'Putra', 'Putri');
     }
     return list;
   })();
@@ -966,7 +975,7 @@ export default function SekretarisView({
       { id: 'tanggalLahir', label: 'Tanggal Lahir', isAlwaysVisible: true, getValue: (s: Santri) => s.tanggalLahir || '' },
       { id: 'gender', label: 'Gender', isAlwaysVisible: false, colKey: 'gender', getValue: (s: Santri) => s.gender || '' },
       { id: 'pendidikanTerakhir', label: 'Pendidikan Terakhir', isAlwaysVisible: false, colKey: 'pendidikanTerakhir', getValue: (s: Santri) => s.pendidikanTerakhir || '' },
-      { id: 'pendidikanFormal', label: 'Pendidikan Formal', isAlwaysVisible: false, colKey: 'pendidikanFormal', getValue: (s: Santri) => getSantriFormalEducationInfo(s, lembagasList, kelasList).display },
+      { id: 'pendidikanFormal', label: 'Pendidikan Formal', isAlwaysVisible: false, colKey: 'pendidikanFormal', getValue: (s: Santri) => getColumnValueString(s, 'pendidikanFormal', ageFilterConfig, lembagasList, kelasList) },
       { id: 'anakKe', label: 'Anak Ke', isAlwaysVisible: false, colKey: 'anakKe', getValue: (s: Santri) => s.anakKe !== undefined ? String(s.anakKe) : '' },
       { id: 'dariBersaudara', label: 'Jumlah Saudara', isAlwaysVisible: false, colKey: 'dariBersaudara', getValue: (s: Santri) => s.dariBersaudara !== undefined ? String(s.dariBersaudara) : '' },
       { id: 'namaAyah', label: 'Nama Ayah', isAlwaysVisible: false, colKey: 'namaAyah', getValue: (s: Santri) => s.namaAyah || '' },
@@ -1193,7 +1202,7 @@ export default function SekretarisView({
   const isDomisiliDisabled = statusFilter !== 'semua' && statusFilter !== 'Aktif';
 
   // Filter Data
-  const filteredSantri = santriList.filter((s) => {
+  const baseFilterSantri = santriList.filter((s) => {
     // Enforcement of gender view permission
     const isGenderViewable = s.gender === 'Putra' ? canViewPutra : canViewPutri;
     if (!isGenderViewable) return false;
@@ -1249,19 +1258,22 @@ export default function SekretarisView({
       }
     }
 
+    return matchesSearch && matchesStatus && matchesGender && matchesDomisili && matchesEmis && matchesAge;
+  });
+
+  const filteredSantri = baseFilterSantri.filter((s) => {
     // Excel Column Filters
-    let matchesExcelColumnFilters = true;
     for (const [colKey, allowedVals] of Object.entries(excelColumnFilters)) {
       if (allowedVals && allowedVals.length > 0) {
         const val = getColumnValueString(s, colKey, ageFilterConfig, lembagasList, kelasList);
-        if (!allowedVals.includes(val)) {
-          matchesExcelColumnFilters = false;
-          break;
+        const isMatch = allowedVals.includes(val) || (colKey === 'pendidikanFormal' && allowedVals.some(av => val.endsWith(` - ${av}`) || val === av));
+        if (!isMatch) {
+          return false;
         }
       }
     }
 
-    return matchesSearch && matchesStatus && matchesGender && matchesDomisili && matchesEmis && matchesAge && matchesExcelColumnFilters;
+    return true;
   });
 
   // Sort Data
@@ -1278,8 +1290,8 @@ export default function SekretarisView({
     }
 
     if (sortKey === 'pendidikanFormal') {
-      const valA = getSantriFormalEducationInfo(a, lembagasList, kelasList).display.toLowerCase();
-      const valB = getSantriFormalEducationInfo(b, lembagasList, kelasList).display.toLowerCase();
+      const valA = getColumnValueString(a, 'pendidikanFormal', ageFilterConfig, lembagasList, kelasList).toLowerCase();
+      const valB = getColumnValueString(b, 'pendidikanFormal', ageFilterConfig, lembagasList, kelasList).toLowerCase();
       if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
       if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
       return 0;
@@ -2597,6 +2609,7 @@ export default function SekretarisView({
             <SantriTableView
               paginatedSantri={paginatedSantri}
               allSantri={filteredSantri}
+              unfilteredSantriList={baseFilterSantri}
               startIndex={startIndex}
               isSelectionMode={isSelectionMode}
               selectedSantriIds={selectedSantriIds}

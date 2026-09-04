@@ -30,11 +30,12 @@ import { MembershipBadge } from '../components/HelperComponents';
 import { AgeFilterConfig, calculateAgeOnDate } from '../AgeFilterModal';
 import { fetchTableData } from '../../../lib/api';
 import { DEFAULT_WAJIB_KEYS } from '../../../constants/monitoringColumns';
-import { ExcelFilterPopover, getColumnLabel } from '../ExcelColumnFilter';
+import { ExcelFilterPopover, getColumnLabel, getColumnValueString } from '../ExcelColumnFilter';
 
 interface SantriTableViewProps {
   paginatedSantri: Santri[];
   allSantri?: Santri[];
+  unfilteredSantriList?: Santri[];
   startIndex: number;
   isSelectionMode: boolean;
   selectedSantriIds: string[];
@@ -215,6 +216,7 @@ export default function SantriTableView({
   monitoringActiveTab = 'wajib',
   mandatoryKeys = [],
   allSantri,
+  unfilteredSantriList,
   excelColumnFilters,
   onApplyExcelFilter,
   lembagasList: propLembagas,
@@ -375,6 +377,27 @@ export default function SantriTableView({
       window.removeEventListener('scroll', handleCloseDropdowns, true);
     };
   }, [setActiveDesktopDropdownId, setActiveSantriDropdownId]);
+
+  // Compute population for active Excel header popover (excluding active column's own filter so options don't vanish)
+  const popoverSantriList = React.useMemo(() => {
+    if (!activeHeaderFilterKey) return allSantri && allSantri.length > 0 ? allSantri : paginatedSantri;
+    const baseSource = unfilteredSantriList && unfilteredSantriList.length > 0
+      ? unfilteredSantriList
+      : (allSantri && allSantri.length > 0 ? allSantri : paginatedSantri);
+
+    return baseSource.filter(s => {
+      for (const [colKey, allowedVals] of Object.entries(excelColumnFilters || {})) {
+        if (colKey !== activeHeaderFilterKey && allowedVals && allowedVals.length > 0) {
+          const val = getColumnValueString(s, colKey, ageFilterConfig, lembagasList, kelasList);
+          const isMatch = allowedVals.includes(val) || (colKey === 'pendidikanFormal' && allowedVals.some(av => val.endsWith(` - ${av}`) || val === av));
+          if (!isMatch) {
+            return false;
+          }
+        }
+      }
+      return true;
+    });
+  }, [activeHeaderFilterKey, unfilteredSantriList, allSantri, paginatedSantri, excelColumnFilters, ageFilterConfig, lembagasList, kelasList]);
 
   React.useEffect(() => {
     if (!editingCell) return;
@@ -1539,7 +1562,9 @@ export default function SantriTableView({
                       const isEmis = (s.statusEmis || 'Belum').toLowerCase() === 'terdaftar';
                       
                       const formalInfo = getSantriFormalEducationInfo(s, lembagasList, kelasList);
-                      const currentDisplay = formalInfo.display;
+                      const currentDisplay = formalInfo.filterDisplay || (formalInfo.isFormal && formalInfo.lembaga 
+                        ? `${(formalInfo.lembaga.kode?.trim() || formalInfo.lembaga.nama.trim())} - ${formalInfo.display}` 
+                        : formalInfo.display);
                       const currentFormalLembaga = formalInfo.lembaga;
                       const currentFormalClass = formalInfo.kelas;
                       const formalLembagas = lembagasList.filter(l => getLembagaJenis(l) === 'Formal');
@@ -2970,7 +2995,7 @@ export default function SantriTableView({
         <ExcelFilterPopover
           colKey={activeHeaderFilterKey}
           colLabel={getColumnLabel(activeHeaderFilterKey)}
-          santriList={allSantri && allSantri.length > 0 ? allSantri : paginatedSantri}
+          santriList={popoverSantriList}
           selectedValues={excelColumnFilters?.[activeHeaderFilterKey]}
           onApplyFilter={(colKey, vals) => {
             onApplyExcelFilter?.(colKey, vals);

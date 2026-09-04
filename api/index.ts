@@ -188,6 +188,20 @@ function saveMemoryStoreToDisk() {
   }, 200);
 }
 
+export function withTimeout<T>(promise: Promise<T>, ms = 2500): Promise<T> {
+  let timeoutId: any;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      const err = new Error("Koneksi MySQL Timeout (" + ms + "ms)");
+      (err as any).code = "ETIMEDOUT";
+      reject(err);
+    }, ms);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
+  });
+}
+
 export function handleMySQLError(err: any) {
   if (!err) return;
   const msg = (err.message || "").toLowerCase();
@@ -197,12 +211,25 @@ export function handleMySQLError(err: any) {
     msg.includes("too many connections") ||
     msg.includes("user limit reached") ||
     msg.includes("resource limit") ||
+    msg.includes("etimedout") ||
+    msg.includes("timeout") ||
+    msg.includes("ehostunreach") ||
+    msg.includes("enetunreach") ||
+    msg.includes("econnrefused") ||
+    msg.includes("econnreset") ||
+    msg.includes("access denied") ||
     code === "ER_USER_LIMIT_REACHED" ||
     code === "ER_CON_COUNT_ERROR" ||
     code === "PROTOCOL_CONNECTION_LOST" ||
-    code === "ECONNREFUSED"
+    code === "ECONNREFUSED" ||
+    code === "ETIMEDOUT" ||
+    code === "EHOSTUNREACH" ||
+    code === "ENETUNREACH" ||
+    code === "ECONNRESET" ||
+    code === "PROTOCOL_TIMEOUT" ||
+    code === "ER_ACCESS_DENIED_ERROR"
   ) {
-    console.warn(">>> Hostinger MySQL Resource Limit reached (max_connections_per_hour). Circuit breaker active: using persistent memory store & disk backup for 15 minutes.");
+    console.warn(`>>> MySQL non-aktif/unreachable (${code || msg}). Mengaktifkan fallback memoryStore & local backup selama 15 menit agar aplikasi tetap responsif tanpa hanging.`);
     mySQLThrottleUntil = Date.now() + 15 * 60 * 1000; // 15 minutes cooldown
     if (mysqlPool) {
       try {
@@ -236,7 +263,8 @@ export function getMySQLPool(): mysql.Pool | null {
         password,
         database,
         port,
-        waitForConnections: true,
+        connectTimeout: 2000,
+        waitForConnections: false,
         connectionLimit: 2,
         maxIdle: 2,
         idleTimeout: 600000,
@@ -306,7 +334,7 @@ export async function catatAktivitas(options: LogActivityOptions): Promise<boole
         (\`user_id\`, \`nama_user\`, \`peran\`, \`aksi\`, \`deskripsi\`, \`modul\`, \`ip_address\`, \`user_agent\`)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `;
-      await pool.query(sql, [
+      await withTimeout(pool.query(sql, [
         userId ? Number(userId) || null : null,
         namaUser,
         peran,
@@ -315,7 +343,7 @@ export async function catatAktivitas(options: LogActivityOptions): Promise<boole
         modul,
         ipAddress,
         userAgent
-      ]);
+      ]), 1500);
       return true;
     } catch (err: any) {
       handleMySQLError(err);
@@ -381,7 +409,7 @@ app.get("/api/db-status", async (req, res) => {
   const pool = getMySQLPool();
   if (pool) {
     try {
-      await pool.query("SELECT 1");
+      await withTimeout(pool.query("SELECT 1"), 1500);
       return res.json({
         connected: true,
         type: "mysql",
@@ -837,9 +865,9 @@ async function ensurePermissionsTablesAndSeed(pool: mysql.Pool | null) {
   if (permissionsTablesSeeded) return;
   permissionsTablesSeeded = true;
 
-  if (pool) {
+  if (pool && getMySQLPool()) {
     try {
-      await pool.query(`
+      await withTimeout(pool.query(`
         CREATE TABLE IF NOT EXISTS \`permissions\` (
           \`id\` BIGINT AUTO_INCREMENT PRIMARY KEY,
           \`name\` VARCHAR(255) NOT NULL,
@@ -848,9 +876,9 @@ async function ensurePermissionsTablesAndSeed(pool: mysql.Pool | null) {
           \`updated_at\` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           UNIQUE KEY \`permissions_name_guard\` (\`name\`, \`guard_name\`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-      `);
+      `), 2000);
 
-      await pool.query(`
+      await withTimeout(pool.query(`
         CREATE TABLE IF NOT EXISTS \`roles\` (
           \`id\` BIGINT AUTO_INCREMENT PRIMARY KEY,
           \`name\` VARCHAR(255) NOT NULL,
@@ -859,9 +887,9 @@ async function ensurePermissionsTablesAndSeed(pool: mysql.Pool | null) {
           \`updated_at\` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           UNIQUE KEY \`roles_name_guard\` (\`name\`, \`guard_name\`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-      `);
+      `), 2000);
 
-      await pool.query(`
+      await withTimeout(pool.query(`
         CREATE TABLE IF NOT EXISTS \`role_has_permissions\` (
           \`permission_id\` BIGINT NOT NULL,
           \`role_id\` BIGINT NOT NULL,
@@ -869,26 +897,26 @@ async function ensurePermissionsTablesAndSeed(pool: mysql.Pool | null) {
           FOREIGN KEY (\`permission_id\`) REFERENCES \`permissions\`(\`id\`) ON DELETE CASCADE,
           FOREIGN KEY (\`role_id\`) REFERENCES \`roles\`(\`id\`) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-      `);
+      `), 2000);
 
       for (const roleName of DEFAULT_ROLE_NAMES) {
-        await pool.query(
+        await withTimeout(pool.query(
           "INSERT INTO `roles` (`name`, `guard_name`) VALUES (?, 'web') ON DUPLICATE KEY UPDATE `name`=`name`",
           [roleName]
-        );
+        ), 2000);
       }
 
       for (const permName of DEFAULT_PERMISSIONS) {
-        await pool.query(
+        await withTimeout(pool.query(
           "INSERT INTO `permissions` (`name`, `guard_name`) VALUES (?, 'web') ON DUPLICATE KEY UPDATE `name`=`name`",
           [permName]
-        );
+        ), 2000);
       }
 
-      const [rhpRows]: any = await pool.query("SELECT COUNT(*) as cnt FROM `role_has_permissions`");
+      const [rhpRows]: any = await withTimeout(pool.query("SELECT COUNT(*) as cnt FROM `role_has_permissions`"), 2000);
       if (!rhpRows?.[0]?.cnt || rhpRows[0].cnt === 0) {
-        const [rRows]: any = await pool.query("SELECT `id`, `name` FROM `roles`");
-        const [pRows]: any = await pool.query("SELECT `id`, `name` FROM `permissions`");
+        const [rRows]: any = await withTimeout(pool.query("SELECT `id`, `name` FROM `roles`"), 2000);
+        const [pRows]: any = await withTimeout(pool.query("SELECT `id`, `name` FROM `permissions`"), 2000);
 
         const roleMap = new Map<string, number>();
         (rRows || []).forEach((r: any) => roleMap.set(r.name, r.id));
@@ -924,10 +952,10 @@ async function ensurePermissionsTablesAndSeed(pool: mysql.Pool | null) {
             }
 
             if (isAllowed) {
-              await pool.query(
+              await withTimeout(pool.query(
                 "INSERT IGNORE INTO `role_has_permissions` (`role_id`, `permission_id`) VALUES (?, ?)",
                 [rId, pId]
-              ).catch(() => {});
+              ), 2000).catch(() => {});
             }
           }
         }
@@ -980,6 +1008,10 @@ async function ensureTableExists(table: string, pool: mysql.Pool) {
     return;
   }
   ensuredTablesSet.add(table);
+
+  if (!getMySQLPool()) {
+    return;
+  }
 
   try {
     if (table === 'roles' || table === 'permissions' || table === 'role_has_permissions') {
@@ -1303,8 +1335,9 @@ async function getTableColumns(table: string, pool: mysql.Pool): Promise<Set<str
   if (tableColumnsCache.has(table)) {
     return tableColumnsCache.get(table)!;
   }
+  if (!getMySQLPool()) return null;
   try {
-    const [rows]: any = await pool.query(`SHOW COLUMNS FROM \`${table}\``);
+    const [rows]: any = await withTimeout(pool.query(`SHOW COLUMNS FROM \`${table}\``), 2000);
     if (Array.isArray(rows)) {
       const colSet = new Set(rows.map((r: any) => r.Field));
       tableColumnsCache.set(table, colSet);
@@ -1322,7 +1355,7 @@ async function tryMySQLQuery(sql: string, params: any[] = []): Promise<{ success
   if (!pool) return { success: false, error: "NO_MYSQL" };
 
   try {
-    const [rows]: any = await pool.query(sql, params);
+    const [rows]: any = await withTimeout(pool.query(sql, params), 2500);
     return { success: true, rows };
   } catch (err: any) {
     handleMySQLError(err);
@@ -1411,7 +1444,7 @@ app.post("/api/db/:table", async (req, res) => {
         const updateClause = keys.map(k => `\`${k}\` = VALUES(\`${k}\`)`).join(", ");
 
         const sql = `INSERT INTO \`${table}\` (${columns}) VALUES (${placeholders}) ON DUPLICATE KEY UPDATE ${updateClause}`;
-        await pool.query(sql, values);
+        await withTimeout(pool.query(sql, values), 2500);
         insertedResults.push(row);
       }
     } catch (err: any) {
@@ -1510,7 +1543,7 @@ app.put("/api/db/:table/:id", async (req, res) => {
         values.push(id);
 
         const sql = `UPDATE \`${table}\` SET ${setClause} WHERE \`id\` = ?`;
-        await pool.query(sql, values);
+        await withTimeout(pool.query(sql, values), 2500);
       }
     } catch (err: any) {
       handleMySQLError(err);
@@ -1559,24 +1592,26 @@ app.delete("/api/db/:table/:id", async (req, res) => {
   if (pool) {
     try {
       if (table === "santri") {
-        const [sRows]: any = await pool.query("SELECT * FROM `santri` WHERE `id` = ? LIMIT 1", [id]);
+        const [sRows]: any = await withTimeout(pool.query("SELECT * FROM `santri` WHERE `id` = ? LIMIT 1", [id]), 2000);
         if (sRows?.[0]) existingRecordToDelete = sRows[0];
         const santriNama = existingRecordToDelete?.nama;
 
-        await pool.query("DELETE FROM `rombel_assignment` WHERE `santri_id` = ?", [id]);
+        await withTimeout(pool.query("DELETE FROM `rombel_assignment` WHERE `santri_id` = ?", [id]), 2000).catch(() => {});
         if (santriNama) {
-          await pool.query("DELETE FROM `perizinan` WHERE `santri_id` = ? OR `nama_santri` = ?", [id, santriNama]);
-          await pool.query("DELETE FROM `keamanan` WHERE `santri_id` = ? OR `nama_santri` = ?", [id, santriNama]);
-          await pool.query("DELETE FROM `bendahara` WHERE `nama_santri` = ?", [santriNama]);
+          await withTimeout(pool.query("DELETE FROM `perizinan` WHERE `santri_id` = ? OR `nama_santri` = ?", [id, santriNama]), 2000).catch(() => {});
+          await withTimeout(pool.query("DELETE FROM `keamanan` WHERE `santri_id` = ? OR `nama_santri` = ?", [id, santriNama]), 2000).catch(() => {});
+          await withTimeout(pool.query("DELETE FROM `bendahara` WHERE `nama_santri` = ?", [santriNama]), 2000).catch(() => {});
         } else {
-          await pool.query("DELETE FROM `perizinan` WHERE `santri_id` = ?", [id]);
-          await pool.query("DELETE FROM `keamanan` WHERE `santri_id` = ?", [id]);
+          await withTimeout(pool.query("DELETE FROM `perizinan` WHERE `santri_id` = ?", [id]), 2000).catch(() => {});
+          await withTimeout(pool.query("DELETE FROM `keamanan` WHERE `santri_id` = ?", [id]), 2000).catch(() => {});
         }
       } else {
-        const [rows]: any = await pool.query(`SELECT * FROM \`${table}\` WHERE \`id\` = ? LIMIT 1`, [id]);
+        const [rows]: any = await withTimeout(pool.query(`SELECT * FROM \`${table}\` WHERE \`id\` = ? LIMIT 1`, [id]), 2000);
         if (rows?.[0]) existingRecordToDelete = rows[0];
       }
-    } catch (e) {}
+    } catch (e: any) {
+      handleMySQLError(e);
+    }
   }
   if (!existingRecordToDelete) {
     const list = memoryStore.get(table) || [];
@@ -1588,7 +1623,7 @@ app.delete("/api/db/:table/:id", async (req, res) => {
 
   if (pool) {
     try {
-      await pool.query(`DELETE FROM \`${table}\` WHERE \`id\` = ?`, [id]);
+      await withTimeout(pool.query(`DELETE FROM \`${table}\` WHERE \`id\` = ?`, [id]), 2500);
     } catch (err: any) {
       handleMySQLError(err);
       console.warn(`MySQL DELETE /api/db/${table}/${id} error:`, err.message);
