@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -196,72 +196,86 @@ export default function LembagaKelasSub({
 
   const scrollSourceRef = useRef<'main' | 'floating' | null>(null);
   const scrollTimeoutRef = useRef<number | null>(null);
+  const rafScrollRef = useRef<number | null>(null);
 
   const updateScrollButtons = () => {
     const container = tableContainerRef.current;
     if (container) {
       const { scrollLeft, scrollWidth, clientWidth } = container;
       const hasHorizontalScroll = scrollWidth > clientWidth + 4;
-      setIsScrollable(hasHorizontalScroll);
-      setCanScrollLeft(hasHorizontalScroll && scrollLeft > 2);
-      setCanScrollRight(hasHorizontalScroll && scrollLeft + clientWidth < scrollWidth - 2);
+      const canLeft = hasHorizontalScroll && scrollLeft > 2;
+      const canRight = hasHorizontalScroll && scrollLeft + clientWidth < scrollWidth - 2;
+      setIsScrollable(prev => prev !== hasHorizontalScroll ? hasHorizontalScroll : prev);
+      setCanScrollLeft(prev => prev !== canLeft ? canLeft : prev);
+      setCanScrollRight(prev => prev !== canRight ? canRight : prev);
     }
   };
 
   const handleTableScroll = () => {
-    updateScrollButtons();
-    const container = tableContainerRef.current;
-    if (!container) return;
+    if (rafScrollRef.current) return;
+    rafScrollRef.current = requestAnimationFrame(() => {
+      rafScrollRef.current = null;
+      updateScrollButtons();
+      const container = tableContainerRef.current;
+      if (!container) return;
 
-    if (scrollSourceRef.current !== 'floating') {
-      scrollSourceRef.current = 'main';
-      if (scrollTimeoutRef.current) {
-        window.clearTimeout(scrollTimeoutRef.current);
-      }
-      scrollTimeoutRef.current = window.setTimeout(() => {
-        scrollSourceRef.current = null;
-      }, 150);
+      if (scrollSourceRef.current !== 'floating') {
+        scrollSourceRef.current = 'main';
+        if (scrollTimeoutRef.current) {
+          window.clearTimeout(scrollTimeoutRef.current);
+        }
+        scrollTimeoutRef.current = window.setTimeout(() => {
+          scrollSourceRef.current = null;
+        }, 150);
 
-      if (floatingHeaderRef.current && floatingHeaderRef.current.scrollLeft !== container.scrollLeft) {
-        floatingHeaderRef.current.scrollLeft = container.scrollLeft;
-      }
-    }
-
-    const mainHeader = document.querySelector('header');
-    const mainHeaderHeight = mainHeader ? (mainHeader as HTMLElement).offsetHeight : 64;
-    const computedStickyTop = mainHeaderHeight;
-
-    setStickyTop(computedStickyTop);
-
-    const containerRect = container.getBoundingClientRect();
-    const isHeaderFloating = 
-      containerRect.top <= computedStickyTop && 
-      containerRect.bottom > (computedStickyTop + 48);
-    setIsScrolled(isHeaderFloating);
-
-    setFloatingHeaderStyle({
-      left: containerRect.left,
-      width: containerRect.width,
-    });
-
-    const tableEl = container.querySelector('table');
-    if (tableEl) {
-      const fullW = Math.max(tableEl.scrollWidth, tableEl.getBoundingClientRect().width);
-      if (fullW > 0) setFloatingTableWidth(fullW);
-
-      const mainThs = tableEl.querySelectorAll('thead tr th');
-      if (mainThs && mainThs.length > 0) {
-        const widths = Array.from(mainThs).map(th => (th as HTMLElement).getBoundingClientRect().width);
-        if (widths.some(w => w > 0)) {
-          setColWidths(prev => {
-            if (prev.length === widths.length && prev.every((w, i) => Math.abs(w - widths[i]) < 0.5)) {
-              return prev;
-            }
-            return widths;
-          });
+        if (floatingHeaderRef.current && floatingHeaderRef.current.scrollLeft !== container.scrollLeft) {
+          floatingHeaderRef.current.scrollLeft = container.scrollLeft;
         }
       }
-    }
+
+      const mainHeader = document.querySelector('header');
+      const mainHeaderHeight = mainHeader ? (mainHeader as HTMLElement).offsetHeight : 64;
+      const computedStickyTop = mainHeaderHeight;
+
+      setStickyTop(prev => prev !== computedStickyTop ? computedStickyTop : prev);
+
+      const containerRect = container.getBoundingClientRect();
+      const isHeaderFloating = 
+        containerRect.top <= computedStickyTop && 
+        containerRect.bottom > (computedStickyTop + 48);
+      setIsScrolled(prev => prev !== isHeaderFloating ? isHeaderFloating : prev);
+
+      setFloatingHeaderStyle(prev => {
+        if (Math.abs(prev.left - containerRect.left) < 0.5 && Math.abs(prev.width - containerRect.width) < 0.5) {
+          return prev;
+        }
+        return {
+          left: containerRect.left,
+          width: containerRect.width,
+        };
+      });
+
+      const tableEl = container.querySelector('table');
+      if (tableEl) {
+        const fullW = Math.max(tableEl.scrollWidth, tableEl.getBoundingClientRect().width);
+        if (fullW > 0) {
+          setFloatingTableWidth(prev => Math.abs(prev - fullW) < 1 ? prev : fullW);
+        }
+
+        const mainThs = tableEl.querySelectorAll('thead tr th');
+        if (mainThs && mainThs.length > 0) {
+          const widths = Array.from(mainThs).map(th => (th as HTMLElement).getBoundingClientRect().width);
+          if (widths.some(w => w > 0)) {
+            setColWidths(prev => {
+              if (prev.length === widths.length && prev.every((w, i) => Math.abs(w - widths[i]) < 0.5)) {
+                return prev;
+              }
+              return widths;
+            });
+          }
+        }
+      }
+    });
   };
 
   const scrollTable = (direction: 'left' | 'right') => {
@@ -313,6 +327,7 @@ export default function LembagaKelasSub({
     }
 
     return () => {
+      if (rafScrollRef.current) cancelAnimationFrame(rafScrollRef.current);
       clearTimeout(timer);
       window.removeEventListener('resize', handleResize);
       document.removeEventListener('scroll', handleGlobalScroll, { capture: true });
@@ -744,150 +759,171 @@ export default function LembagaKelasSub({
     }
   };
 
-  // Filtered Lembaga
-  const filteredLembagas = lembagasList.filter(l => {
-    const isJenisMatch = getLembagaJenis(l) === activeTab;
-    const isGenderMatchResult = isGenderMatch(l.gender, selectedGender);
-    return isJenisMatch && isGenderMatchResult;
-  });
+  // Performance caches for student-institution membership & class membership
+  const studentInLembagaCache = useMemo(() => new Map<string, boolean>(), [santriList, lembagasList, kelasList, selectedGender]);
+  const studentsInClassCache = useMemo(() => new Map<string, Santri[]>(), [santriList, selectedGender, kelasList, lembagasList]);
+  const classesOfLembagaCache = useMemo(() => new Map<string, Kelas[]>(), [kelasList]);
 
-  // Helper: Determine if a student belongs to a given institution
-  const isStudentInLembaga = (s: Santri, l: Lembaga): boolean => {
+  // Filtered Lembaga
+  const filteredLembagas = useMemo(() => {
+    return lembagasList.filter(l => {
+      const isJenisMatch = getLembagaJenis(l) === activeTab;
+      const isGenderMatchResult = isGenderMatch(l.gender, selectedGender);
+      return isJenisMatch && isGenderMatchResult;
+    });
+  }, [lembagasList, activeTab, selectedGender]);
+
+  // Helper: Determine if a student belongs to a given institution - MEMOIZED & CACHED
+  const isStudentInLembaga = useCallback((s: Santri, l: Lembaga): boolean => {
     if (!s || !l) return false;
     if (s.statusKeanggotaan === 'Meninggal') return false;
     if (!isGenderMatch(l.gender, s.gender)) return false;
-    
-    const isFormal = getLembagaJenis(l) === 'Formal';
-    const norm = (str?: string | null) => (str || '').trim().toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ');
-    const rawLower = (str?: string | null) => (str || '').trim().toLowerCase();
-    const targetId = rawLower(l.id);
-    const nismKey = getNismFieldKeyForLembaga(l);
 
-    // 1. Direct explicit calonLembagaId match
-    if ((s as any).calonLembagaId && String((s as any).calonLembagaId) === String(l.id)) {
-      return true;
+    const cacheKey = `${s.id}_${l.id}_${s.kelas || ''}_${s.pendidikanFormal || ''}_${s.pendidikanInternal || ''}_${s.indukMhd || ''}_${s.indukWustho || ''}_${s.indukUlya || ''}`;
+    if (studentInLembagaCache.has(cacheKey)) {
+      return studentInLembagaCache.get(cacheKey)!;
     }
 
-    // Check candidate class in s.kelas or s.pendidikanFormal
-    const targetCalonName = getDefaultCalonClassName(l, s.gender).toLowerCase();
-    if (s.kelas) {
-      const sClassesRaw = s.kelas.split(',').map(x => x.trim().toLowerCase());
-      if (sClassesRaw.includes(targetCalonName)) {
-        return true;
-      }
-    }
+    const check = (): boolean => {
+      const isFormal = getLembagaJenis(l) === 'Formal';
+      const norm = (str?: string | null) => (str || '').trim().toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ');
+      const rawLower = (str?: string | null) => (str || '').trim().toLowerCase();
+      const targetId = rawLower(l.id);
+      const nismKey = getNismFieldKeyForLembaga(l);
 
-    if (isFormal) {
-      // Check explicit NISM key for this institution
-      if (nismKey === 'indukWustho' && s.indukWustho && s.indukWustho.trim() !== '' && s.indukWustho !== '-') {
-        return true;
-      }
-      if (nismKey === 'indukUlya' && s.indukUlya && s.indukUlya.trim() !== '' && s.indukUlya !== '-') {
-        return true;
-      }
-      if (nismKey === 'indukMhd' && s.indukMhd && s.indukMhd.trim() !== '' && s.indukMhd !== '-') {
+      // 1. Direct explicit calonLembagaId match
+      if ((s as any).calonLembagaId && String((s as any).calonLembagaId) === String(l.id)) {
         return true;
       }
 
-      // 2. Check s.pendidikanFormal (Primary source of truth for Formal)
-      if (s.pendidikanFormal && s.pendidikanFormal.trim() !== '' && s.pendidikanFormal !== 'TIDAK TERDAFTAR' && s.pendidikanFormal !== 'Belum / Non-Formal' && s.pendidikanFormal !== '-') {
-        const formalParts = s.pendidikanFormal.split(',').map(x => x.trim()).filter(Boolean);
-        for (const entry of formalParts) {
-          const dashParts = entry.split('-');
-          const prefix = dashParts[0].trim();
-          if (isMatchLembagaStrict(l, prefix) || isMatchLembagaStrict(l, entry)) {
-            return true;
+      // Check candidate class in s.kelas or s.pendidikanFormal
+      const targetCalonName = getDefaultCalonClassName(l, s.gender).toLowerCase();
+      if (s.kelas) {
+        const sClassesRaw = s.kelas.split(',').map(x => x.trim().toLowerCase());
+        if (sClassesRaw.includes(targetCalonName)) {
+          return true;
+        }
+      }
+
+      if (isFormal) {
+        // Check explicit NISM key for this institution
+        if (nismKey === 'indukWustho' && s.indukWustho && s.indukWustho.trim() !== '' && s.indukWustho !== '-') {
+          return true;
+        }
+        if (nismKey === 'indukUlya' && s.indukUlya && s.indukUlya.trim() !== '' && s.indukUlya !== '-') {
+          return true;
+        }
+        if (nismKey === 'indukMhd' && s.indukMhd && s.indukMhd.trim() !== '' && s.indukMhd !== '-') {
+          return true;
+        }
+
+        // 2. Check s.pendidikanFormal (Primary source of truth for Formal)
+        if (s.pendidikanFormal && s.pendidikanFormal.trim() !== '' && s.pendidikanFormal !== 'TIDAK TERDAFTAR' && s.pendidikanFormal !== 'Belum / Non-Formal' && s.pendidikanFormal !== '-') {
+          const formalParts = s.pendidikanFormal.split(',').map(x => x.trim()).filter(Boolean);
+          for (const entry of formalParts) {
+            const dashParts = entry.split('-');
+            const prefix = dashParts[0].trim();
+            if (isMatchLembagaStrict(l, prefix) || isMatchLembagaStrict(l, entry)) {
+              return true;
+            }
+          }
+          // If s.pendidikanFormal matches another distinct formal institution strictly, return false
+          const otherFormalLembagas = lembagasList.filter(otherL => getLembagaJenis(otherL) === 'Formal' && String(otherL.id) !== String(l.id));
+          const matchesOtherFormal = otherFormalLembagas.some(otherL => {
+            return formalParts.some(entry => {
+              const prefix = entry.split('-')[0].trim();
+              return isMatchLembagaStrict(otherL, prefix);
+            });
+          });
+          if (matchesOtherFormal) {
+            return false;
           }
         }
-        // If s.pendidikanFormal matches another distinct formal institution strictly, return false
+
+        // 3. Check s.kelas matching only non-default specific classes registered under this formal institution
         const otherFormalLembagas = lembagasList.filter(otherL => getLembagaJenis(otherL) === 'Formal' && String(otherL.id) !== String(l.id));
-        const matchesOtherFormal = otherFormalLembagas.some(otherL => {
-          return formalParts.some(entry => {
-            const prefix = entry.split('-')[0].trim();
-            return isMatchLembagaStrict(otherL, prefix);
-          });
+        const classesOfL = kelasList.filter(k => {
+          const kLemId = rawLower(getClsLembagaId(k));
+          return kLemId === targetId && !isDefaultClass(k);
         });
-        if (matchesOtherFormal) {
-          return false;
+        const specificClassNamesOfL = classesOfL
+          .map(k => norm(k.nama))
+          .filter(cn => cn && !cn.includes('calon') && !cn.includes('tanpa kelas'));
+
+        if (s.kelas && specificClassNamesOfL.length > 0) {
+          const sClasses = s.kelas.split(',').map(x => norm(x)).filter(Boolean);
+          
+          const hasOtherFormalConflict = otherFormalLembagas.some(otherL => {
+            return sClasses.some(sc => isMatchLembagaStrict(otherL, sc));
+          });
+          if (hasOtherFormalConflict) return false;
+
+          const cleanClassStr = (str: string) => str.replace(/^(kelas|kls)\s+/, '').trim();
+          const matchClass = specificClassNamesOfL.some(cn => {
+            const cleanCn = cleanClassStr(cn);
+            return sClasses.some(sc => {
+              const cleanSc = cleanClassStr(sc);
+              return sc === cn || cleanSc === cleanCn;
+            });
+          });
+          if (matchClass) return true;
         }
-      }
 
-      // 3. Check s.kelas matching only non-default specific classes registered under this formal institution
-      const otherFormalLembagas = lembagasList.filter(otherL => getLembagaJenis(otherL) === 'Formal' && String(otherL.id) !== String(l.id));
-      const classesOfL = kelasList.filter(k => {
-        const kLemId = rawLower(getClsLembagaId(k));
-        return kLemId === targetId && !isDefaultClass(k);
-      });
-      const specificClassNamesOfL = classesOfL
-        .map(k => norm(k.nama))
-        .filter(cn => cn && !cn.includes('calon') && !cn.includes('tanpa kelas'));
+        return false;
+      } else {
+        // Internal institution
+        if (nismKey === 'indukMhd' && s.indukMhd && s.indukMhd.trim() !== '' && s.indukMhd !== '-') {
+          return true;
+        }
 
-      if (s.kelas && specificClassNamesOfL.length > 0) {
-        const sClasses = s.kelas.split(',').map(x => norm(x)).filter(Boolean);
-        
-        const hasOtherFormalConflict = otherFormalLembagas.some(otherL => {
-          return sClasses.some(sc => isMatchLembagaStrict(otherL, sc));
-        });
-        if (hasOtherFormalConflict) return false;
-
-        const cleanClassStr = (str: string) => str.replace(/^(kelas|kls)\s+/, '').trim();
-        const matchClass = specificClassNamesOfL.some(cn => {
-          const cleanCn = cleanClassStr(cn);
-          return sClasses.some(sc => {
-            const cleanSc = cleanClassStr(sc);
-            return sc === cn || cleanSc === cleanCn;
-          });
-        });
-        if (matchClass) return true;
-      }
-
-      return false;
-    } else {
-      // Internal institution
-      if (nismKey === 'indukMhd' && s.indukMhd && s.indukMhd.trim() !== '' && s.indukMhd !== '-') {
-        return true;
-      }
-
-      // 1. Check s.pendidikanInternal
-      if (s.pendidikanInternal && s.pendidikanInternal.trim() !== '' && s.pendidikanInternal !== 'Belum / Non-Madin' && s.pendidikanInternal !== '-') {
-        const internalParts = s.pendidikanInternal.split(',').map(x => x.trim()).filter(Boolean);
-        for (const entry of internalParts) {
-          const dashParts = entry.split('-');
-          const prefix = dashParts[0].trim();
-          if (isMatchLembagaStrict(l, prefix) || rawLower(prefix) === targetId || isMatchLembagaStrict(l, entry)) {
-            return true;
+        // 1. Check s.pendidikanInternal
+        if (s.pendidikanInternal && s.pendidikanInternal.trim() !== '' && s.pendidikanInternal !== 'Belum / Non-Madin' && s.pendidikanInternal !== '-') {
+          const internalParts = s.pendidikanInternal.split(',').map(x => x.trim()).filter(Boolean);
+          for (const entry of internalParts) {
+            const dashParts = entry.split('-');
+            const prefix = dashParts[0].trim();
+            if (isMatchLembagaStrict(l, prefix) || rawLower(prefix) === targetId || isMatchLembagaStrict(l, entry)) {
+              return true;
+            }
           }
         }
-      }
 
-      // 2. Check s.kelas matching only non-default specific classes registered under this internal institution
-      const classesOfL = kelasList.filter(k => {
-        const kLemId = rawLower(getClsLembagaId(k));
-        return kLemId === targetId && !isDefaultClass(k);
-      });
-      const specificClassNamesOfL = classesOfL
-        .map(k => norm(k.nama))
-        .filter(cn => cn && !cn.includes('calon') && !cn.includes('tanpa kelas'));
-
-      if (s.kelas && specificClassNamesOfL.length > 0) {
-        const sClasses = s.kelas.split(',').map(x => norm(x)).filter(Boolean);
-        const cleanClassStr = (str: string) => str.replace(/^(kelas|kls)\s+/, '').trim();
-        const matchClass = specificClassNamesOfL.some(cn => {
-          const cleanCn = cleanClassStr(cn);
-          return sClasses.some(sc => {
-            const cleanSc = cleanClassStr(sc);
-            return sc === cn || cleanSc === cleanCn;
-          });
+        // 2. Check s.kelas matching only non-default specific classes registered under this internal institution
+        const classesOfL = kelasList.filter(k => {
+          const kLemId = rawLower(getClsLembagaId(k));
+          return kLemId === targetId && !isDefaultClass(k);
         });
-        if (matchClass) return true;
+        const specificClassNamesOfL = classesOfL
+          .map(k => norm(k.nama))
+          .filter(cn => cn && !cn.includes('calon') && !cn.includes('tanpa kelas'));
+
+        if (s.kelas && specificClassNamesOfL.length > 0) {
+          const sClasses = s.kelas.split(',').map(x => norm(x)).filter(Boolean);
+          const cleanClassStr = (str: string) => str.replace(/^(kelas|kls)\s+/, '').trim();
+          const matchClass = specificClassNamesOfL.some(cn => {
+            const cleanCn = cleanClassStr(cn);
+            return sClasses.some(sc => {
+              const cleanSc = cleanClassStr(sc);
+              return sc === cn || cleanSc === cleanCn;
+            });
+          });
+          if (matchClass) return true;
+        }
+
+        return false;
       }
+    };
 
-      return false;
+    const res = check();
+    studentInLembagaCache.set(cacheKey, res);
+    return res;
+  }, [lembagasList, kelasList, studentInLembagaCache]);
+
+  // Helper: Get classes for a specific institution - MEMOIZED & CACHED
+  const getClassesOfLembaga = useCallback((lembagaId: string) => {
+    if (classesOfLembagaCache.has(lembagaId)) {
+      return classesOfLembagaCache.get(lembagaId)!;
     }
-  };
-
-  // Helper: Get classes for a specific institution
-  const getClassesOfLembaga = (lembagaId: string) => {
     const list = kelasList.filter(k => getClsLembagaId(k) === String(lembagaId));
     const uniqueList: Kelas[] = [];
     const seenNames = new Set<string>();
@@ -898,12 +934,18 @@ export default function LembagaKelasSub({
         uniqueList.push(item);
       }
     }
+    classesOfLembagaCache.set(lembagaId, uniqueList);
     return uniqueList;
-  };
+  }, [kelasList, classesOfLembagaCache]);
 
-  // Helper: Get students belonging to a specific class in an institution
-  const getStudentsInClass = (c: Kelas, l: Lembaga) => {
-    return santriList.filter(s => {
+  // Helper: Get students belonging to a specific class in an institution - MEMOIZED & CACHED
+  const getStudentsInClass = useCallback((c: Kelas, l: Lembaga) => {
+    const cacheKey = `${c.id}_${l.id}_${selectedGender}`;
+    if (studentsInClassCache.has(cacheKey)) {
+      return studentsInClassCache.get(cacheKey)!;
+    }
+
+    const res = santriList.filter(s => {
       if (!isGenderMatch(s.gender, selectedGender)) return false;
 
       const inLembaga = isStudentInLembaga(s, l);
@@ -1008,15 +1050,18 @@ export default function LembagaKelasSub({
         return matchNonDefaultClass(c);
       }
     });
-  };
 
-  // Helper: Get total students following an institution
-  const getLembagaStudentCount = (l: Lembaga) => {
+    studentsInClassCache.set(cacheKey, res);
+    return res;
+  }, [santriList, selectedGender, isStudentInLembaga, getClassesOfLembaga, studentsInClassCache]);
+
+  // Helper: Get total students following an institution - MEMOIZED
+  const getLembagaStudentCount = useCallback((l: Lembaga) => {
     return santriList.filter(s => {
       if (!isGenderMatch(s.gender, selectedGender)) return false;
       return isStudentInLembaga(s, l);
     }).length;
-  };
+  }, [santriList, selectedGender, isStudentInLembaga]);
 
   // --- Dynamic Unified Institutions Builder ---
   const institutions = useMemo(() => {

@@ -1268,7 +1268,11 @@ export default function SekretarisView({
     for (const [colKey, allowedVals] of Object.entries(excelColumnFilters)) {
       if (allowedVals && allowedVals.length > 0) {
         const val = getColumnValueString(s, colKey, ageFilterConfig, lembagasList, kelasList);
-        const isMatch = allowedVals.includes(val) || (colKey === 'pendidikanFormal' && allowedVals.some(av => val.endsWith(` - ${av}`) || val === av));
+        const isMatch = allowedVals.includes(val) || (colKey === 'pendidikanFormal' && allowedVals.some(av => {
+          const normVal = val.trim().toLowerCase();
+          const normAv = av.trim().toLowerCase();
+          return normVal === normAv || normVal.endsWith(` - ${normAv}`) || normAv.endsWith(` - ${normVal}`);
+        }));
         if (!isMatch) {
           return false;
         }

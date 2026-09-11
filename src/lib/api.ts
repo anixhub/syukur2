@@ -289,7 +289,18 @@ export async function fetchTableData<T>(table: string, localKey?: string, defaul
                 }
               }
             } catch (e) {}
+            if (defaultValue && defaultValue.length > 0) {
+              safeLocalStorageSetItem(localKey, JSON.stringify(defaultValue));
+              fetch(getApiUrl(`/api/db/${table}`), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(camelToSnake(defaultValue))
+              }).catch(() => {});
+              return defaultValue;
+            }
             safeLocalStorageSetItem(localKey, JSON.stringify([]));
+          } else if (defaultValue && defaultValue.length > 0) {
+            return defaultValue;
           }
           return fetchedData;
         }
