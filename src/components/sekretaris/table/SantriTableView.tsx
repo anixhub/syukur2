@@ -1486,24 +1486,33 @@ export default function SantriTableView({
 
                 {/* Toggable / Monitoring */}
                 {shouldShowColumn('indukMhd') && (
-                  <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-500 w-[120px] min-w-[120px] ${
-                    isMonitoringMode && isCellEmpty(s, 'indukMhd') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
-                  }`}>
-                    {renderEditableCell(s, 'indukMhd', s.indukMhd || '-', { className: 'font-mono' })}
+                  <td 
+                    title="Nomor Induk MHD dikelola di Modul Pendidikan"
+                    className={`px-3 py-4 whitespace-nowrap text-xs text-slate-700 font-mono w-[120px] min-w-[120px] ${
+                      isMonitoringMode && isCellEmpty(s, 'indukMhd') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
+                    }`}
+                  >
+                    {s.indukMhd || '-'}
                   </td>
                 )}
                 {shouldShowColumn('indukWustho') && (
-                  <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-500 w-[135px] min-w-[135px] ${
-                    isMonitoringMode && isCellEmpty(s, 'indukWustho') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
-                  }`}>
-                    {renderEditableCell(s, 'indukWustho', s.indukWustho || '-', { className: 'font-mono' })}
+                  <td 
+                    title="Nomor Induk Wustho dikelola di Modul Pendidikan"
+                    className={`px-3 py-4 whitespace-nowrap text-xs text-slate-700 font-mono w-[135px] min-w-[135px] ${
+                      isMonitoringMode && isCellEmpty(s, 'indukWustho') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
+                    }`}
+                  >
+                    {s.indukWustho || '-'}
                   </td>
                 )}
                 {shouldShowColumn('indukUlya') && (
-                  <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-500 w-[120px] min-w-[120px] ${
-                    isMonitoringMode && isCellEmpty(s, 'indukUlya') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
-                  }`}>
-                    {renderEditableCell(s, 'indukUlya', s.indukUlya || '-', { className: 'font-mono' })}
+                  <td 
+                    title="Nomor Induk Ulya dikelola di Modul Pendidikan"
+                    className={`px-3 py-4 whitespace-nowrap text-xs text-slate-700 font-mono w-[120px] min-w-[120px] ${
+                      isMonitoringMode && isCellEmpty(s, 'indukUlya') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
+                    }`}
+                  >
+                    {s.indukUlya || '-'}
                   </td>
                 )}
                 {shouldShowColumn('noKk') && (

@@ -1,21 +1,25 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Save, User, Hash, Calendar, Heart, ShieldCheck, BookOpen, Layers, Sparkles } from 'lucide-react';
-import { Santri } from '../../types';
-import { getSantriTahunMasuk } from '../../lib/nismHelper';
+import { Santri, Lembaga } from '../../types';
+import { getSantriTahunMasuk, generate18DigitNism, getNextSequenceForSantri, getNismFieldKeyForLembaga } from '../../lib/nismHelper';
 
 interface EditSantriKolomModalProps {
   isOpen: boolean;
   onClose: () => void;
   santri: Santri | null;
   onSave: (updatedSantri: Santri) => void;
+  lembaga?: Lembaga | null;
+  allStudents?: Santri[];
 }
 
 export const EditSantriKolomModal: React.FC<EditSantriKolomModalProps> = ({
   isOpen,
   onClose,
   santri,
-  onSave
+  onSave,
+  lembaga,
+  allStudents
 }) => {
   if (!isOpen || !santri) return null;
 
@@ -41,6 +45,18 @@ export const EditSantriKolomModal: React.FC<EditSantriKolomModalProps> = ({
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleGenerateNismForSingle = () => {
+    const yr = formData.tahunMasuk || '2024';
+    const seq = getNextSequenceForSantri(santri, allStudents || [], lembaga, yr);
+    const generated = generate18DigitNism(santri, lembaga, seq, yr);
+    const fieldKey = getNismFieldKeyForLembaga(lembaga);
+    setFormData(prev => ({
+      ...prev,
+      nism: generated,
+      [fieldKey]: generated
+    }));
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -118,9 +134,20 @@ export const EditSantriKolomModal: React.FC<EditSantriKolomModalProps> = ({
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
-                      NISM (18 Digit)
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                        NISM (18 Digit)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleGenerateNismForSingle}
+                        className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded-md border border-amber-200 transition-all cursor-pointer shadow-3xs active:scale-95"
+                        title="Generate 18-digit NISM otomatis"
+                      >
+                        <Sparkles className="h-3 w-3 text-amber-600" />
+                        <span>Generate</span>
+                      </button>
+                    </div>
                     <input
                       type="text"
                       value={formData.nism}
@@ -173,6 +200,57 @@ export const EditSantriKolomModal: React.FC<EditSantriKolomModalProps> = ({
                       placeholder="Nama lengkap..."
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none font-bold text-slate-800"
                     />
+                  </div>
+                </div>
+
+                {/* Nomor Induk Satuan Lembaga (Pendidikan) */}
+                <div className="mt-4 bg-slate-50/90 p-3.5 rounded-2xl border border-slate-200/90 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                      <BookOpen className="h-3.5 w-3.5 text-emerald-600" />
+                      Nomor Induk Lembaga (MHD, Wustho, Ulya)
+                    </span>
+                    <span className="text-[9px] font-bold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded border border-emerald-200">
+                      Modul Pendidikan
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
+                        INDUK MHD
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.indukMhd}
+                        onChange={(e) => setFormData({ ...formData, indukMhd: e.target.value })}
+                        placeholder="No. Induk MHD..."
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none font-mono font-semibold text-slate-800 text-xs bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
+                        INDUK WUSTHO
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.indukWustho}
+                        onChange={(e) => setFormData({ ...formData, indukWustho: e.target.value })}
+                        placeholder="No. Induk Wustho..."
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none font-mono font-semibold text-slate-800 text-xs bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
+                        INDUK ULYA
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.indukUlya}
+                        onChange={(e) => setFormData({ ...formData, indukUlya: e.target.value })}
+                        placeholder="No. Induk Ulya..."
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none font-mono font-semibold text-slate-800 text-xs bg-white"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>

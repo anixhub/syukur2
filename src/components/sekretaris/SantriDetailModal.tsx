@@ -38,14 +38,8 @@ import { renderSantriAvatar, isCustomPasFoto, calculateRealtimeAge } from '../Se
 import { uploadFileToStorage, updateTableRow, getApiUrl } from '../../lib/api';
 import { processUploadedFile } from '../../lib/utils';
 import { 
-  getNismFieldKeyForLembaga,
-  getSantriNismForLembaga,
   formatTanggalMasukDMY,
-  parseTanggalMasukToYear,
-  generate18DigitNism,
-  getNextSequenceForSantri,
-  updateSantriNismAndTahunMasuk,
-  clearSantriNismForLembaga
+  parseTanggalMasukToYear
 } from '../../lib/nismHelper';
 
 const formatDateDMY = (dateVal?: any) => {
@@ -213,160 +207,10 @@ export default function SantriDetailModal({ selectedSantri, onClose, onUpdateSan
   React.useEffect(() => {
     if (selectedSantri) {
       setLocalSantri(selectedSantri);
-      const defaultTgl = formatTanggalMasukDMY(selectedSantri.tanggalMasukLembaga || selectedSantri.tanggalMasuk || '');
-      setNismFormState({
-        indukWustho: {
-          nism: selectedSantri.indukWustho || '',
-          tanggalMasuk: defaultTgl
-        },
-        indukUlya: {
-          nism: selectedSantri.indukUlya || '',
-          tanggalMasuk: defaultTgl
-        },
-        indukMhd: {
-          nism: selectedSantri.indukMhd || '',
-          tanggalMasuk: defaultTgl
-        },
-        nism: {
-          nism: selectedSantri.nism || '',
-          tanggalMasuk: defaultTgl
-        }
-      });
     } else {
       setLocalSantri(null);
-      setNismFormState({});
     }
   }, [selectedSantri]);
-
-  const [nismFormState, setNismFormState] = useState<Record<string, { nism: string; tanggalMasuk: string }>>({});
-  const [savingLembagaKey, setSavingLembagaKey] = useState<string | null>(null);
-  const [savedSuccessKey, setSavedSuccessKey] = useState<string | null>(null);
-
-  const handleNismFieldChange = (fieldKey: string, prop: 'nism' | 'tanggalMasuk', val: string) => {
-    setNismFormState(prev => ({
-      ...prev,
-      [fieldKey]: {
-        ...(prev[fieldKey] || { nism: '', tanggalMasuk: '' }),
-        [prop]: val
-      }
-    }));
-  };
-
-  const handleSaveNismRow = async (fieldKey: string, lembagaObj?: any) => {
-    if (!localSantri) return;
-    setSavingLembagaKey(fieldKey);
-    try {
-      const rowData = nismFormState[fieldKey] || { nism: '', tanggalMasuk: '' };
-      const yr = parseTanggalMasukToYear(rowData.tanggalMasuk);
-      
-      const payload: Partial<Santri> = {
-        [fieldKey]: rowData.nism.trim(),
-        tanggalMasukLembaga: rowData.tanggalMasuk.trim(),
-        tahunMasuk: yr
-      };
-
-      const updated = await updateTableRow<Santri>('santri', 'smartsantri_santriList', localSantri.id, payload);
-      setLocalSantri(updated);
-      onUpdateSantri?.(updated);
-      
-      setSavedSuccessKey(fieldKey);
-      setTimeout(() => {
-        setSavedSuccessKey(null);
-      }, 2500);
-    } catch (err: any) {
-      console.error("Gagal menyimpan NISM lembaga:", err);
-      alert("Gagal menyimpan: " + err.message);
-    } finally {
-      setSavingLembagaKey(null);
-    }
-  };
-
-  const handleGenerateNismInModal = async (fieldKey: string, jenjang: string, lembagaObj?: any) => {
-    if (!localSantri) return;
-    setSavingLembagaKey(fieldKey);
-    try {
-      const rowData = nismFormState[fieldKey] || { nism: '', tanggalMasuk: '' };
-      const yr = parseTanggalMasukToYear(rowData.tanggalMasuk || localSantri.tanggalMasukLembaga || localSantri.tanggalMasuk || '2024');
-      
-      // Get all students to calculate next sequence
-      let allStudents: Santri[] = [];
-      try {
-        const local = localStorage.getItem('smartsantri_santriList');
-        if (local) allStudents = JSON.parse(local);
-      } catch (e) {}
-
-      const mockLembaga: Lembaga = lembagaObj || {
-        id: fieldKey,
-        nama: fieldKey === 'indukWustho' ? 'SPM Wustho' : fieldKey === 'indukUlya' ? 'SPM Ulya' : fieldKey === 'indukMhd' ? 'Madrasah Diniyyah' : 'Formal',
-        kode: fieldKey === 'indukWustho' ? 'WUSTHO' : fieldKey === 'indukUlya' ? 'ULYA' : fieldKey === 'indukMhd' ? 'MHD' : 'FORMAL',
-        jenjang: jenjang,
-        nomorStatistik: fieldKey === 'indukWustho' ? '511235070001' : fieldKey === 'indukUlya' ? '521235070001' : fieldKey === 'indukMhd' ? '512235070001' : '121235070001',
-        kategori: 'Pendidikan',
-        status: 'Aktif'
-      };
-
-      const seq = getNextSequenceForSantri(localSantri, allStudents, mockLembaga, yr);
-      const generated18 = generate18DigitNism(localSantri, mockLembaga, seq, yr);
-
-      const updatedForm = {
-        nism: generated18,
-        tanggalMasuk: rowData.tanggalMasuk || formatTanggalMasukDMY(localSantri.tanggalMasukLembaga || localSantri.tanggalMasuk || '') || `01/07/${yr}`
-      };
-
-      setNismFormState(prev => ({
-        ...prev,
-        [fieldKey]: updatedForm
-      }));
-
-      const payload: Partial<Santri> = {
-        [fieldKey]: generated18,
-        tanggalMasukLembaga: updatedForm.tanggalMasuk,
-        tahunMasuk: yr
-      };
-
-      const updated = await updateTableRow<Santri>('santri', 'smartsantri_santriList', localSantri.id, payload);
-      setLocalSantri(updated);
-      onUpdateSantri?.(updated);
-
-      setSavedSuccessKey(fieldKey);
-      setTimeout(() => {
-        setSavedSuccessKey(null);
-      }, 2500);
-    } catch (err: any) {
-      console.error("Gagal generate NISM:", err);
-      alert("Gagal generate NISM: " + err.message);
-    } finally {
-      setSavingLembagaKey(null);
-    }
-  };
-
-  const handleClearNismRow = async (fieldKey: string) => {
-    if (!localSantri) return;
-    setSavingLembagaKey(fieldKey);
-    try {
-      const updatedForm = {
-        ...(nismFormState[fieldKey] || { tanggalMasuk: '' }),
-        nism: ''
-      };
-
-      setNismFormState(prev => ({
-        ...prev,
-        [fieldKey]: updatedForm
-      }));
-
-      const payload: Partial<Santri> = {
-        [fieldKey]: ''
-      };
-
-      const updated = await updateTableRow<Santri>('santri', 'smartsantri_santriList', localSantri.id, payload);
-      setLocalSantri(updated);
-      onUpdateSantri?.(updated);
-    } catch (err: any) {
-      console.error("Gagal menghapus NISM:", err);
-    } finally {
-      setSavingLembagaKey(null);
-    }
-  };
 
   React.useEffect(() => {
     if (selectedSantri) {
@@ -1163,44 +1007,43 @@ export default function SantriDetailModal({ selectedSantri, onClose, onUpdateSan
             {activeTab === 'akademik' && (
               <div className="space-y-5 animate-fadeIn">
                 {/* 1. TABEL UTAMA: Data Lembaga, Tanggal Masuk & NISM (18-Digit) */}
-                <div className="bg-white rounded-[24px] border border-amber-200/80 shadow-xs overflow-hidden">
-                  <div className="p-4 sm:p-5 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-b border-amber-200/60">
+                {/* 1. NISM & Lembaga Table Card (Read-only in Sekretaris, managed in Pendidikan) */}
+                <div className="bg-white rounded-[24px] border border-slate-200/90 shadow-xs overflow-hidden">
+                  <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-100/80 via-slate-50 to-transparent border-b border-slate-200/80">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-2xl bg-amber-600 text-white flex items-center justify-center font-bold text-sm shadow-2xs">
+                        <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-bold text-sm shadow-2xs">
                           <Building2 className="h-5 w-5" />
                         </div>
                         <div>
                           <h4 className="font-black text-slate-800 text-sm tracking-wide flex items-center gap-2">
-                            <span>Tabel Lembaga, Tanggal Masuk & NISM</span>
-                            <span className="bg-amber-100 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-md border border-amber-300/60">
-                              18 Digit
+                            <span>Tabel Lembaga & Nomor Induk (NISM)</span>
+                            <span className="bg-emerald-100 text-emerald-900 text-[10px] font-black px-2 py-0.5 rounded-md border border-emerald-300/60">
+                              Data Terpusat
                             </span>
                           </h4>
                           <p className="text-xs text-slate-500 font-medium">
-                            Kelola tanggal masuk lembaga sebagai acuan pembentukan Nomor Induk Santri Masuk (NISM).
+                            Daftar nomor induk siswa madrasah (NISM) dan tanggal masuk satuan lembaga.
                           </p>
                         </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 self-start sm:self-auto bg-amber-50 border border-amber-200/80 px-3 py-1.5 rounded-xl text-[11px] font-bold text-amber-800">
+                        <Info className="h-4 w-4 text-amber-600 shrink-0" />
+                        <span>Dikelola di Modul Pendidikan</span>
                       </div>
                     </div>
                   </div>
 
                   <div className="p-4 sm:p-5">
                     <div className="overflow-x-auto rounded-xl border border-slate-200/90 shadow-3xs">
-                      <table className="w-full text-left border-collapse min-w-[700px]">
+                      <table className="w-full text-left border-collapse min-w-[650px]">
                         <thead>
                           <tr className="bg-slate-100 border-b border-slate-200 text-[10px] font-black text-slate-700 uppercase tracking-wider select-none">
-                            <th className="w-10 py-3 px-2 text-center border-r border-slate-200">NO</th>
-                            <th className="w-52 py-3 px-3 border-r border-slate-200">LEMBAGA / SATUAN</th>
-                            <th className="w-44 py-3 px-3 border-r border-slate-200">
-                              <div className="flex items-center justify-between">
-                                <span>TGL MASUK LEMBAGA</span>
-                                <span className="text-[9px] text-slate-400 font-normal lowercase">(dd/mm/yyyy)</span>
-                              </div>
-                            </th>
-                            <th className="w-20 py-3 px-2 text-center border-r border-slate-200">THN ACUAN</th>
-                            <th className="w-56 py-3 px-3 border-r border-slate-200">NOMOR NISM (18 DIGIT)</th>
-                            <th className="w-36 py-3 px-2 text-center">AKSI</th>
+                            <th className="w-12 py-3 px-3 text-center border-r border-slate-200">NO</th>
+                            <th className="py-3 px-4 border-r border-slate-200">LEMBAGA / SATUAN</th>
+                            <th className="w-48 py-3 px-4 border-r border-slate-200">TGL MASUK LEMBAGA</th>
+                            <th className="w-28 py-3 px-3 text-center border-r border-slate-200">THN ACUAN</th>
+                            <th className="w-64 py-3 px-4">NOMOR NISM / INDUK</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 text-xs">
@@ -1211,7 +1054,8 @@ export default function SantriDetailModal({ selectedSantri, onClose, onUpdateSan
                               nama: 'SPM Wustho',
                               jenjang: 'Wustho',
                               deskripsi: "Pendidikan Mu'adalah Tingkat Pertama (Setara SMP/MTs)",
-                              badgeColor: 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                              badgeColor: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+                              value: localSantri.indukWustho
                             },
                             {
                               id: 'ulya',
@@ -1219,7 +1063,8 @@ export default function SantriDetailModal({ selectedSantri, onClose, onUpdateSan
                               nama: 'SPM Ulya',
                               jenjang: 'Ulya',
                               deskripsi: "Pendidikan Mu'adalah Tingkat Atas (Setara SMA/MA)",
-                              badgeColor: 'bg-indigo-50 text-indigo-800 border-indigo-200'
+                              badgeColor: 'bg-indigo-50 text-indigo-800 border-indigo-200',
+                              value: localSantri.indukUlya
                             },
                             {
                               id: 'mhd',
@@ -1227,7 +1072,8 @@ export default function SantriDetailModal({ selectedSantri, onClose, onUpdateSan
                               nama: 'Madrasah Diniyyah (MHD)',
                               jenjang: 'MHD',
                               deskripsi: 'Pendidikan Diniyyah & Kitab Kuning Pesantren',
-                              badgeColor: 'bg-amber-50 text-amber-800 border-amber-200'
+                              badgeColor: 'bg-amber-50 text-amber-800 border-amber-200',
+                              value: localSantri.indukMhd
                             },
                             {
                               id: 'formal',
@@ -1235,23 +1081,23 @@ export default function SantriDetailModal({ selectedSantri, onClose, onUpdateSan
                               nama: 'Pendidikan Formal / Umum',
                               jenjang: 'Formal',
                               deskripsi: 'Pendidikan Formal & Umum Pesantren',
-                              badgeColor: 'bg-sky-50 text-sky-800 border-sky-200'
+                              badgeColor: 'bg-sky-50 text-sky-800 border-sky-200',
+                              value: localSantri.nism
                             }
                           ].map((item, idx) => {
-                            const curForm = nismFormState[item.key] || { nism: '', tanggalMasuk: '' };
-                            const computedYear = parseTanggalMasukToYear(curForm.tanggalMasuk || localSantri.tanggalMasukLembaga || localSantri.tanggalMasuk || '2024');
-                            const isSaving = savingLembagaKey === item.key;
-                            const isSaved = savedSuccessKey === item.key;
+                            const rawDate = localSantri.tanggalMasukLembaga || localSantri.tanggalMasuk || '';
+                            const formattedDate = formatTanggalMasukDMY(rawDate);
+                            const computedYear = parseTanggalMasukToYear(rawDate || '2024');
 
                             return (
                               <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
                                 {/* 1. NO */}
-                                <td className="py-3 px-2 text-center font-bold text-slate-400 border-r border-slate-100">
+                                <td className="py-3 px-3 text-center font-bold text-slate-400 border-r border-slate-100">
                                   {idx + 1}
                                 </td>
 
                                 {/* 2. LEMBAGA / SATUAN */}
-                                <td className="py-3 px-3 border-r border-slate-100">
+                                <td className="py-3 px-4 border-r border-slate-100">
                                   <div>
                                     <div className="flex items-center gap-1.5">
                                       <span className="font-extrabold text-slate-800 text-xs">
@@ -1268,82 +1114,28 @@ export default function SantriDetailModal({ selectedSantri, onClose, onUpdateSan
                                 </td>
 
                                 {/* 3. TGL MASUK LEMBAGA */}
-                                <td className="py-2 px-3 border-r border-slate-100">
-                                  <div className="flex items-center gap-1">
-                                    <input
-                                      type="text"
-                                      value={curForm.tanggalMasuk}
-                                      onChange={(e) => handleNismFieldChange(item.key, 'tanggalMasuk', e.target.value)}
-                                      placeholder="Contoh: 15/07/2024"
-                                      className="w-full px-2 py-1.5 text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
-                                      title="Masukkan Tanggal Masuk Lembaga (dd/mm/yyyy)"
-                                    />
-                                  </div>
+                                <td className="py-3 px-4 border-r border-slate-100 font-mono text-slate-700 font-semibold">
+                                  {formattedDate || '-'}
                                 </td>
 
                                 {/* 4. THN ACUAN */}
-                                <td className="py-3 px-2 text-center font-mono font-bold text-amber-900 border-r border-slate-100 bg-amber-50/40">
-                                  <span className="bg-white px-2 py-0.5 rounded border border-amber-200 text-xs">
-                                    {computedYear}
+                                <td className="py-3 px-3 text-center font-mono font-bold text-slate-700 border-r border-slate-100">
+                                  <span className="bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-xs">
+                                    {computedYear || '-'}
                                   </span>
                                 </td>
 
-                                {/* 5. NOMOR NISM (18 DIGIT) */}
-                                <td className="py-2 px-3 border-r border-slate-100">
-                                  <input
-                                    type="text"
-                                    value={curForm.nism}
-                                    maxLength={18}
-                                    onChange={(e) => handleNismFieldChange(item.key, 'nism', e.target.value)}
-                                    placeholder="18 Digit NISM..."
-                                    className="w-full px-2.5 py-1.5 text-xs font-mono font-extrabold text-slate-800 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 tracking-wide"
-                                  />
-                                </td>
-
-                                {/* 6. AKSI */}
-                                <td className="py-2 px-2 text-center">
-                                  <div className="flex items-center justify-center gap-1">
-                                    {/* Generate NISM */}
-                                    <button
-                                      type="button"
-                                      disabled={isSaving}
-                                      onClick={() => handleGenerateNismInModal(item.key, item.jenjang)}
-                                      title="Generate 18-Digit NISM Otomatis berdasarkan tahun masuk lembaga"
-                                      className="inline-flex items-center gap-1 bg-amber-50 hover:bg-amber-100 active:scale-95 text-amber-900 border border-amber-300/80 px-2 py-1.5 rounded-lg text-[11px] font-extrabold transition-all cursor-pointer shadow-3xs disabled:opacity-50"
-                                    >
-                                      <Sparkles className="h-3 w-3 text-amber-600" />
-                                      <span>Generate</span>
-                                    </button>
-
-                                    {/* Simpan */}
-                                    <button
-                                      type="button"
-                                      disabled={isSaving}
-                                      onClick={() => handleSaveNismRow(item.key)}
-                                      title="Simpan Perubahan Tanggal & NISM"
-                                      className={`inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-extrabold transition-all cursor-pointer shadow-3xs disabled:opacity-50 ${
-                                        isSaved 
-                                          ? 'bg-emerald-600 text-white' 
-                                          : 'bg-slate-800 hover:bg-slate-900 text-white'
-                                      }`}
-                                    >
-                                      {isSaved ? <Check className="h-3 w-3" /> : <Save className="h-3 w-3" />}
-                                      <span>{isSaved ? 'Tersimpan' : 'Simpan'}</span>
-                                    </button>
-
-                                    {/* Hapus */}
-                                    {curForm.nism && (
-                                      <button
-                                        type="button"
-                                        disabled={isSaving}
-                                        onClick={() => handleClearNismRow(item.key)}
-                                        title="Hapus / Kosongkan NISM ini"
-                                        className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200/80 transition-all cursor-pointer"
-                                      >
-                                        <Trash2 className="h-3 w-3" />
-                                      </button>
-                                    )}
-                                  </div>
+                                {/* 5. NOMOR NISM / INDUK */}
+                                <td className="py-3 px-4">
+                                  {item.value ? (
+                                    <span className="inline-block font-mono font-black text-slate-800 tracking-wider bg-slate-100/90 px-2.5 py-1 rounded-lg border border-slate-200">
+                                      {item.value}
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-300 italic text-[11px]">
+                                      Belum digenerate
+                                    </span>
+                                  )}
                                 </td>
                               </tr>
                             );

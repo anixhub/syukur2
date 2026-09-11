@@ -5988,6 +5988,8 @@ export default function LembagaKelasSub({
             onUpdateSantri?.(updated);
             setEditingSantriForKolom(null);
           }}
+          lembaga={selectedLembaga}
+          allStudents={santriList}
         />
       )}
 

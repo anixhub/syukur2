@@ -1449,7 +1449,7 @@ export default function SantriFormModal({
     const entry: Santri = {
       id: editingSantri ? editingSantri.id : `S${Date.now()}`,
       nis: generatedNis,
-      nism: form.nism && form.nism.trim() !== '' ? form.nism.trim() : undefined,
+      nism: editingSantri ? editingSantri.nism : undefined,
       nama: form.nama,
       kelas: finalKelasString,
       kamar: form.kamar,
@@ -1460,9 +1460,11 @@ export default function SantriFormModal({
       tanggalMasuk: form.tanggalMasuk,
       
       nisn: form.nisn,
-      indukMhd: form.indukMhd,
-      indukWustho: form.indukWustho,
-      indukUlya: form.indukUlya,
+      indukMhd: editingSantri ? (editingSantri.indukMhd || '') : '',
+      indukWustho: editingSantri ? (editingSantri.indukWustho || '') : '',
+      indukUlya: editingSantri ? (editingSantri.indukUlya || '') : '',
+      tanggalMasukLembaga: editingSantri?.tanggalMasukLembaga,
+      tahunMasukLembaga: editingSantri?.tahunMasukLembaga,
       nik: form.nik,
       noKk: form.noKk,
       tempatLahir: form.tempatLahir,
@@ -2203,54 +2205,38 @@ export default function SantriFormModal({
                           )}
                         </div>
 
-                        <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">NISM (Nomor Induk Siswa Madrasah)</label>
-                          <input
-                            type="text"
-                            id="nism-input"
-                            value={form.nism || ''}
-                            onChange={(e) => setForm(prev => ({ ...prev, nism: e.target.value }))}
-                            placeholder="Nomor Induk Madrasah (opsional / manual)"
-                            className="select-text w-full rounded-xl border border-slate-200 bg-white p-3 text-sm outline-none focus:border-emerald-500 font-mono"
-                          />
-                        </div>
-
-                        <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4 border-t border-slate-100 pt-3">
-                          <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">INDUK MHD</label>
-                            <input
-                              type="text"
-                              id="indukMhd-input"
-                              value={form.indukMhd}
-                              onChange={(e) => setForm(prev => ({ ...prev, indukMhd: e.target.value }))}
-                              placeholder="No. Induk MHD"
-                              className="select-text w-full rounded-xl border border-slate-200 bg-white p-3 text-sm outline-none focus:border-emerald-500 font-mono"
-                            />
+                        {/* Informasi Nomor Induk Lembaga & NISM (Eksklusif Modul Pendidikan) */}
+                        <div className="sm:col-span-2 bg-slate-50/90 rounded-2xl p-4 border border-slate-200">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 mb-3">
+                            <span className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1.5">
+                              <Lock className="h-3.5 w-3.5 text-slate-500" />
+                              Nomor Induk Lembaga & NISM
+                            </span>
+                            <span className="text-[10px] font-bold text-amber-800 bg-amber-100/90 px-2 py-0.5 rounded-md border border-amber-200 self-start sm:self-auto">
+                              Dikelola di Modul Pendidikan
+                            </span>
                           </div>
-
-                          <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">INDUK WUSTHO</label>
-                            <input
-                              type="text"
-                              id="indukWustho-input"
-                              value={form.indukWustho}
-                              onChange={(e) => setForm(prev => ({ ...prev, indukWustho: e.target.value }))}
-                              placeholder="No. Induk Wustho"
-                              className="select-text w-full rounded-xl border border-slate-200 bg-white p-3 text-sm outline-none focus:border-emerald-500 font-mono"
-                            />
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                            <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                              <span className="block text-[10px] font-bold text-slate-400 uppercase">NISM</span>
+                              <span className="font-mono font-bold text-slate-700 break-all">{form.nism || '-'}</span>
+                            </div>
+                            <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                              <span className="block text-[10px] font-bold text-slate-400 uppercase">INDUK MHD</span>
+                              <span className="font-mono font-bold text-slate-700 break-all">{form.indukMhd || '-'}</span>
+                            </div>
+                            <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                              <span className="block text-[10px] font-bold text-slate-400 uppercase">INDUK WUSTHO</span>
+                              <span className="font-mono font-bold text-slate-700 break-all">{form.indukWustho || '-'}</span>
+                            </div>
+                            <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                              <span className="block text-[10px] font-bold text-slate-400 uppercase">INDUK ULYA</span>
+                              <span className="font-mono font-bold text-slate-700 break-all">{form.indukUlya || '-'}</span>
+                            </div>
                           </div>
-
-                          <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">INDUK ULYA</label>
-                            <input
-                              type="text"
-                              id="indukUlya-input"
-                              value={form.indukUlya}
-                              onChange={(e) => setForm(prev => ({ ...prev, indukUlya: e.target.value }))}
-                              placeholder="No. Induk Ulya"
-                              className="select-text w-full rounded-xl border border-slate-200 bg-white p-3 text-sm outline-none focus:border-emerald-500 font-mono"
-                            />
-                          </div>
+                          <p className="text-[11px] text-slate-500 mt-2.5">
+                            * Pengeditan dan pembentukan NISM serta Nomor Induk Lembaga (MHD, Wustho, Ulya) hanya dapat dilakukan melalui <strong>Modul Pendidikan</strong>.
+                          </p>
                         </div>
                       </div>
                     </div>
