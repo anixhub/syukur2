@@ -194,7 +194,31 @@ input::-webkit-credentials-auto-fill-button {
   border-bottom: 2px solid #e2e8f0; /* matches slate-200 */
 }
 
-/* Minimalist aesthetic custom scrollbars */
+/* Sembunyikan scroll bar halaman utama tetapi tetap fungsional scrollable */
+html, body, #root, #main-app-container {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+html::-webkit-scrollbar, 
+body::-webkit-scrollbar, 
+#root::-webkit-scrollbar, 
+#main-app-container::-webkit-scrollbar {
+  display: none !important; /* Chrome, Safari, Opera */
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+/* Minimalist aesthetic custom scrollbars for inner elements (modals/drawers) */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;

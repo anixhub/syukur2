@@ -4,6 +4,7 @@ import {
   Send, 
   Trash2, 
   Search, 
+  ChevronLeft,
   Check, 
   Copy, 
   ThumbsUp, 
@@ -207,6 +208,8 @@ export default function AdminChatDrawer({
   const [showHideTooltip, setShowHideTooltip] = useState(false);
   const [activeChannel, setActiveChannel] = useState<string>('semua');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchMode, setIsSearchMode] = useState<boolean>(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
 
@@ -402,6 +405,10 @@ export default function AdminChatDrawer({
     if (activeTab === 'chat' || !isOpen) {
       setSelectedMediaId(null);
       setSelectedMediaIds([]);
+    }
+    if (!isOpen) {
+      setIsSearchMode(false);
+      setSearchQuery('');
     }
   }, [activeTab, isOpen]);
 
@@ -1635,6 +1642,23 @@ export default function AdminChatDrawer({
   // Selected media message object for Action Panel
   const selectedMediaMsg = selectedMediaId ? messages.find(m => m.id === selectedMediaId) : null;
 
+  // Search keyword highlight helper
+  const renderHighlightedSearchText = (text: string, query: string) => {
+    if (!query || !query.trim()) return text;
+    const cleanQuery = query.trim().replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const regex = new RegExp(`(${cleanQuery})`, 'gi');
+    const parts = text.split(regex);
+    return parts.map((part, i) =>
+      part.toLowerCase() === query.trim().toLowerCase() ? (
+        <span key={i} className="bg-amber-200 text-amber-950 font-bold px-0.5 rounded-xs">
+          {part}
+        </span>
+      ) : (
+        part
+      )
+    );
+  };
+
   if (!isOpen && !isClosing) return null;
 
   // Layout mode class selector
@@ -1733,170 +1757,291 @@ export default function AdminChatDrawer({
           </div>
         )}
 
-        {/* TOP HEADER BAR (Entire header area draggable in floating mode) */}
-        <div 
-          onMouseDown={(e) => {
-            if (layoutMode === 'floating') {
-              e.preventDefault();
-              document.body.style.userSelect = 'none';
-              isDraggingWindowRef.current = true;
-              setIsDraggingWindow(true);
-              dragStateRef.current = {
-                type: 'window',
-                startX: e.clientX,
-                startWidth: floatingWidthRef.current,
-                startPosX: positionXRef.current
-              };
-            }
-          }}
-          className={`flex h-16 shrink-0 items-center justify-between border-b border-slate-100 bg-white px-4 sm:px-5 ${
-            layoutMode === 'floating' 
-              ? 'cursor-grab active:cursor-grabbing select-none' 
-              : ''
-          }`}
-          title={layoutMode === 'floating' ? 'Tahan dan geser area header untuk memindahkan kotak obrolan' : undefined}
-        >
-          {/* Left: Chat / Media Switcher Pill */}
-          <div className="flex items-center gap-2" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="flex items-center bg-[#f2f3f5] p-1 rounded-full border border-slate-200/50">
-              <button
-                type="button"
-                onClick={() => setActiveTab('chat')}
-                onMouseDown={(e) => e.stopPropagation()}
-                className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none ${
-                  activeTab === 'chat'
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-500 hover:text-slate-900 font-medium'
-                }`}
-              >
-                Chat
-              </button>
-              <div className="flex items-center gap-1">
+        {/* TOP HEADER BAR (Switch between Normal Header and Search Screen Header) */}
+        {isSearchMode ? (
+          /* BEGIN: Search Screen Header (Exact matching user reference) */
+          <header className="flex items-center px-4 py-2 space-x-3 border-b border-gray-100 bg-white h-16 shrink-0 z-30">
+            {/* Back Button */}
+            <button 
+              type="button"
+              aria-label="Go back" 
+              onClick={() => {
+                setIsSearchMode(false);
+                setSearchQuery('');
+              }}
+              className="p-2 -ml-2 text-gray-800 hover:bg-gray-100 rounded-full transition-colors flex-shrink-0 cursor-pointer"
+            >
+              <ChevronLeft className="w-5 h-5 text-gray-800" />
+            </button>
+            {/* Search Input Container */}
+            <div className="flex-grow relative flex items-center bg-[#f3f4f6] rounded-full px-3 py-2">
+              <Search className="text-gray-400 text-sm absolute left-3 w-4 h-4 pointer-events-none" />
+              <input 
+                ref={searchInputRef}
+                autoFocus
+                className="w-full bg-transparent border-none focus:ring-0 focus:outline-none text-sm text-gray-800 placeholder-gray-400 pl-7 pr-7 py-0 h-auto" 
+                placeholder="Cari konten chat..." 
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setIsSearchMode(false);
+                    setSearchQuery('');
+                  }
+                }}
+              />
+              {searchQuery && (
                 <button
                   type="button"
-                  onClick={() => setActiveTab('media')}
+                  onClick={() => {
+                    setSearchQuery('');
+                    searchInputRef.current?.focus();
+                  }}
+                  className="absolute right-2.5 p-1 text-gray-400 hover:text-gray-600 rounded-full cursor-pointer"
+                  title="Hapus pencarian"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </header>
+        ) : (
+          <div 
+            onMouseDown={(e) => {
+              if (layoutMode === 'floating') {
+                e.preventDefault();
+                document.body.style.userSelect = 'none';
+                isDraggingWindowRef.current = true;
+                setIsDraggingWindow(true);
+                dragStateRef.current = {
+                  type: 'window',
+                  startX: e.clientX,
+                  startWidth: floatingWidthRef.current,
+                  startPosX: positionXRef.current
+                };
+              }
+            }}
+            className={`flex h-16 shrink-0 items-center justify-between border-b border-slate-100 bg-white px-4 sm:px-5 ${
+              layoutMode === 'floating' 
+                ? 'cursor-grab active:cursor-grabbing select-none' 
+                : ''
+            }`}
+            title={layoutMode === 'floating' ? 'Tahan dan geser area header untuk memindahkan kotak obrolan' : undefined}
+          >
+            {/* Left: Chat / Media Switcher Pill */}
+            <div className="flex items-center gap-2" onMouseDown={(e) => e.stopPropagation()}>
+              <div className="flex items-center bg-[#f2f3f5] p-1 rounded-full border border-slate-200/50">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('chat')}
                   onMouseDown={(e) => e.stopPropagation()}
-                  className={`px-3.5 py-1.5 rounded-full text-xs transition-all cursor-pointer select-none ${
-                    activeTab === 'media'
-                      ? 'bg-white text-slate-900 shadow-xs font-bold'
+                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none ${
+                    activeTab === 'chat'
+                      ? 'bg-white text-slate-900 shadow-xs'
                       : 'text-slate-500 hover:text-slate-900 font-medium'
                   }`}
                 >
-                  Media
+                  Chat
                 </button>
-                {activeTab === 'media' && (
+                <div className="flex items-center gap-1">
                   <button
                     type="button"
-                    onClick={() => setFilterOnlyStarred(!filterOnlyStarred)}
+                    onClick={() => setActiveTab('media')}
                     onMouseDown={(e) => e.stopPropagation()}
-                    className={`p-1.5 rounded-full transition-all cursor-pointer ${
-                      filterOnlyStarred
-                        ? 'bg-amber-100 text-amber-700 ring-1 ring-amber-400 font-bold'
-                        : 'text-slate-400 hover:text-amber-500 hover:bg-slate-100'
+                    className={`px-3.5 py-1.5 rounded-full text-xs transition-all cursor-pointer select-none ${
+                      activeTab === 'media'
+                        ? 'bg-white text-slate-900 shadow-xs font-bold'
+                        : 'text-slate-500 hover:text-slate-900 font-medium'
                     }`}
-                    title={filterOnlyStarred ? 'Tampilkan semua media' : 'Filter media berbintang ⭐'}
                   >
-                    <Star className={`h-3.5 w-3.5 ${filterOnlyStarred ? 'fill-amber-400 text-amber-500' : ''}`} />
+                    Media
                   </button>
+                  {activeTab === 'media' && (
+                    <button
+                      type="button"
+                      onClick={() => setFilterOnlyStarred(!filterOnlyStarred)}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className={`p-1.5 rounded-full transition-all cursor-pointer ${
+                        filterOnlyStarred
+                          ? 'bg-amber-100 text-amber-700 ring-1 ring-amber-400 font-bold'
+                          : 'text-slate-400 hover:text-amber-500 hover:bg-slate-100'
+                      }`}
+                      title={filterOnlyStarred ? 'Tampilkan semua media' : 'Filter media berbintang ⭐'}
+                    >
+                      <Star className={`h-3.5 w-3.5 ${filterOnlyStarred ? 'fill-amber-400 text-amber-500' : ''}`} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Right Action Icons */}
+            <div className="flex items-center gap-1.5" onMouseDown={(e) => e.stopPropagation()}>
+
+              {/* Tombol Pencarian Konten Chat */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSearchMode(true);
+                  setTimeout(() => searchInputRef.current?.focus(), 50);
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                className="p-2 rounded-xl text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                title="Cari konten chat..."
+              >
+                <Search className="w-5 h-5 text-slate-700" />
+              </button>
+
+              {/* Layout Mode Switcher [|] */}
+              <div className="relative" ref={layoutMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowLayoutMenu(!showLayoutMenu)}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className={`p-2 rounded-xl text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer ${
+                    showLayoutMenu ? 'bg-slate-100' : ''
+                  }`}
+                  title="Atur Tampilan Layout"
+                >
+                  <svg viewBox="0 0 24 24" className="w-5 h-5 fill-none stroke-current stroke-2 stroke-linecap-round stroke-linejoin-round">
+                    <rect width="18" height="18" x="3" y="3" rx="3" />
+                    <path d="M15 3v18" />
+                  </svg>
+                </button>
+
+                {/* Layout Dropdown Menu */}
+                {showLayoutMenu && (
+                  <div className="absolute right-0 top-11 z-50 w-48 rounded-2xl bg-white p-2 shadow-xl border border-slate-100 animate-in fade-in zoom-in-95 duration-100">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLayoutMode('sidebar');
+                        setShowLayoutMenu(false);
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold rounded-xl text-left transition-colors cursor-pointer ${
+                        layoutMode === 'sidebar' ? 'bg-slate-100/80 text-slate-900' : 'text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      {layoutMode === 'sidebar' ? <Check className="h-4 w-4 shrink-0 text-slate-900" /> : <span className="w-4" />}
+                      <span>Sidebar</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLayoutMode('floating');
+                        setShowLayoutMenu(false);
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold rounded-xl text-left transition-colors cursor-pointer ${
+                        layoutMode === 'floating' ? 'bg-slate-100/80 text-slate-900' : 'text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      {layoutMode === 'floating' ? <Check className="h-4 w-4 shrink-0 text-slate-900" /> : <span className="w-4" />}
+                      <span>Floating</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLayoutMode('full');
+                        setShowLayoutMenu(false);
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold rounded-xl text-left transition-colors cursor-pointer ${
+                        layoutMode === 'full' ? 'bg-slate-100/80 text-slate-900' : 'text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      {layoutMode === 'full' ? <Check className="h-4 w-4 shrink-0 text-slate-900" /> : <span className="w-4" />}
+                      <span>Halaman penuh</span>
+                    </button>
+                  </div>
                 )}
               </div>
-            </div>
-          </div>
 
-          {/* Right Action Icons */}
-          <div className="flex items-center gap-1.5" onMouseDown={(e) => e.stopPropagation()}>
+              {/* Sembunyikan Button ->| */}
+              <div className="relative group/tooltip">
+                <button
+                  type="button"
+                  onClick={handleCloseWithAnimation}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className="p-2 rounded-xl text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
+                  title="Sembunyikan"
+                >
+                  <svg viewBox="0 0 24 24" className="w-5 h-5 fill-none stroke-current stroke-2 stroke-linecap-round stroke-linejoin-round">
+                    <path d="M5 12h12" />
+                    <path d="m13 18 5-6-5-6" />
+                    <path d="M20 5v14" />
+                  </svg>
+                </button>
 
-            {/* Layout Mode Switcher [|] */}
-            <div className="relative" ref={layoutMenuRef}>
-              <button
-                type="button"
-                onClick={() => setShowLayoutMenu(!showLayoutMenu)}
-                onMouseDown={(e) => e.stopPropagation()}
-                className={`p-2 rounded-xl text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer ${
-                  showLayoutMenu ? 'bg-slate-100' : ''
-                }`}
-                title="Atur Tampilan Layout"
-              >
-                <svg viewBox="0 0 24 24" className="w-5 h-5 fill-none stroke-current stroke-2 stroke-linecap-round stroke-linejoin-round">
-                  <rect width="18" height="18" x="3" y="3" rx="3" />
-                  <path d="M15 3v18" />
-                </svg>
-              </button>
-
-              {/* Layout Dropdown Menu */}
-              {showLayoutMenu && (
-                <div className="absolute right-0 top-11 z-50 w-48 rounded-2xl bg-white p-2 shadow-xl border border-slate-100 animate-in fade-in zoom-in-95 duration-100">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLayoutMode('sidebar');
-                      setShowLayoutMenu(false);
-                    }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold rounded-xl text-left transition-colors cursor-pointer ${
-                      layoutMode === 'sidebar' ? 'bg-slate-100/80 text-slate-900' : 'text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    {layoutMode === 'sidebar' ? <Check className="h-4 w-4 shrink-0 text-slate-900" /> : <span className="w-4" />}
-                    <span>Sidebar</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLayoutMode('floating');
-                      setShowLayoutMenu(false);
-                    }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold rounded-xl text-left transition-colors cursor-pointer ${
-                      layoutMode === 'floating' ? 'bg-slate-100/80 text-slate-900' : 'text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    {layoutMode === 'floating' ? <Check className="h-4 w-4 shrink-0 text-slate-900" /> : <span className="w-4" />}
-                    <span>Floating</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLayoutMode('full');
-                      setShowLayoutMenu(false);
-                    }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold rounded-xl text-left transition-colors cursor-pointer ${
-                      layoutMode === 'full' ? 'bg-slate-100/80 text-slate-900' : 'text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    {layoutMode === 'full' ? <Check className="h-4 w-4 shrink-0 text-slate-900" /> : <span className="w-4" />}
-                    <span>Halaman penuh</span>
-                  </button>
+                {/* Tooltip Popup strictly on hover */}
+                <div className="hidden group-hover/tooltip:block absolute right-0 top-12 z-50 px-3 py-1.5 rounded-xl bg-slate-900 text-white text-[11px] font-bold shadow-lg whitespace-nowrap pointer-events-none transition-opacity">
+                  Sembunyikan
                 </div>
-              )}
-            </div>
-
-            {/* Sembunyikan Button ->| */}
-            <div className="relative group/tooltip">
-              <button
-                type="button"
-                onClick={handleCloseWithAnimation}
-                onMouseDown={(e) => e.stopPropagation()}
-                className="p-2 rounded-xl text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
-                title="Sembunyikan"
-              >
-                <svg viewBox="0 0 24 24" className="w-5 h-5 fill-none stroke-current stroke-2 stroke-linecap-round stroke-linejoin-round">
-                  <path d="M5 12h12" />
-                  <path d="m13 18 5-6-5-6" />
-                  <path d="M20 5v14" />
-                </svg>
-              </button>
-
-              {/* Tooltip Popup strictly on hover */}
-              <div className="hidden group-hover/tooltip:block absolute right-0 top-12 z-50 px-3 py-1.5 rounded-xl bg-slate-900 text-white text-[11px] font-bold shadow-lg whitespace-nowrap pointer-events-none transition-opacity">
-                Sembunyikan
               </div>
             </div>
           </div>
-        </div>
+        )}
+
+        {/* SEARCH MODE CONTENT or NORMAL CHAT / MEDIA CONTENT */}
+        {isSearchMode ? (
+          /* BEGIN: MainContent (Exact matching user reference: empty or search results list) */
+          <main className="flex-grow bg-white flex flex-col overflow-y-auto min-h-0">
+            {searchQuery.trim() === '' ? (
+              /* Empty main content area as per reference image */
+              <div className="flex-grow bg-white" />
+            ) : filteredMessages.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
+                <p className="text-sm font-semibold text-gray-700">Tidak ada pesan ditemukan</p>
+                <p className="text-xs text-gray-400 mt-1">Tidak ada pesan yang cocok dengan "{searchQuery}"</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100 p-2 overflow-y-auto">
+                <div className="px-3 py-2 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                  Ditemukan {filteredMessages.length} Pesan
+                </div>
+                {filteredMessages.map((m) => {
+                  const isUser = m.sender_username && currentUsername && m.sender_username.toLowerCase() === currentUsername.toLowerCase();
+                  return (
+                    <div
+                      key={m.id}
+                      onClick={() => {
+                        setIsSearchMode(false);
+                        setSearchQuery('');
+                        setActiveTab('chat');
+                        setTimeout(() => scrollToMsg(m.id), 120);
+                      }}
+                      className="p-3.5 rounded-2xl hover:bg-slate-50 active:bg-slate-100 cursor-pointer transition-colors"
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="font-bold text-xs text-slate-900 truncate">
+                            {isUser ? 'Anda' : (m.sender_name || m.sender || 'Admin')}
+                          </span>
+                          {m.sender_role && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-purple-50 text-purple-700 font-semibold shrink-0">
+                              {m.sender_role}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10.5px] text-slate-400 shrink-0">
+                          {formatTime(m.created_at || m.timestamp)}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-700 line-clamp-2 leading-relaxed">
+                        {renderHighlightedSearchText(m.message || m.text || (m.attachment ? `[Lampiran: ${m.attachment.name}]` : ''), searchQuery)}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </main>
+        ) : (
+          <>
 
         {/* WHATSAPP-STYLE PINNED MESSAGES BANNER */}
         {activeTab === 'chat' && pinnedMessages.length > 0 && (() => {
@@ -3170,6 +3315,8 @@ export default function AdminChatDrawer({
             </div>
           </div>
         ) : null}
+        </>
+        )}
 
         {/* Toast Alert Notification Banner */}
         {toastMessage && (

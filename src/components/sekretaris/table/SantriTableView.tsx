@@ -1092,7 +1092,7 @@ export default function SantriTableView({
   const renderSortHeader = (key: string, label: string, isSticky: boolean = false, widthClass: string = '', subtext?: string, styleOverride?: React.CSSProperties) => {
     const isSorted = sortKey === key;
     const stickyLeftClass = key === 'nama'
-      ? (isSelectionMode ? 'sm:left-[112px] left-[112px]' : 'sm:left-[64px] left-[64px]')
+      ? (isSelectionMode ? 'left-auto sm:left-[112px]' : 'left-auto sm:left-[64px]')
       : '';
     const complete = isColumnComplete(key);
     const colStats = getColumnStats(key);
@@ -1176,21 +1176,6 @@ export default function SantriTableView({
           )}
         </div>
 
-        {/* Scroll Left Button placed exactly in the middle of the right side of 'nama' header column */}
-        {key === 'nama' && canScrollLeft && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              scrollTable('left');
-            }}
-            className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-[40] flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-md transition-all duration-200 hover:bg-slate-50 hover:scale-105 active:scale-95 cursor-pointer opacity-100"
-            title="Gulir Kiri"
-          >
-            <ChevronLeft className="h-4 w-4 stroke-[2.5] -translate-x-[0.5px]" />
-          </button>
-        )}
-
         {/* Header completeness bar for Monitoring Mode */}
         {isMonitoringMode && (
           <div
@@ -1216,7 +1201,7 @@ export default function SantriTableView({
     return (
       <tr>
         {isSelectionMode && (
-          <th style={getStyle()} className={`px-3 py-4 text-center sticky top-0 left-0 z-35 border-r border-slate-100 w-12 min-w-[48px] transition-all duration-300 relative ${headerClass}`}>
+          <th style={getStyle()} className={`px-3 py-4 text-center sticky top-0 left-auto sm:left-0 z-35 border-r border-slate-100 w-12 min-w-[48px] transition-all duration-300 relative ${headerClass}`}>
             <div className="flex items-center justify-center">
               <input
                 type="checkbox"
@@ -1244,7 +1229,7 @@ export default function SantriTableView({
           </th>
         )}
         {/* Nomor Column (Sticky Left) */}
-        <th style={getStyle()} className={`px-2 py-4 sticky top-0 ${isSelectionMode ? 'sm:left-[48px] left-[48px]' : 'sm:left-0 left-0'} z-35 w-16 min-w-[64px] font-display text-xs font-bold uppercase tracking-wider border-r border-slate-100 text-center transition-all duration-300 relative ${headerClass}`}>
+        <th style={getStyle()} className={`px-2 py-4 sticky top-0 ${isSelectionMode ? 'left-auto sm:left-[48px]' : 'left-auto sm:left-0'} z-35 w-16 min-w-[64px] font-display text-xs font-bold uppercase tracking-wider border-r border-slate-100 text-center transition-all duration-300 relative ${headerClass}`}>
           No.
           {isMonitoringMode && (
             <div
@@ -1309,27 +1294,47 @@ export default function SantriTableView({
   };
 
   const renderScrollButtons = (isFloating: boolean) => {
-    if (!canScrollRight) return null;
     if (isScrolled && !isFloating) return null;
     if (!isScrolled && isFloating) return null;
+    if (!canScrollLeft && !canScrollRight) return null;
 
     return (
       <>
-        {/* Scroll Right Button placed exactly in the middle of the right side/edge line of the header */}
-        <button
-          id={isFloating ? "table-scroll-right-btn-floating" : "table-scroll-right-btn"}
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            scrollTable('right');
-          }}
-          className={`absolute right-0 translate-x-1/2 ${
-            isFloating ? 'top-1/2 -translate-y-1/2' : 'top-[26px] -translate-y-1/2'
-          } z-40 flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-md transition-all duration-200 hover:bg-slate-50 hover:scale-105 active:scale-95 cursor-pointer opacity-100`}
-          title="Gulir Kanan"
-        >
-          <ChevronRight className="h-4 w-4 stroke-[2.5] translate-x-[0.5px]" />
-        </button>
+        {/* Scroll Left Button placed on the left side - Muncul saat canScrollLeft = true (hanya di tablet/desktop, tersembunyi di mode hp) */}
+        {canScrollLeft && (
+          <button
+            id={isFloating ? "table-scroll-left-btn-floating" : "table-scroll-left-btn"}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              scrollTable('left');
+            }}
+            className={`absolute left-0 -translate-x-1/2 ${
+              isFloating ? 'top-1/2 -translate-y-1/2' : 'top-[26px] -translate-y-1/2'
+            } z-[46] hidden sm:flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-md transition-all duration-200 hover:bg-slate-50 hover:scale-105 active:scale-95 cursor-pointer opacity-100`}
+            title="Gulir Kiri"
+          >
+            <ChevronLeft className="h-4 w-4 stroke-[2.5] -translate-x-[0.5px]" />
+          </button>
+        )}
+
+        {/* Scroll Right Button placed exactly in the middle of the right side/edge line of the header (hanya di tablet/desktop, tersembunyi di mode hp) */}
+        {canScrollRight && (
+          <button
+            id={isFloating ? "table-scroll-right-btn-floating" : "table-scroll-right-btn"}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              scrollTable('right');
+            }}
+            className={`absolute right-0 translate-x-1/2 ${
+              isFloating ? 'top-1/2 -translate-y-1/2' : 'top-[26px] -translate-y-1/2'
+            } z-[46] hidden sm:flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-md transition-all duration-200 hover:bg-slate-50 hover:scale-105 active:scale-95 cursor-pointer opacity-100`}
+            title="Gulir Kanan"
+          >
+            <ChevronRight className="h-4 w-4 stroke-[2.5] translate-x-[0.5px]" />
+          </button>
+        )}
       </>
     );
   };
@@ -1387,7 +1392,7 @@ export default function SantriTableView({
                       e.stopPropagation();
                       toggleSingleSelection(s.id, e.shiftKey);
                     }}
-                    className={`px-3 py-4 text-center sticky left-0 transition-colors z-10 border-r border-slate-100 w-12 min-w-[48px] max-w-[48px] cursor-pointer ${
+                    className={`px-3 py-4 text-center static sm:sticky sm:left-0 transition-colors z-10 border-r border-slate-100 w-12 min-w-[48px] max-w-[48px] cursor-pointer ${
                       isSelected ? 'bg-emerald-50' : 'bg-white group-hover:bg-slate-50'
                     }`}
                   >
@@ -1402,7 +1407,7 @@ export default function SantriTableView({
                   </td>
                 )}
                 {/* Nomor Column (Sticky Left) */}
-                <td className={`px-2 py-4 static sm:sticky ${isSelectionMode ? 'sm:left-[48px] left-[48px]' : 'sm:left-0 left-0'} transition-colors z-10 border-r border-slate-100 w-16 min-w-[64px] max-w-[64px] text-center font-mono text-xs font-semibold ${
+                <td className={`px-2 py-4 static sm:sticky ${isSelectionMode ? 'sm:left-[48px]' : 'sm:left-0'} transition-colors z-10 border-r border-slate-100 w-16 min-w-[64px] max-w-[64px] text-center font-mono text-xs font-semibold ${
                   isSelectionMode && isSelected
                     ? 'bg-emerald-50 text-emerald-800 font-bold'
                     : 'bg-white text-slate-500 group-hover:bg-slate-50'
@@ -1429,7 +1434,7 @@ export default function SantriTableView({
                   </div>
                 </td>
                 {/* Name sticky column (Nama Lengkap) - Sticky on Desktop only */}
-                <td className={`px-4 py-4 font-medium static sm:sticky ${isSelectionMode ? 'sm:left-[112px] left-[112px]' : 'sm:left-[64px] left-[64px]'} transition-colors z-10 sm:shadow-[2px_0_5px_rgba(0,0,0,0.02)] border-r border-slate-100 md:w-[272px] w-[200px] md:min-w-[272px] min-w-[200px] md:max-w-[272px] max-w-[200px] ${
+                <td className={`px-4 py-4 font-medium static sm:sticky ${isSelectionMode ? 'sm:left-[112px]' : 'sm:left-[64px]'} transition-colors z-10 sm:shadow-[2px_0_5px_rgba(0,0,0,0.02)] border-r border-slate-100 md:w-[272px] w-[200px] md:min-w-[272px] min-w-[200px] md:max-w-[272px] max-w-[200px] ${
                   isMonitoringMode && isCellEmpty(s, 'nama')
                     ? '!bg-rose-100/90 !text-rose-800'
                     : isSelectionMode && isSelected

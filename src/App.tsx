@@ -6,6 +6,7 @@ import Drawer from './components/Drawer';
 import Sidebar from './components/Sidebar';
 import HelpModal from './components/HelpModal';
 import AdminChatDrawer from './components/AdminChatDrawer';
+import NotificationsPage from './components/NotificationsPage';
 import { fetchTableData, insertTableRow, insertTableRows, updateTableRow, deleteTableRow, subscribeRealtimeChanges, snakeToCamel, safeLocalStorageSetItem } from './lib/api';
 
 // Views (Lazy-loaded for code splitting and instant initial page load)
@@ -68,12 +69,58 @@ export default function App() {
 
   const [activeSubTab, setActiveSubTab] = useState<string>('dashboard');
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
+  const [isDrawerClosing, setIsDrawerClosing] = useState<boolean>(false);
+  const [isDrawerSearchMode, setIsDrawerSearchMode] = useState<boolean>(false);
+  const [isMobile, setIsMobile] = useState<boolean>(() => {
+    return typeof window !== 'undefined' ? window.innerWidth < 768 : false;
+  });
+
+  const handleCloseDrawer = React.useCallback(() => {
+    setIsDrawerOpen(false);
+    setIsDrawerClosing(true);
+    setIsDrawerSearchMode(false);
+  }, []);
+
+  React.useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (!mobile && isDrawerOpen) {
+        setIsDrawerOpen(false);
+        setIsDrawerClosing(false);
+        setIsDrawerSearchMode(false);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [isDrawerOpen]);
+
+  // Lock scroll on mobile when sidebar drawer is open or animating close
+  React.useEffect(() => {
+    if (isMobile && (isDrawerOpen || isDrawerClosing)) {
+      const originalBodyOverflow = document.body.style.overflow;
+      const originalBodyTouchAction = document.body.style.touchAction;
+      const originalHtmlOverflow = document.documentElement.style.overflow;
+
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
+      document.documentElement.style.overflow = 'hidden';
+
+      return () => {
+        document.body.style.overflow = originalBodyOverflow;
+        document.body.style.touchAction = originalBodyTouchAction;
+        document.documentElement.style.overflow = originalHtmlOverflow;
+      };
+    }
+  }, [isMobile, isDrawerOpen, isDrawerClosing]);
+
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
   const [isSelectionMode, setIsSelectionMode] = useState<boolean>(false);
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
   const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
   const [hasMentionNotification, setHasMentionNotification] = useState<boolean>(false);
   const [headerSelectedSantri, setHeaderSelectedSantri] = useState<Santri | null>(null);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState<boolean>(false);
 
   // Pending user registrations for Superadmin
   const [pendingRegistrations, setPendingRegistrations] = useState<any[]>([]);
@@ -192,6 +239,9 @@ export default function App() {
 
   const handleChangeModule = (mod: string, subTab?: string) => {
     if (isSelectionMode) return;
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    }
     setActiveModule(mod);
     if (subTab) {
       setActiveSubTab(subTab);
@@ -926,8 +976,37 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-800 antialiased flex flex-row selection:bg-emerald-200 selection:text-emerald-950">
+    <div className={`min-h-screen bg-white md:bg-slate-50 font-sans text-slate-800 antialiased flex flex-row relative selection:bg-emerald-200 selection:text-emerald-950 ${
+      isMobile && (isDrawerOpen || isDrawerClosing) ? 'h-screen max-h-screen overflow-hidden' : 'overflow-x-clip'
+    }`}>
       
+      {/* Mobile Drawer (Sidebar layer belakang di mode HP) */}
+      <Drawer
+        isOpen={isDrawerOpen}
+        onClose={handleCloseDrawer}
+        activeModule={activeModule}
+        activeSubTab={activeSubTab}
+        onChangeModule={(mod, sub) => {
+          handleChangeModule(mod, sub);
+          handleCloseDrawer();
+        }}
+        isSelectionMode={isSelectionMode}
+        onLogout={() => setIsLoggedIn(false)}
+        onOpenHelp={() => setShowHelpModal(true)}
+        onOpenChat={() => {
+          handleCloseDrawer();
+          setIsChatOpen(true);
+        }}
+        unreadChatCount={unreadChatCount}
+        hasMentionNotification={hasMentionNotification}
+        onSearchModeChange={(isSearching) => setIsDrawerSearchMode(isSearching)}
+        santriList={santriList}
+        onSelectSantri={(santri) => {
+          setHeaderSelectedSantri(santri);
+          handleCloseDrawer();
+        }}
+      />
+
       {/* Sidebar - Persistent floating sidebar on desktop, hidden on mobile */}
       <Sidebar 
         activeModule={activeModule}
@@ -938,106 +1017,181 @@ export default function App() {
         onOpenHelp={() => setShowHelpModal(true)}
       />
 
-      {/* Main Container */}
-      <div className="flex-1 flex flex-col min-h-screen min-w-0">
+      {/* Main Container - Pushed to right with rounded-2.5rem and scaled relatively to screen size when drawer open on mobile */}
+      <motion.div
+        id="main-app-container"
+        initial={false}
+        animate={
+          isMobile && isDrawerOpen
+            ? isDrawerSearchMode
+              ? {
+                  x: '100%',
+                  scale: 0.88,
+                  opacity: 0,
+                  borderRadius: '40px',
+                  boxShadow: '0px 0px 0px 0px rgba(0, 0, 0, 0)',
+                  borderColor: 'rgba(229, 231, 235, 0)',
+                }
+              : {
+                  x: '80%',
+                  scale: 0.88,
+                  opacity: 1,
+                  borderRadius: '40px',
+                  boxShadow: '0px 20px 50px 0px rgba(0, 0, 0, 0.25)',
+                  borderColor: 'rgba(229, 231, 235, 1)',
+                }
+            : {
+                x: '0%',
+                scale: 1,
+                opacity: 1,
+                borderRadius: '0px',
+                boxShadow: '0px 0px 0px 0px rgba(0, 0, 0, 0)',
+                borderColor: 'rgba(229, 231, 235, 0)',
+              }
+        }
+        transition={{ type: 'tween', ease: [0.25, 1, 0.5, 1], duration: 0.32 }}
+        onAnimationComplete={() => {
+          if (!isDrawerOpen && isDrawerClosing) {
+            setIsDrawerClosing(false);
+          }
+        }}
+        style={{
+          transformOrigin: '0 50vh',
+          height: isMobile && (isDrawerOpen || isDrawerClosing) ? '100vh' : 'auto',
+          maxHeight: isMobile && (isDrawerOpen || isDrawerClosing) ? '100vh' : 'none',
+          borderStyle: 'solid',
+          borderWidth: isMobile ? '1px' : '0px',
+        }}
+        className={`w-full flex-1 flex flex-col min-w-0 bg-white relative z-20 ${
+          isMobile && (isDrawerOpen || isDrawerClosing)
+            ? 'h-screen max-h-screen overflow-hidden select-none' + (isDrawerSearchMode ? ' pointer-events-none' : '')
+            : 'min-h-screen'
+        }`}
+      >
+        {/* Tap-to-close Overlay on top of scaled-down main screen */}
+        {isMobile && isDrawerOpen && !isDrawerSearchMode && (
+          <div
+            id="mobile-main-dim-tap-overlay"
+            onClick={handleCloseDrawer}
+            className="absolute inset-0 z-50 cursor-pointer bg-transparent touch-none"
+            title="Ketuk untuk menutup menu"
+          />
+        )}
         
-        {/* Upper Navigation Header bar */}
-        <Header 
-          activeModule={activeModule}
-          activeSubTab={activeSubTab}
-          onOpenDrawer={() => setIsDrawerOpen(true)}
-          onOpenChat={() => setIsChatOpen(true)}
-          unreadChatCount={unreadChatCount}
-          hasMentionNotification={hasMentionNotification}
-          pendingRegistrationsCount={pendingRegistrations.length}
-          onOpenPendingModal={() => setShowPendingModal(true)}
-          santriList={santriList}
-          onChangeModule={handleChangeModule}
-          onSelectSantri={(santri) => setHeaderSelectedSantri(santri)}
-        />
-
-        {/* Modal Pending User Registrations for Superadmin */}
-        {showPendingModal && (
-          <React.Suspense fallback={null}>
-            <PendingRegistrationsModal
-              isOpen={showPendingModal}
-              onClose={() => setShowPendingModal(false)}
-              pendingList={pendingRegistrations}
-              onApprove={handleApprovePendingUser}
-              onReject={handleRejectPendingUser}
-            />
-          </React.Suspense>
-        )}
-
-        {/* Modal Santri Detail from Global Header Search */}
-        {headerSelectedSantri && (
-          <React.Suspense fallback={null}>
-            <SantriDetailModal
-              selectedSantri={headerSelectedSantri}
-              onClose={() => setHeaderSelectedSantri(null)}
-            />
-          </React.Suspense>
-        )}
-
-        {/* Admin Obrolan Chat Drawer */}
-        <AdminChatDrawer
-          isOpen={isChatOpen}
-          onClose={() => setIsChatOpen(false)}
-          unreadCount={unreadChatCount}
-          onClearUnread={() => {
-            setUnreadChatCount(0);
-            setHasMentionNotification(false);
+        {/* Content Area - Text, icons, and contents fade/dim when sidebar is open, and immediately start transitioning back to full opacity the moment close is triggered */}
+        <motion.div 
+          initial={false}
+          animate={{
+            opacity: isMobile && isDrawerOpen ? 0.35 : 1
           }}
-        />
+          transition={{ type: 'tween', ease: [0.25, 1, 0.5, 1], duration: 0.32 }}
+          className={`flex-1 flex flex-col w-full ${
+            isMobile && isDrawerOpen 
+              ? 'pointer-events-none max-h-screen overflow-hidden' 
+              : 'min-h-full'
+          }`}
+        >
+          {/* Upper Navigation Header bar */}
+          <Header 
+            activeModule={activeModule}
+            activeSubTab={activeSubTab}
+            onOpenDrawer={() => {
+              if (isDrawerOpen) {
+                handleCloseDrawer();
+              } else {
+                setIsDrawerOpen(true);
+                setIsDrawerClosing(false);
+                setIsDrawerSearchMode(false);
+              }
+            }}
+            pendingRegistrationsCount={pendingRegistrations.length}
+            onOpenPendingModal={() => setShowPendingModal(true)}
+            onOpenNotifications={() => setIsNotificationsOpen(true)}
+            santriList={santriList}
+            onChangeModule={handleChangeModule}
+            onSelectSantri={(santri) => setHeaderSelectedSantri(santri)}
+          />
 
-        {/* Main Drawer Container (Mobile Menu) */}
-        <Drawer
-          isOpen={isDrawerOpen}
-          onClose={() => setIsDrawerOpen(false)}
-          activeModule={activeModule}
-          activeSubTab={activeSubTab}
-          onChangeModule={handleChangeModule}
-          isSelectionMode={isSelectionMode}
-          onLogout={() => setIsLoggedIn(false)}
-          onOpenHelp={() => setShowHelpModal(true)}
-        />
-
-        {/* Global Help Modal */}
-        <HelpModal 
-          isOpen={showHelpModal} 
-          onClose={() => setShowHelpModal(false)} 
-        />
-
-        {/* Main Responsive Content Zone */}
-        <main className="flex-1 w-full max-w-7xl mx-auto px-4 py-6 pb-6 sm:px-6 lg:px-8 focus:outline-none">
-          
-          {/* Animated slide transitions for active module view */}
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeModule}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -12 }}
-              transition={{ duration: 0.18, ease: 'easeOut' }}
-            >
-              {renderView()}
-            </motion.div>
+          {/* Full Page Notifications View */}
+          <AnimatePresence>
+            {isNotificationsOpen && (
+              <NotificationsPage
+                isOpen={isNotificationsOpen}
+                onClose={() => setIsNotificationsOpen(false)}
+                pendingRegistrationsCount={pendingRegistrations.length}
+                onOpenPendingModal={() => setShowPendingModal(true)}
+              />
+            )}
           </AnimatePresence>
 
-        </main>
+          {/* Modal Pending User Registrations for Superadmin */}
+          {showPendingModal && (
+            <React.Suspense fallback={null}>
+              <PendingRegistrationsModal
+                isOpen={showPendingModal}
+                onClose={() => setShowPendingModal(false)}
+                pendingList={pendingRegistrations}
+                onApprove={handleApprovePendingUser}
+                onReject={handleRejectPendingUser}
+              />
+            </React.Suspense>
+          )}
 
-        {/* Modern minimal footer */}
-        <footer className="w-full border-t border-slate-200/60 bg-white py-5 text-center mt-12 hidden md:block">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-slate-400 text-xs font-semibold">
-            <p>© 2026 AttarOkey 4.0. Hak Cipta Dilindungi Pengurus Pesantren.</p>
-            <div className="flex gap-4">
-              <span className="text-emerald-700">Tepat • Cepat • Teratur</span>
-              <span>v1.2.0 Stable</span>
+          {/* Modal Santri Detail from Global Header Search */}
+          {headerSelectedSantri && (
+            <React.Suspense fallback={null}>
+              <SantriDetailModal
+                selectedSantri={headerSelectedSantri}
+                onClose={() => setHeaderSelectedSantri(null)}
+              />
+            </React.Suspense>
+          )}
+
+          {/* Admin Obrolan Chat Drawer */}
+          <AdminChatDrawer
+            isOpen={isChatOpen}
+            onClose={() => setIsChatOpen(false)}
+            unreadCount={unreadChatCount}
+            onClearUnread={() => {
+              setUnreadChatCount(0);
+              setHasMentionNotification(false);
+            }}
+          />
+
+          {/* Global Help Modal */}
+          <HelpModal 
+            isOpen={showHelpModal} 
+            onClose={() => setShowHelpModal(false)} 
+            />
+
+          {/* Main Responsive Content Zone */}
+          <main className="flex-1 w-full max-w-7xl mx-auto px-4 py-6 pb-6 sm:px-6 lg:px-8 focus:outline-none">
+            {/* Animated clean transitions for active module view */}
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeModule}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15, ease: 'easeInOut' }}
+              >
+                {renderView()}
+              </motion.div>
+            </AnimatePresence>
+          </main>
+
+          {/* Modern minimal footer */}
+          <footer className="w-full border-t border-slate-200/60 bg-white py-5 text-center mt-12 hidden md:block">
+            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-slate-400 text-xs font-semibold">
+              <p>© 2026 AttarOkey 4.0. Hak Cipta Dilindungi Pengurus Pesantren.</p>
+              <div className="flex gap-4">
+                <span className="text-emerald-700">Tepat • Cepat • Teratur</span>
+                <span>v1.2.0 Stable</span>
+              </div>
             </div>
-          </div>
-        </footer>
-
-      </div>
+          </footer>
+        </motion.div>
+      </motion.div>
 
     </div>
   );

@@ -1675,26 +1675,6 @@ export default function HomeView({
         {/* RIGHT SIDEBAR COLUMN (4 COLS ON LG / 3 COLS ON XL) */}
         <div className="lg:col-span-4 xl:col-span-3 space-y-4 flex flex-col">
           
-          {/* Top Search Input Bar (Pencarian Tugas / Data) */}
-          <div className="bg-white rounded-2xl p-2 px-4 border border-emerald-100 shadow-3xs flex items-center gap-2">
-            <Search className="w-4 h-4 text-slate-400 shrink-0" />
-            <input 
-              type="text"
-              placeholder="Cari kata kunci tugas..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full text-xs font-bold text-slate-800 placeholder-slate-400 bg-transparent focus:outline-none"
-            />
-            {searchQuery && (
-              <button 
-                onClick={() => setSearchQuery('')}
-                className="text-slate-400 hover:text-slate-600 p-0.5 rounded-full"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-
           {/* Tugas Saya Section */}
           <div className="bg-white rounded-2xl p-4 border border-emerald-100 shadow-3xs space-y-3 flex-1 flex flex-col">
             <div className="flex items-center justify-between pb-1 border-b border-slate-100">

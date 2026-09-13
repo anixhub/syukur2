@@ -53,6 +53,8 @@ import DeleteConfirmModal from './sekretaris/DeleteConfirmModal';
 import SantriFormModal from './sekretaris/SantriFormModal';
 import OverviewSubModule from './sekretaris/OverviewSubModule';
 import AgeFilterModal, { AgeFilterConfig, DEFAULT_AGE_FILTER_CONFIG, calculateAgeOnDate } from './sekretaris/AgeFilterModal';
+import ColumnVisibilityModal from './sekretaris/ColumnVisibilityModal';
+import FilterBottomSheet from './sekretaris/FilterBottomSheet';
 import { getColumnValueString } from './sekretaris/ExcelColumnFilter';
 
 // Extracted Modular Components
@@ -125,10 +127,6 @@ export default function SekretarisView({
   const [genderFilter, setGenderFilter] = useState<string>('semua');
   const [domisiliFilter, setDomisiliFilter] = useState<string>('semua');
   const [emisFilter, setEmisFilter] = useState<string>('semua');
-  const [showStatusFilterDropdown, setShowStatusFilterDropdown] = useState<boolean>(false);
-  const [showDomisiliFilterDropdown, setShowDomisiliFilterDropdown] = useState<boolean>(false);
-  const [showGenderFilterDropdown, setShowGenderFilterDropdown] = useState<boolean>(false);
-  const [showEmisFilterDropdown, setShowEmisFilterDropdown] = useState<boolean>(false);
   const [isAgeModalOpen, setIsAgeModalOpen] = useState(false);
   const [ageFilterConfig, setAgeFilterConfig] = useState<AgeFilterConfig>(DEFAULT_AGE_FILTER_CONFIG);
 
@@ -206,12 +204,22 @@ export default function SekretarisView({
     k => excelColumnFilters[k] && excelColumnFilters[k].length > 0
   ).length;
 
+  const totalActiveFilterCount = useMemo(() => {
+    let count = 0;
+    if (statusFilter !== 'semua') count++;
+    if (domisiliFilter !== 'semua') count++;
+    if (emisFilter !== 'semua') count++;
+    if (ageFilterConfig.enabled) count++;
+    if (activeExcelFilterCount > 0) count += activeExcelFilterCount;
+    return count;
+  }, [statusFilter, domisiliFilter, emisFilter, ageFilterConfig.enabled, activeExcelFilterCount]);
+
   // Sorting, Pagination, and Column Visibility States
   const [sortKey, setSortKey] = useState<string>('nama');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(50);
-  const [showColumnConfig, setShowColumnConfig] = useState<boolean>(false);
+  const [isColumnModalOpen, setIsColumnModalOpen] = useState<boolean>(false);
   const [showSortDropdown, setShowSortDropdown] = useState<boolean>(false);
   const [showPageJumpDropdown, setShowPageJumpDropdown] = useState<boolean>(false);
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(() => {
@@ -238,25 +246,6 @@ export default function SekretarisView({
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
   const [isMobileBulkOpen, setIsMobileBulkOpen] = useState(false);
   const [isMobileFloatingDropdownOpen, setIsMobileFloatingDropdownOpen] = useState(false);
-
-  const columnConfigRef = React.useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        columnConfigRef.current && 
-        !columnConfigRef.current.contains(event.target as Node)
-      ) {
-        setShowColumnConfig(false);
-      }
-    };
-    if (showColumnConfig) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [showColumnConfig]);
 
   const [deleteConfirm, setDeleteConfirm] = useState<{
     isOpen: boolean;
@@ -1519,8 +1508,6 @@ export default function SekretarisView({
     });
   }, [filteredSantri, genderFilter, statusFilter]);
 
-
-
   return (
     <div className="space-y-6">
       
@@ -1597,29 +1584,15 @@ export default function SekretarisView({
             </p>
           </div>
 
-          {/* Top Segmented Layout Tabs & Export Button */}
+          {/* Top Segmented Layout Tabs & Action Buttons */}
           {subTab !== 'overview' && (
-            <div className="flex items-center gap-2 self-start sm:self-auto">
-              {viewMode === 'table' && (
-                <button
-                  id="btn-toggle-monitoring"
-                  onClick={() => setIsMonitoringMode(prev => !prev)}
-                  className={`flex h-9 w-9 items-center justify-center rounded-xl font-display text-xs font-bold transition-all border cursor-pointer ${
-                    isMonitoringMode
-                      ? 'bg-rose-500 text-white border-rose-500 shadow-sm ring-2 ring-rose-200'
-                      : 'bg-slate-100 text-slate-500 border-transparent hover:bg-slate-200 hover:text-slate-800'
-                  }`}
-                  title={isMonitoringMode ? 'Nonaktifkan Mode Monitoring Data' : 'Aktifkan Mode Monitoring Data'}
-                >
-                  <Activity className="h-4 w-4" />
-                </button>
-              )}
-
-              <div className="inline-flex rounded-xl bg-slate-100 p-1 gap-1">
+            <div className="flex items-center justify-between w-full sm:w-auto gap-2">
+              {/* Tombol Mode Tampilan (RATA KIRI - Sudut Lengkung Sempurna) */}
+              <div className="inline-flex rounded-full bg-slate-100 p-1 gap-1 shrink-0">
                 <button
                   id="tab-view-table"
                   onClick={() => setViewMode('table')}
-                  className={`flex h-9 w-9 items-center justify-center rounded-lg font-display text-xs font-bold tracking-tight transition-all cursor-pointer ${
+                  className={`flex h-9 w-9 items-center justify-center rounded-full font-display text-xs font-bold tracking-tight transition-all cursor-pointer ${
                     viewMode === 'table'
                       ? 'bg-white text-emerald-800 shadow-sm'
                       : 'text-slate-500 hover:text-slate-800'
@@ -1631,7 +1604,7 @@ export default function SekretarisView({
                 <button
                   id="tab-view-card"
                   onClick={() => setViewMode('card')}
-                  className={`flex h-9 w-9 items-center justify-center rounded-lg font-display text-xs font-bold tracking-tight transition-all cursor-pointer ${
+                  className={`flex h-9 w-9 items-center justify-center rounded-full font-display text-xs font-bold tracking-tight transition-all cursor-pointer ${
                     viewMode === 'card'
                       ? 'bg-white text-emerald-800 shadow-sm'
                       : 'text-slate-500 hover:text-slate-800'
@@ -1642,29 +1615,49 @@ export default function SekretarisView({
                 </button>
               </div>
 
-              <button
-                id="btn-export-trigger"
-                onClick={() => setIsExportModalOpen(true)}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600 hover:bg-emerald-50 hover:text-emerald-800 transition-all shadow-xs cursor-pointer hover:scale-105 active:scale-95"
-                title="Ekspor Data"
-              >
-                <Download className="h-5 w-5" />
-              </button>
+              {/* Tombol Lain (RATA KANAN SEMUA - Sudut Lengkung Sempurna) */}
+              <div className="flex items-center gap-2 justify-end">
+                {/* Tombol Monitoring (jika mode tabel - rounded-full) */}
+                {viewMode === 'table' && (
+                  <button
+                    id="btn-toggle-monitoring"
+                    onClick={() => setIsMonitoringMode(prev => !prev)}
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-display text-xs font-bold transition-all border cursor-pointer hover:scale-105 active:scale-95 shadow-xs ${
+                      isMonitoringMode
+                        ? 'bg-rose-500 text-white border-rose-500 shadow-sm ring-2 ring-rose-200'
+                        : 'bg-slate-100 text-slate-600 border-transparent hover:bg-slate-200 hover:text-slate-800'
+                    }`}
+                    title={isMonitoringMode ? 'Nonaktifkan Mode Monitoring Data' : 'Aktifkan Mode Monitoring Data'}
+                  >
+                    <Activity className="h-5 w-5" />
+                  </button>
+                )}
 
-              {/* Tambah Santri Mobile Button next to export */}
-              {subTab === 'santri' && !isMonitoringMode && canWriteCurrentFilter && (
+                {/* Tombol Ekspor (rounded-full) */}
                 <button
-                  id="btn-add-santri-mobile"
-                  onClick={() => {
-                    setEditingSantri(null);
-                    setIsAddSantriOpen(true);
-                  }}
-                  className="flex md:hidden h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all shadow-xs bg-emerald-700 text-white hover:bg-emerald-800 hover:scale-105 active:scale-95 cursor-pointer"
-                  title="Tambah Santri"
+                  id="btn-export-trigger"
+                  onClick={() => setIsExportModalOpen(true)}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600 hover:bg-emerald-50 hover:text-emerald-800 transition-all shadow-xs cursor-pointer hover:scale-105 active:scale-95"
+                  title="Ekspor Data"
                 >
-                  <Plus className="h-5 w-5" />
+                  <Download className="h-5 w-5" />
                 </button>
-              )}
+
+                {/* Tambah Santri Mobile Button (rounded-full) */}
+                {subTab === 'santri' && !isMonitoringMode && canWriteCurrentFilter && (
+                  <button
+                    id="btn-add-santri-mobile"
+                    onClick={() => {
+                      setEditingSantri(null);
+                      setIsAddSantriOpen(true);
+                    }}
+                    className="flex md:hidden h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all shadow-xs bg-emerald-700 text-white hover:bg-emerald-800 hover:scale-105 active:scale-95 cursor-pointer"
+                    title="Tambah Santri"
+                  >
+                    <Plus className="h-5 w-5" />
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -1884,9 +1877,9 @@ export default function SekretarisView({
           </div>
         )}
 
-        {/* Main Controls Card (Search, View Toggle, Filter Button) */}
+        {/* Main Controls (Search, View Toggle, Filter Button) - Flat layout without nested container */}
         {subTab !== 'overview' && (
-          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-md sm:p-5 flex flex-col gap-3">
+          <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-3 md:flex-row md:items-start justify-between">
           
           {/* Left Column: Search Box + Filter & Monitoring Tabs (in monitoring mode) */}
@@ -1961,40 +1954,54 @@ export default function SekretarisView({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Cari nama, NIS, NISN, NIK, asal kota, atau kamar santri..."
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50/50 py-3 pl-11 pr-4 text-sm text-slate-800 placeholder-slate-400 transition-all focus:border-emerald-500 focus:bg-white focus:ring-1 focus:ring-emerald-500 outline-none"
+                  className="w-full h-11 rounded-full border border-slate-200 bg-white py-2.5 pl-11 pr-10 text-sm text-slate-800 placeholder-slate-400 transition-all focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-500/20 outline-none shadow-2xs"
                 />
                 {searchQuery && (
                   <button 
                     onClick={() => setSearchQuery('')}
-                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600"
+                    className="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 hover:text-slate-600 cursor-pointer"
                   >
                     <X className="h-4 w-4" />
                   </button>
                 )}
               </div>
 
-              {/* Filter Button (Sejajar horizontal di sebelah kanan Kotak Cari) */}
+              {/* Filter Button (Hanya Ikon, Sudut Lengkung Sempurna) */}
               <button
                 id="btn-filter-toggle"
                 type="button"
-                onClick={() => setShowFilters(!showFilters)}
-                className={`flex h-11 items-center justify-center gap-1.5 rounded-xl border px-3.5 sm:px-4 font-display text-xs font-bold transition-all hover:bg-slate-50 shrink-0 whitespace-nowrap cursor-pointer ${
+                onClick={() => setShowFilters(true)}
+                className={`relative h-11 w-11 shrink-0 items-center justify-center rounded-full border transition-all shadow-2xs cursor-pointer active:scale-95 ${
                   isSelectionMode ? 'hidden' : 'flex'
                 } ${
-                  showFilters || statusFilter !== 'semua' || genderFilter !== 'semua' || domisiliFilter !== 'semua' || emisFilter !== 'semua' || ageFilterConfig.enabled || activeExcelFilterCount > 0
-                    ? 'border-emerald-200 bg-emerald-50/30 text-emerald-800'
-                    : 'border-slate-200 bg-white text-slate-600'
+                  totalActiveFilterCount > 0
+                    ? 'border-emerald-300 bg-emerald-50 text-emerald-800 font-bold'
+                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                 }`}
-                title="Filter Data"
+                title="Pengaturan Filter"
               >
-                <Filter className="h-4 w-4 text-current" />
-                <span>Filter</span>
-                {activeExcelFilterCount > 0 && (
-                  <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-emerald-600 px-1 text-[10px] font-bold text-white shrink-0">
-                    {activeExcelFilterCount}
+                <Filter className="h-5 w-5 text-current" />
+                {totalActiveFilterCount > 0 && (
+                  <span className="absolute -top-1 -right-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-emerald-600 px-1 text-[10px] font-extrabold text-white shadow-xs">
+                    {totalActiveFilterCount}
                   </span>
                 )}
               </button>
+
+              {/* Tombol Atur Visibilitas Kolom (Sebelah Kanan Tombol Filter - Hanya Ikon, Sudut Lengkung Sempurna) */}
+              {viewMode === 'table' && subTab === 'santri' && !isMonitoringMode && (
+                <button
+                  id="btn-column-visibility-modal-trigger"
+                  type="button"
+                  onClick={() => setIsColumnModalOpen(true)}
+                  className={`h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-emerald-50 hover:text-emerald-800 transition-all shadow-2xs cursor-pointer active:scale-95 ${
+                    isSelectionMode ? 'hidden' : 'flex'
+                  }`}
+                  title="Atur Visibilitas Kolom"
+                >
+                  <SlidersHorizontal className="h-5 w-5 text-current" />
+                </button>
+              )}
 
               {/* Mobile Sort Button (Card mode & Santri subtab) */}
               {viewMode === 'card' && subTab === 'santri' && (
@@ -2003,7 +2010,7 @@ export default function SekretarisView({
                     id="btn-sort-card-toggle-mobile"
                     type="button"
                     onClick={() => setShowSortDropdown(!showSortDropdown)}
-                    className={`h-11 w-11 flex items-center justify-center rounded-xl border font-display text-xs font-bold transition-all hover:bg-slate-50 ${
+                    className={`h-11 w-11 flex items-center justify-center rounded-full border font-display text-xs font-bold transition-all hover:bg-slate-50 shadow-2xs ${
                       showSortDropdown
                         ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
                         : 'border-slate-200 bg-white text-slate-600'
@@ -2164,136 +2171,6 @@ export default function SekretarisView({
 
 
 
-            {/* Column Configuration (Only for Table mode & Santri subtab when NOT in Monitoring Mode) */}
-            {viewMode === 'table' && subTab === 'santri' && !isMonitoringMode && (
-              <div 
-                ref={columnConfigRef}
-                className={`relative flex-1 sm:flex-none shrink-0 ${isSelectionMode ? 'hidden sm:block' : 'block'}`}
-              >
-                <button
-                  id="btn-column-visibility-toggle"
-                  type="button"
-                  onClick={() => setShowColumnConfig(!showColumnConfig)}
-                  className={`w-full flex flex-row h-11 items-center justify-center gap-1 sm:gap-1.5 rounded-xl border px-1.5 sm:px-3.5 font-display text-[10px] xs:text-[11px] sm:text-xs font-bold transition-all hover:bg-slate-50 whitespace-nowrap ${
-                    showColumnConfig
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                      : 'border-slate-200 bg-white text-slate-600'
-                  }`}
-                  title="Pengatur Kolom"
-                >
-                  <Settings className="h-4 w-4 text-current" />
-                  <span className="inline">Kolom</span>
-                </button>
-                
-                {/* Column Visibility Selector Dropdown Popover */}
-                  <AnimatePresence>
-                    {showColumnConfig && (
-                      <>
-                        <div 
-                          className="fixed inset-0 z-40 bg-transparent" 
-                          onClick={() => setShowColumnConfig(false)} 
-                        />
-                        <motion.div
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: 10 }}
-                          className="absolute left-1/2 -translate-x-1/2 sm:left-auto sm:right-0 sm:translate-x-0 mt-2 w-56 sm:w-64 rounded-2xl border border-slate-100 bg-white p-4 shadow-xl z-50 text-slate-700"
-                        >
-                          <div className="mb-3 border-b border-slate-100 pb-2.5 flex items-center justify-between gap-2">
-                            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                              <Eye className="h-3.5 w-3.5 text-emerald-600" />
-                              Visibilitas
-                            </h4>
-                            {(() => {
-                              const allChecked = Object.values(visibleColumns).every(Boolean);
-                              const isIndeterminate = Object.values(visibleColumns).some(Boolean) && !allChecked;
-                              return (
-                                <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-emerald-700 hover:text-emerald-800 select-none">
-                                  <input
-                                    type="checkbox"
-                                    checked={allChecked}
-                                    ref={(el) => {
-                                      if (el) el.indeterminate = isIndeterminate;
-                                    }}
-                                    onChange={(e) => {
-                                      const val = e.target.checked;
-                                      const nextCols: Record<string, boolean> = {};
-                                      Object.keys(visibleColumns).forEach((k) => {
-                                        nextCols[k] = val;
-                                      });
-                                      setVisibleColumns(nextCols);
-                                    }}
-                                    className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
-                                  />
-                                  <span>{allChecked ? 'Batal Semua' : 'Pilih Semua'}</span>
-                                </label>
-                              );
-                            })()}
-                          </div>
-                          <div className="max-h-60 overflow-y-auto space-y-2 pr-1 scrollbar-thin">
-                            {Object.keys(visibleColumns).map((colKey) => {
-                              const labels: Record<string, string> = {
-                                indukMhd: 'Induk MHD',
-                                indukWustho: 'Induk Wustho',
-                                indukUlya: 'Induk Ulya',
-                                noKk: 'No. KK',
-                                tempatLahir: 'Tempat Lahir',
-                                tanggalLahir: 'Tanggal Lahir',
-                                gender: 'Gender',
-                                pendidikanTerakhir: 'Pendidikan Terakhir',
-                                anakKe: 'Anak Ke',
-                                dariBersaudara: 'Jumlah Saudara',
-                                namaAyah: 'Nama Ayah',
-                                nikAyah: 'NIK Ayah',
-                                pekerjaanAyah: 'Pekerjaan Ayah',
-                                pendidikanAyah: 'Pendidikan Ayah',
-                                namaIbu: 'Nama Ibu',
-                                nikIbu: 'NIK Ibu',
-                                pekerjaanIbu: 'Pekerjaan Ibu',
-                                pendidikanIbu: 'Pendidikan Ibu',
-                                alamat: 'Alamat',
-                                rt: 'RT',
-                                rw: 'RW',
-                                desa: 'Desa / Kelurahan',
-                                kecamatan: 'Kecamatan',
-                                kabupaten: 'Kabupaten / Kota',
-                                provinsi: 'Provinsi',
-                                jarakRumah: 'Jarak Rumah',
-                                noHp: 'Nomor HP',
-                                statusDomisili: 'Status Domisili',
-                                tanggalMasuk: 'Tanggal Masuk',
-                                tanggalKeluar: 'Tanggal Keluar',
-                                statusVerval: 'Status Verval',
-                                catatan: 'Catatan',
-                              };
-                              return (
-                                <label 
-                                  key={colKey} 
-                                  className="flex items-center gap-2.5 px-1 py-0.5 rounded-lg hover:bg-slate-50 cursor-pointer text-xs font-medium"
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={visibleColumns[colKey]}
-                                    onChange={(e) => {
-                                      setVisibleColumns({
-                                        ...visibleColumns,
-                                        [colKey]: e.target.checked
-                                      });
-                                    }}
-                                    className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                                  />
-                                  {labels[colKey] || colKey}
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </motion.div>
-                      </>
-                    )}
-                  </AnimatePresence>
-                </div>
-            )}
-
             {/* Add Record Button */}
             {subTab === 'santri' && !isMonitoringMode && canWriteCurrentFilter && !isSelectionMode && (
               <button
@@ -2312,289 +2189,7 @@ export default function SekretarisView({
             )}
           </div>
           </div>
-
-        {/* Expandable Advanced Filters Drawer in UI */}
-        <AnimatePresence>
-          {showFilters && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ ease: 'linear', duration: 0.05 }}
-              className="mt-4 border-t border-slate-100 pt-4"
-            >
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Status Keanggotaan</label>
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setShowStatusFilterDropdown(!showStatusFilterDropdown)}
-                      className={`w-full flex flex-row h-11 items-center justify-between gap-1.5 rounded-xl border px-3 text-xs font-medium transition-all hover:bg-slate-50 whitespace-nowrap ${
-                        showStatusFilterDropdown
-                          ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                          : 'border-slate-200 bg-white text-slate-700'
-                      }`}
-                    >
-                      <span>
-                        {statusFilter === 'semua' ? 'Semua Status' : statusFilter}
-                      </span>
-                      <ChevronDown className="h-4 w-4 opacity-60 shrink-0" />
-                    </button>
-
-                    <AnimatePresence>
-                      {showStatusFilterDropdown && (
-                        <>
-                          <div 
-                            className="fixed inset-0 z-40" 
-                            onClick={() => setShowStatusFilterDropdown(false)} 
-                          />
-                          <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: 10 }}
-                            className="absolute left-0 mt-2 w-full min-w-[200px] rounded-2xl border border-slate-100 bg-white p-2.5 shadow-xl z-50 text-slate-700 font-sans"
-                          >
-                            <div className="space-y-1">
-                              {[
-                                { value: 'semua', label: 'Semua Status' },
-                                { value: 'Aktif', label: 'Aktif' },
-                                { value: 'Alumni', label: 'Alumni' },
-                                { value: 'Meninggal', label: 'Meninggal' }
-                              ].map((opt) => {
-                                const isActive = statusFilter === opt.value;
-                                return (
-                                  <button
-                                    key={opt.value}
-                                    type="button"
-                                    onClick={() => {
-                                      setStatusFilter(opt.value);
-                                      setShowStatusFilterDropdown(false);
-                                    }}
-                                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-left text-xs font-medium transition-colors ${
-                                      isActive
-                                        ? 'bg-emerald-50 text-emerald-800 font-semibold'
-                                        : 'hover:bg-slate-50 text-slate-600'
-                                    }`}
-                                  >
-                                    <span>{opt.label}</span>
-                                    {isActive && <Check className="h-3.5 w-3.5 text-emerald-700 shrink-0" />}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </motion.div>
-                        </>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Status Domisili</label>
-                  <div className={`relative ${isDomisiliDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                    <button
-                      type="button"
-                      disabled={isDomisiliDisabled}
-                      onClick={() => setShowDomisiliFilterDropdown(!showDomisiliFilterDropdown)}
-                      className={`w-full flex flex-row h-11 items-center justify-between gap-1.5 rounded-xl border px-3 text-xs font-medium transition-all whitespace-nowrap ${
-                        isDomisiliDisabled
-                          ? 'border-slate-200 bg-slate-100/70 text-slate-400 pointer-events-none'
-                          : showDomisiliFilterDropdown
-                          ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                          : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                      }`}
-                    >
-                      <span>
-                        {isDomisiliDisabled ? 'Tidak Berlaku' : (domisiliFilter === 'semua' ? 'Semua Domisili' : domisiliFilter)}
-                      </span>
-                      <ChevronDown className="h-4 w-4 opacity-60 shrink-0" />
-                    </button>
-
-                    <AnimatePresence>
-                      {showDomisiliFilterDropdown && !isDomisiliDisabled && (
-                        <>
-                          <div 
-                            className="fixed inset-0 z-40" 
-                            onClick={() => setShowDomisiliFilterDropdown(false)} 
-                          />
-                          <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: 10 }}
-                            className="absolute left-0 mt-2 w-full min-w-[200px] rounded-2xl border border-slate-100 bg-white p-2.5 shadow-xl z-50 text-slate-700 font-sans"
-                          >
-                            <div className="space-y-1">
-                              {[
-                                { value: 'semua', label: 'Semua Domisili' },
-                                { value: 'Muqim', label: 'Muqim' },
-                                { value: 'Kampung', label: 'Kampung' }
-                              ].map((opt) => {
-                                const isActive = domisiliFilter === opt.value;
-                                return (
-                                  <button
-                                    key={opt.value}
-                                    type="button"
-                                    onClick={() => {
-                                      setDomisiliFilter(opt.value);
-                                      setShowDomisiliFilterDropdown(false);
-                                    }}
-                                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-left text-xs font-medium transition-colors ${
-                                      isActive
-                                        ? 'bg-emerald-50 text-emerald-800 font-semibold'
-                                        : 'hover:bg-slate-50 text-slate-600'
-                                    }`}
-                                  >
-                                    <span>{opt.label}</span>
-                                    {isActive && <Check className="h-3.5 w-3.5 text-emerald-700 shrink-0" />}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </motion.div>
-                        </>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Filter Umur</label>
-                  <button
-                    type="button"
-                    onClick={() => setIsAgeModalOpen(true)}
-                    className={`w-full flex flex-row h-11 items-center justify-between gap-1.5 rounded-xl border px-3 text-xs font-medium transition-all hover:bg-slate-50 whitespace-nowrap cursor-pointer ${
-                      ageFilterConfig.enabled
-                        ? 'border-emerald-300 bg-emerald-50/80 text-emerald-800 font-bold'
-                        : 'border-slate-200 bg-white text-slate-700'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 truncate">
-                      <Calendar className="h-4 w-4 text-emerald-600 shrink-0" />
-                      <span className="truncate">
-                        {ageFilterConfig.enabled ? (
-                          ageFilterConfig.mode === 'exact'
-                            ? `Umur: ${ageFilterConfig.exactAge || 0} Thn`
-                            : ageFilterConfig.mode === 'min'
-                            ? `Umur: ≥ ${ageFilterConfig.minAge || 0} Thn`
-                            : ageFilterConfig.mode === 'max'
-                            ? `Umur: ≤ ${ageFilterConfig.maxAge || 0} Thn`
-                            : `Umur: ${ageFilterConfig.minAge || '0'} - ${ageFilterConfig.maxAge || '∞'} Thn`
-                        ) : (
-                          'Semua Umur'
-                        )}
-                      </span>
-                    </div>
-                    <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-lg border shrink-0 ${
-                      ageFilterConfig.enabled 
-                        ? 'bg-emerald-600 text-white border-emerald-600' 
-                        : 'bg-slate-100 text-slate-600 border-slate-200'
-                    }`}>
-                      {ageFilterConfig.enabled ? 'Aktif' : 'Atur'}
-                    </span>
-                  </button>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Status EMIS</label>
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setShowEmisFilterDropdown(!showEmisFilterDropdown)}
-                      className={`w-full flex flex-row h-11 items-center justify-between gap-1.5 rounded-xl border px-3 text-xs font-medium transition-all hover:bg-slate-50 whitespace-nowrap ${
-                        showEmisFilterDropdown
-                          ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                          : 'border-slate-200 bg-white text-slate-700'
-                      }`}
-                    >
-                      <span>
-                        {emisFilter === 'semua' 
-                          ? 'Semua Status EMIS' 
-                          : (emisFilter === 'Terdaftar' 
-                            ? 'EMIS Terdaftar' 
-                            : (emisFilter === 'Invalid' 
-                              ? 'EMIS Invalid' 
-                              : (emisFilter === 'Keluar'
-                                ? 'EMIS Keluar'
-                                : (emisFilter === 'Lulus'
-                                  ? 'EMIS Lulus'
-                                  : 'Belum Terdaftar'))))}
-                      </span>
-                      <ChevronDown className="h-4 w-4 opacity-60 shrink-0" />
-                    </button>
-
-                    <AnimatePresence>
-                      {showEmisFilterDropdown && (
-                        <>
-                          <div 
-                            className="fixed inset-0 z-40" 
-                            onClick={() => setShowEmisFilterDropdown(false)} 
-                          />
-                          <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: 10 }}
-                            className="absolute left-0 mt-2 w-full min-w-[200px] rounded-2xl border border-slate-100 bg-white p-2.5 shadow-xl z-50 text-slate-700 font-sans"
-                          >
-                            <div className="space-y-1">
-                              {[
-                                { value: 'semua', label: 'Semua Status EMIS' },
-                                { value: 'Terdaftar', label: 'EMIS Terdaftar' },
-                                { value: 'Invalid', label: 'EMIS Invalid' },
-                                { value: 'Keluar', label: 'EMIS Keluar' },
-                                { value: 'Lulus', label: 'EMIS Lulus' },
-                                { value: 'Belum', label: 'Belum Terdaftar' }
-                              ].map((opt) => {
-                                const isActive = emisFilter === opt.value;
-                                return (
-                                  <button
-                                    key={opt.value}
-                                    type="button"
-                                    onClick={() => {
-                                      setEmisFilter(opt.value);
-                                      setShowEmisFilterDropdown(false);
-                                    }}
-                                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-left text-xs font-medium transition-colors ${
-                                      isActive
-                                        ? 'bg-emerald-50 text-emerald-800 font-semibold'
-                                        : 'hover:bg-slate-50 text-slate-600'
-                                    }`}
-                                  >
-                                    <span>{opt.label}</span>
-                                    {isActive && <Check className="h-3.5 w-3.5 text-emerald-700 shrink-0" />}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </motion.div>
-                        </>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                </div>
-
-                <div className="flex items-end sm:col-span-2 lg:col-span-1">
-                  <button
-                    id="btn-reset-filters"
-                    onClick={() => {
-                      setStatusFilter('semua');
-                      setGenderFilter(canViewPutra && canViewPutri ? 'semua' : (canViewPutra ? 'Putra' : 'Putri'));
-                      setDomisiliFilter('semua');
-                      setEmisFilter('semua');
-                      setSearchQuery('');
-                      setAgeFilterConfig(DEFAULT_AGE_FILTER_CONFIG);
-                      setExcelColumnFilters({});
-                    }}
-                    className="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 py-2 text-center text-xs font-bold text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors"
-                  >
-                    Atur Ulang Filter
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+        </div>
       )}
 
       {/* VIEW RENDERER (TABLE, CARD, or OVERVIEW MODE) */}
@@ -2878,6 +2473,39 @@ export default function SekretarisView({
         config={ageFilterConfig}
         onApply={(newConfig) => setAgeFilterConfig(newConfig)}
         onReset={() => setAgeFilterConfig(DEFAULT_AGE_FILTER_CONFIG)}
+      />
+
+      {/* Modal Pengatur Visibilitas Kolom */}
+      <ColumnVisibilityModal
+        isOpen={isColumnModalOpen}
+        onClose={() => setIsColumnModalOpen(false)}
+        visibleColumns={visibleColumns}
+        setVisibleColumns={setVisibleColumns}
+      />
+
+      {/* Bottom Sheet Pengaturan Filter */}
+      <FilterBottomSheet
+        isOpen={showFilters}
+        onClose={() => setShowFilters(false)}
+        statusFilter={statusFilter}
+        setStatusFilter={setStatusFilter}
+        domisiliFilter={domisiliFilter}
+        setDomisiliFilter={setDomisiliFilter}
+        isDomisiliDisabled={isDomisiliDisabled}
+        emisFilter={emisFilter}
+        setEmisFilter={setEmisFilter}
+        ageFilterConfig={ageFilterConfig}
+        onOpenAgeModal={() => setIsAgeModalOpen(true)}
+        activeExcelFilterCount={activeExcelFilterCount}
+        onResetFilters={() => {
+          setStatusFilter('semua');
+          setGenderFilter(canViewPutra && canViewPutri ? 'semua' : (canViewPutra ? 'Putra' : 'Putri'));
+          setDomisiliFilter('semua');
+          setEmisFilter('semua');
+          setSearchQuery('');
+          setAgeFilterConfig(DEFAULT_AGE_FILTER_CONFIG);
+          setExcelColumnFilters({});
+        }}
       />
 
       {/* Floating Success Toast Notification */}
