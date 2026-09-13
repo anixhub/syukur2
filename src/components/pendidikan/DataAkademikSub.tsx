@@ -3000,50 +3000,12 @@ export default function DataAkademikSub({
                         {s.nis || '-'}
                       </td>
 
-                      {/* Status EMIS Cell */}
+                      {/* Status EMIS Cell (Read-Only di Modul Pendidikan) */}
                       <td className="px-4 py-4 whitespace-nowrap text-xs w-[110px] min-w-[110px]">
                         <div className="relative inline-block text-left">
-                          {canWriteCurrent ? (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                if (isSelectionMode) return;
-                                e.stopPropagation();
-                                if (activeEmisDropdownId === s.id) {
-                                  setActiveEmisDropdownId(null);
-                                  setEmisDropdownPos(null);
-                                } else {
-                                  const rect = e.currentTarget.getBoundingClientRect();
-                                  const spaceBelow = window.innerHeight - rect.bottom;
-                                  const spaceAbove = rect.top;
-                                  const isUpward = spaceBelow < 180 && spaceAbove > spaceBelow;
-
-                                  setEmisDropdownPos({
-                                    top: isUpward ? rect.top - 6 : rect.bottom + 6,
-                                    left: Math.max(10, Math.min(window.innerWidth - 150, rect.left)),
-                                    isUpward
-                                  });
-                                  setActiveEmisDropdownId(s.id);
-                                }
-                              }}
-                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wide transition-colors cursor-pointer shadow-2xs ${
-                                s.statusEmis === 'Terdaftar'
-                                  ? 'bg-[#E6F4EA] text-[#137333] hover:bg-emerald-200'
-                                  : s.statusEmis === 'Invalid'
-                                  ? 'bg-rose-50 text-rose-700 hover:bg-rose-100'
-                                  : s.statusEmis === 'Keluar'
-                                  ? 'bg-amber-50 text-amber-700 hover:bg-amber-100'
-                                  : s.statusEmis === 'Lulus'
-                                  ? 'bg-blue-50 text-blue-700 hover:bg-blue-100'
-                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                              }`}
-                              title="Klik untuk ubah Status EMIS"
-                            >
-                              <span>{s.statusEmis || 'Belum'}</span>
-                              <ChevronsUpDown className="h-3 w-3 opacity-60 shrink-0" />
-                            </button>
-                          ) : (
-                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wide ${
+                          <span 
+                            title={`Status EMIS: ${s.statusEmis || 'Belum'} (hanya menerima keterangan dari sekretaris)`}
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wide select-none ${
                               s.statusEmis === 'Terdaftar'
                                 ? 'bg-[#E6F4EA] text-[#137333]'
                                 : s.statusEmis === 'Invalid'
@@ -3053,10 +3015,10 @@ export default function DataAkademikSub({
                                 : s.statusEmis === 'Lulus'
                                 ? 'bg-blue-50 text-blue-700'
                                 : 'bg-slate-100 text-slate-600'
-                            }`}>
-                              {s.statusEmis || 'Belum'}
-                            </span>
-                          )}
+                            }`}
+                          >
+                            {s.statusEmis || 'Belum'}
+                          </span>
                         </div>
                       </td>
 

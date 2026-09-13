@@ -78,7 +78,7 @@ export const EditSantriKolomModal: React.FC<EditSantriKolomModalProps> = ({
       gender: formData.gender,
       namaAyah: formData.namaAyah.trim(),
       namaIbu: formData.namaIbu.trim(),
-      statusEmis: formData.statusEmis,
+      statusEmis: santri.statusEmis, // Hanya menerima keterangan dari sekretaris
       statusVerval: formData.statusVerval,
       statusKeanggotaan: formData.statusKeanggotaan,
       kelasMhd: formData.kelasMhd.trim(),
@@ -347,12 +347,13 @@ export const EditSantriKolomModal: React.FC<EditSantriKolomModalProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
-                      Status EMIS
+                      Status EMIS <span className="text-[9px] text-amber-600 font-normal lowercase">(hanya dari sekretaris)</span>
                     </label>
                     <select
                       value={formData.statusEmis}
-                      onChange={(e) => setFormData({ ...formData, statusEmis: e.target.value as any })}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none font-bold text-slate-800 bg-white"
+                      disabled
+                      title="Status EMIS tidak dapat diubah di modul pendidikan (hanya menerima keterangan dari sekretaris)"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none font-bold text-slate-500 bg-slate-100/80 cursor-not-allowed"
                     >
                       <option value="Terdaftar">Terdaftar</option>
                       <option value="Belum">Belum</option>
