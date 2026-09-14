@@ -94,7 +94,9 @@ self.addEventListener('fetch', (event) => {
       }).catch(() => {
         // Offline fallback for navigation requests
         if (event.request.mode === 'navigate') {
-          return caches.match('/');
+          return caches.match('/')
+            .then((r) => r || caches.match('./index.html'))
+            .then((r) => r || caches.match('/index.html'));
         }
       });
     })

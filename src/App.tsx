@@ -7,6 +7,7 @@ import Sidebar from './components/Sidebar';
 import HelpModal from './components/HelpModal';
 import AdminChatDrawer from './components/AdminChatDrawer';
 import NotificationsPage from './components/NotificationsPage';
+import OfflineStatusBanner from './components/OfflineStatusBanner';
 import { fetchTableData, insertTableRow, insertTableRows, updateTableRow, deleteTableRow, subscribeRealtimeChanges, snakeToCamel, safeLocalStorageSetItem } from './lib/api';
 
 // Views (Lazy-loaded for code splitting and instant initial page load)
@@ -1292,6 +1293,9 @@ export default function App() {
         onSidebarWidthChange={(width) => setChatSidebarWidth(width)}
         onResizeStateChange={(resizing) => setIsResizingChat(resizing)}
       />
+
+      {/* Offline & Sync Status Banner */}
+      <OfflineStatusBanner />
 
     </div>
   );

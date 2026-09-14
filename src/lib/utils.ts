@@ -956,3 +956,66 @@ export function cleanWaliKelas(val?: string | null): string {
     .trim();
   return cleaned || '-';
 }
+
+// Convert camelCase string/object to snake_case
+export function camelToSnake(obj: any): any {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj !== 'object' || obj instanceof Date || obj instanceof File || obj instanceof Blob) return obj;
+  if (Array.isArray(obj)) return obj.map(camelToSnake);
+  
+  const result: any = {};
+  for (const key of Object.keys(obj)) {
+    const snakeKey = key
+      .replace(/([A-Z])/g, "_$1")
+      .replace(/([0-9]+)/g, "_$1")
+      .replace(/_+/g, "_")
+      .toLowerCase();
+    result[snakeKey] = camelToSnake(obj[key]);
+  }
+  return result;
+}
+
+// Convert snake_case string/object to camelCase
+export function snakeToCamel(obj: any): any {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj !== 'object' || obj instanceof Date || obj instanceof File || obj instanceof Blob) return obj;
+  if (Array.isArray(obj)) return obj.map(snakeToCamel);
+  
+  const result: any = {};
+  for (const key of Object.keys(obj)) {
+    const camelKey = key.replace(/_([a-z0-9])/g, (g) => g[1].toUpperCase());
+    result[camelKey] = snakeToCamel(obj[key]);
+  }
+  return result;
+}
+
+// Helper to resolve dynamic API URLs supporting subpath hosting and absolute origin for cross-device compatibility
+export function getApiUrl(endpoint: string): string {
+  if (!endpoint) return '';
+  const trimmed = endpoint.trim();
+  
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    try {
+      const urlObj = new URL(trimmed);
+      let p = urlObj.pathname + urlObj.search;
+      if (p.startsWith('/uploads/')) {
+        p = p.replace('/uploads/', '/api/uploads/');
+      }
+      return p;
+    } catch (e) {
+      return trimmed;
+    }
+  }
+
+  if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
+    return trimmed;
+  }
+
+  let cleanEndpoint = trimmed.startsWith('/') ? trimmed : '/' + trimmed;
+  if (cleanEndpoint.startsWith('/uploads/')) {
+    cleanEndpoint = cleanEndpoint.replace('/uploads/', '/api/uploads/');
+  }
+  
+  return cleanEndpoint;
+}
+
