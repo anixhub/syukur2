@@ -602,9 +602,9 @@ export default function DataKamarSantriSub({
       "No",
       "Nama Lengkap",
       "NIS",
-      "Gender",
       "Alamat",
-      "Kamar Santri",
+      "Status Domisili",
+      "Kamar",
       "No. Lemari",
     ];
     const rows = sortedSantri.map((s, idx) => {
@@ -613,8 +613,8 @@ export default function DataKamarSantriSub({
         String(idx + 1),
         s.nama,
         s.nis || "-",
-        s.gender,
         getFormattedAlamat(s),
+        s.statusDomisili || "Muqim",
         formattedRoom || "Belum Mendapatkan Kamar",
         s.nomorLemari || "-",
       ];
@@ -658,10 +658,10 @@ export default function DataKamarSantriSub({
    <Column ss:Width="40"/>
    <Column ss:Width="200"/>
    <Column ss:Width="90"/>
-   <Column ss:Width="70"/>
-   <Column ss:Width="250"/>
-   <Column ss:Width="160"/>
+   <Column ss:Width="240"/>
    <Column ss:Width="100"/>
+   <Column ss:Width="160"/>
+   <Column ss:Width="90"/>
    <Row ss:Height="26">`;
 
     headers.forEach((header) => {
@@ -824,10 +824,11 @@ export default function DataKamarSantriSub({
           <thead>
             <tr>
               <th style="width: 5%; text-align: center;">No</th>
-              <th style="width: 32%;">Nama Lengkap</th>
-              <th style="width: 8%; text-align: center;">NIS</th>
-              <th style="width: 27%;">Alamat</th>
-              <th style="width: 18%;">Kamar</th>
+              <th style="width: 25%;">Nama Lengkap</th>
+              <th style="width: 9%; text-align: center;">NIS</th>
+              <th style="width: 24%;">Alamat</th>
+              <th style="width: 13%; text-align: center;">Status Domisili</th>
+              <th style="width: 14%;">Kamar</th>
               <th style="width: 10%; text-align: center;">No. Lemari</th>
             </tr>
           </thead>
@@ -844,6 +845,7 @@ export default function DataKamarSantriSub({
                   <td style="font-weight: 600;">${s.nama}</td>
                   <td class="text-center font-mono">${s.nis || "-"}</td>
                   <td>${getFormattedAlamat(s)}</td>
+                  <td class="text-center" style="font-weight: 500;">${s.statusDomisili || "Muqim"}</td>
                   <td style="font-weight: 500;">${roomHtml}</td>
                   <td class="text-center font-mono" style="font-weight: 500;">${s.nomorLemari || "-"}</td>
                 </tr>

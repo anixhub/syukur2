@@ -1385,7 +1385,7 @@ export default function DataAkademikSub({
 
   // Excel Export Handler (XML Format compatible with Excel)
   const handleExportExcel = (customFileName?: string) => {
-    const isKelas = academicType === 'internal';
+    const isKelas = academicType !== 'rombel';
     
     const dynamicHeaders: string[] = [];
     if (isKelas) {
@@ -1398,15 +1398,14 @@ export default function DataAkademikSub({
       });
     }
 
-    const headers = ['No', 'Nama Lengkap', 'NIS', 'Gender', 'Alamat', ...dynamicHeaders];
+    const headers = ['No', 'Nama Lengkap', 'NIS', 'Status EMIS', ...dynamicHeaders];
     
     const rows = sortedSantri.map((s, idx) => {
       const dynamicValues: string[] = [];
       if (isKelas) {
-        const classInfo = getStudentClassInfo(s);
         activeLembagas.forEach(lem => {
-          const match = classInfo.find(c => c.lembagaId === lem.id);
-          dynamicValues.push(match ? match.className : '-');
+          const clsName = getStudentClassInLembaga(s, lem);
+          dynamicValues.push(clsName || '-');
         });
       } else {
         filteredCategories.forEach(cat => {
@@ -1420,8 +1419,7 @@ export default function DataAkademikSub({
         String(idx + 1),
         s.nama,
         s.nis || '-',
-        s.gender,
-        getFormattedAlamat(s),
+        s.statusEmis || 'Belum',
         ...dynamicValues
       ];
     });
@@ -1519,7 +1517,7 @@ export default function DataAkademikSub({
       return;
     }
 
-    const isKelas = academicType === 'internal';
+    const isKelas = academicType !== 'rombel';
     
     const dynamicHeaders: string[] = [];
     if (isKelas) {
@@ -1554,7 +1552,7 @@ export default function DataAkademikSub({
             font-weight: bold; 
             color: #4f46e5; 
             text-align: center; 
-            text-transform: uppercase;
+            text-transform: uppercase; 
             letter-spacing: 0.5px;
           }
           .subtitle {
@@ -1644,9 +1642,9 @@ export default function DataAkademikSub({
           <thead>
             <tr>
               <th style="width: 5%; text-align: center;">No</th>
-              <th style="width: 25%;">Nama Lengkap</th>
+              <th style="width: 28%;">Nama Lengkap</th>
               <th style="width: 12%; text-align: center;">NIS</th>
-              <th style="width: 25%;">Alamat</th>
+              <th style="width: 12%; text-align: center;">Status EMIS</th>
               ${dynamicHeaders.map(hdr => `<th>${hdr}</th>`).join('')}
             </tr>
           </thead>
@@ -1654,10 +1652,9 @@ export default function DataAkademikSub({
             ${sortedSantri.map((s, idx) => {
               let dynamicCellsHtml = '';
               if (isKelas) {
-                const classInfo = getStudentClassInfo(s);
                 dynamicCellsHtml = activeLembagas.map(lem => {
-                  const match = classInfo.find(c => c.lembagaId === lem.id);
-                  return `<td>${match ? match.className : '-'}</td>`;
+                  const clsName = getStudentClassInLembaga(s, lem);
+                  return `<td>${clsName || '-'}</td>`;
                 }).join('');
               } else {
                 dynamicCellsHtml = filteredCategories.map(cat => {
@@ -1672,7 +1669,7 @@ export default function DataAkademikSub({
                   <td class="text-center font-mono">${idx + 1}</td>
                   <td style="font-weight: 600;">${s.nama}</td>
                   <td class="text-center font-mono">${s.nis || '-'}</td>
-                  <td>${getFormattedAlamat(s)}</td>
+                  <td class="text-center">${s.statusEmis || 'Belum'}</td>
                   ${dynamicCellsHtml}
                 </tr>
               `;

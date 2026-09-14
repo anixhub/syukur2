@@ -454,19 +454,27 @@ export default function SekretarisView({
     document.body.removeChild(link);
   };
 
-  const handleExportExcelSantri = (customFileName?: string) => {
-    // Definisi kolom ekspor yang sesuai urutan data
-    const exportColumns = [
-      { id: 'nis', label: 'NIS', isAlwaysVisible: true, getValue: (s: Santri) => s.nis || '' },
-      { id: 'nama', label: 'Nama Lengkap', isAlwaysVisible: true, getValue: (s: Santri) => s.nama || '' },
-      { id: 'nisn', label: 'NISN', isAlwaysVisible: false, colKey: 'nisn', getValue: (s: Santri) => s.nisn || '' },
-      { id: 'indukMhd', label: 'INDUK MHD', isAlwaysVisible: false, colKey: 'indukMhd', getValue: (s: Santri) => s.indukMhd || '' },
-      { id: 'indukWustho', label: 'INDUK WUSTHO', isAlwaysVisible: false, colKey: 'indukWustho', getValue: (s: Santri) => s.indukWustho || '' },
-      { id: 'indukUlya', label: 'INDUK ULYA', isAlwaysVisible: false, colKey: 'indukUlya', getValue: (s: Santri) => s.indukUlya || '' },
-      { id: 'nik', label: 'NIK', isAlwaysVisible: false, colKey: 'nik', getValue: (s: Santri) => s.nik || '' },
+  // Helper untuk mendapatkan kolom ekspor yang persis sama dengan kolom yang sedang ditampilkan di tabel
+  const getActiveTableExportColumns = () => {
+    const isColumnDisplayed = (colKey: string): boolean => {
+      if (colKey === 'nama') return true;
+      if (colKey === 'umur') return !!ageFilterConfig.enabled;
+      if (isMonitoringMode) {
+        const isWajib = mandatoryKeys.includes(colKey as keyof Santri);
+        return monitoringActiveTab === 'wajib' ? isWajib : !isWajib;
+      }
+      return visibleColumns[colKey] ?? false;
+    };
+
+    const allTableColumns = [
+      { id: 'nama', label: 'Nama Lengkap', colKey: 'nama', isAlwaysVisible: true, getValue: (s: Santri) => s.nama || '' },
+      { id: 'nis', label: 'NIS', colKey: 'nis', isAlwaysVisible: false, getValue: (s: Santri) => s.nis || '' },
+      { id: 'nisn', label: 'NISN', colKey: 'nisn', isAlwaysVisible: false, getValue: (s: Santri) => s.nisn || '' },
+      { id: 'nik', label: 'NIK', colKey: 'nik', isAlwaysVisible: false, getValue: (s: Santri) => s.nik || '' },
       ...(ageFilterConfig.enabled ? [{
         id: 'umur',
         label: `Umur ${ageFilterConfig.refType === 'custom' && ageFilterConfig.customDate ? `(Per ${new Date(ageFilterConfig.customDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })})` : '(Hari ini)'}`,
+        colKey: 'umur',
         isAlwaysVisible: true,
         getValue: (s: Santri) => {
           const refDate = ageFilterConfig.refType === 'custom' && ageFilterConfig.customDate
@@ -476,43 +484,57 @@ export default function SekretarisView({
           return age !== null ? `${age} Tahun` : '';
         }
       }] : []),
-      { id: 'noKk', label: 'No. KK', isAlwaysVisible: false, colKey: 'noKk', getValue: (s: Santri) => s.noKk || '' },
-      { id: 'tempatLahir', label: 'Tempat Lahir', isAlwaysVisible: true, getValue: (s: Santri) => s.tempatLahir || '' },
-      { id: 'tanggalLahir', label: 'Tanggal Lahir', isAlwaysVisible: true, getValue: (s: Santri) => s.tanggalLahir || '' },
-      { id: 'gender', label: 'Gender', isAlwaysVisible: false, colKey: 'gender', getValue: (s: Santri) => s.gender || '' },
-      { id: 'pendidikanTerakhir', label: 'Pendidikan Terakhir', isAlwaysVisible: false, colKey: 'pendidikanTerakhir', getValue: (s: Santri) => s.pendidikanTerakhir || '' },
-      { id: 'anakKe', label: 'Anak Ke', isAlwaysVisible: false, colKey: 'anakKe', getValue: (s: Santri) => s.anakKe !== undefined ? String(s.anakKe) : '' },
-      { id: 'dariBersaudara', label: 'Jumlah Saudara', isAlwaysVisible: false, colKey: 'dariBersaudara', getValue: (s: Santri) => s.dariBersaudara !== undefined ? String(s.dariBersaudara) : '' },
-      { id: 'namaAyah', label: 'Nama Ayah', isAlwaysVisible: false, colKey: 'namaAyah', getValue: (s: Santri) => s.namaAyah || '' },
-      { id: 'nikAyah', label: 'NIK Ayah', isAlwaysVisible: false, colKey: 'nikAyah', getValue: (s: Santri) => s.nikAyah || '' },
-      { id: 'pekerjaanAyah', label: 'Pekerjaan Ayah', isAlwaysVisible: false, colKey: 'pekerjaanAyah', getValue: (s: Santri) => s.pekerjaanAyah || '' },
-      { id: 'pendidikanAyah', label: 'Pendidikan Ayah', isAlwaysVisible: false, colKey: 'pendidikanAyah', getValue: (s: Santri) => s.pendidikanAyah || '' },
-      { id: 'namaIbu', label: 'Nama Ibu', isAlwaysVisible: false, colKey: 'namaIbu', getValue: (s: Santri) => s.namaIbu || '' },
-      { id: 'nikIbu', label: 'NIK Ibu', isAlwaysVisible: false, colKey: 'nikIbu', getValue: (s: Santri) => s.nikIbu || '' },
-      { id: 'pekerjaanIbu', label: 'Pekerjaan Ibu', isAlwaysVisible: false, colKey: 'pekerjaanIbu', getValue: (s: Santri) => s.pekerjaanIbu || '' },
-      { id: 'pendidikanIbu', label: 'Pendidikan Ibu', isAlwaysVisible: false, colKey: 'pendidikanIbu', getValue: (s: Santri) => s.pendidikanIbu || '' },
-      { id: 'alamat', label: 'Alamat', isAlwaysVisible: false, colKey: 'alamat', getValue: (s: Santri) => s.alamat || '' },
-      { id: 'rt', label: 'RT', isAlwaysVisible: false, colKey: 'rt', getValue: (s: Santri) => s.rt || '' },
-      { id: 'rw', label: 'RW', isAlwaysVisible: false, colKey: 'rw', getValue: (s: Santri) => s.rw || '' },
-      { id: 'desa', label: 'Desa / Kelurahan', isAlwaysVisible: true, getValue: (s: Santri) => s.desa || '' },
-      { id: 'kecamatan', label: 'Kecamatan', isAlwaysVisible: true, getValue: (s: Santri) => s.kecamatan || '' },
-      { id: 'kabupaten', label: 'Kabupaten / Kota', isAlwaysVisible: true, getValue: (s: Santri) => s.kabupaten || '' },
-      { id: 'provinsi', label: 'Provinsi', isAlwaysVisible: true, getValue: (s: Santri) => s.provinsi || '' },
-      { id: 'jarakRumah', label: 'Jarak Rumah (km)', isAlwaysVisible: false, colKey: 'jarakRumah', getValue: (s: Santri) => s.jarakRumah !== undefined ? String(s.jarakRumah) : '' },
-      { id: 'noHp', label: 'No. HP Wali', isAlwaysVisible: false, colKey: 'noHp', getValue: (s: Santri) => s.noHp || '' },
-      { id: 'statusDomisili', label: 'Status Domisili', isAlwaysVisible: false, colKey: 'statusDomisili', getValue: (s: Santri) => s.statusDomisili || '' },
-      { id: 'statusKeanggotaan', label: 'Status Keanggotaan', isAlwaysVisible: false, colKey: 'statusKeanggotaan', getValue: (s: Santri) => s.statusKeanggotaan || '' },
-      { id: 'tanggalMasuk', label: 'Tanggal Masuk', isAlwaysVisible: false, colKey: 'tanggalMasuk', getValue: (s: Santri) => s.tanggalMasuk || '' },
-      { id: 'tanggalKeluar', label: 'Tanggal Keluar', isAlwaysVisible: false, colKey: 'tanggalKeluar', getValue: (s: Santri) => s.tanggalKeluar || '' },
-      { id: 'statusVerval', label: 'Status Verval', isAlwaysVisible: false, colKey: 'statusVerval', getValue: (s: Santri) => s.statusVerval || 'Proses' },
-      { id: 'catatan', label: 'Catatan', isAlwaysVisible: true, getValue: (s: Santri) => s.catatan || '' }
+      { id: 'indukMhd', label: 'INDUK MHD', colKey: 'indukMhd', isAlwaysVisible: false, getValue: (s: Santri) => s.indukMhd || '' },
+      { id: 'indukWustho', label: 'INDUK WUSTHO', colKey: 'indukWustho', isAlwaysVisible: false, getValue: (s: Santri) => s.indukWustho || '' },
+      { id: 'indukUlya', label: 'INDUK ULYA', colKey: 'indukUlya', isAlwaysVisible: false, getValue: (s: Santri) => s.indukUlya || '' },
+      { id: 'noKk', label: 'No. KK', colKey: 'noKk', isAlwaysVisible: false, getValue: (s: Santri) => s.noKk || '' },
+      { id: 'tempatLahir', label: 'Tempat Lahir', colKey: 'tempatLahir', isAlwaysVisible: false, getValue: (s: Santri) => s.tempatLahir || '' },
+      { id: 'tanggalLahir', label: 'Tanggal Lahir', colKey: 'tanggalLahir', isAlwaysVisible: false, getValue: (s: Santri) => s.tanggalLahir || '' },
+      { id: 'gender', label: 'Gender', colKey: 'gender', isAlwaysVisible: false, getValue: (s: Santri) => s.gender || '' },
+      { id: 'pendidikanTerakhir', label: 'Pendidikan Terakhir', colKey: 'pendidikanTerakhir', isAlwaysVisible: false, getValue: (s: Santri) => s.pendidikanTerakhir || '' },
+      { id: 'pendidikanFormal', label: 'Pendidikan Formal', colKey: 'pendidikanFormal', isAlwaysVisible: false, getValue: (s: Santri) => {
+        const formalInfo = getSantriFormalEducationInfo(s, lembagasList, kelasList);
+        return formalInfo.filterDisplay || (formalInfo.isFormal && formalInfo.lembaga 
+          ? `${(formalInfo.lembaga.kode?.trim() || formalInfo.lembaga.nama.trim())} - ${formalInfo.display}` 
+          : formalInfo.display);
+      }},
+      { id: 'anakKe', label: 'Anak Ke', colKey: 'anakKe', isAlwaysVisible: false, getValue: (s: Santri) => s.anakKe !== undefined ? String(s.anakKe) : '' },
+      { id: 'dariBersaudara', label: 'Jumlah Saudara', colKey: 'dariBersaudara', isAlwaysVisible: false, getValue: (s: Santri) => s.dariBersaudara !== undefined ? String(s.dariBersaudara) : '' },
+      { id: 'namaAyah', label: 'Nama Ayah', colKey: 'namaAyah', isAlwaysVisible: false, getValue: (s: Santri) => s.namaAyah || '' },
+      { id: 'nikAyah', label: 'NIK Ayah', colKey: 'nikAyah', isAlwaysVisible: false, getValue: (s: Santri) => s.nikAyah || '' },
+      { id: 'pekerjaanAyah', label: 'Pekerjaan Ayah', colKey: 'pekerjaanAyah', isAlwaysVisible: false, getValue: (s: Santri) => s.pekerjaanAyah || '' },
+      { id: 'pendidikanAyah', label: 'Pendidikan Ayah', colKey: 'pendidikanAyah', isAlwaysVisible: false, getValue: (s: Santri) => s.pendidikanAyah || '' },
+      { id: 'namaIbu', label: 'Nama Ibu', colKey: 'namaIbu', isAlwaysVisible: false, getValue: (s: Santri) => s.namaIbu || '' },
+      { id: 'nikIbu', label: 'NIK Ibu', colKey: 'nikIbu', isAlwaysVisible: false, getValue: (s: Santri) => s.nikIbu || '' },
+      { id: 'pekerjaanIbu', label: 'Pekerjaan Ibu', colKey: 'pekerjaanIbu', isAlwaysVisible: false, getValue: (s: Santri) => s.pekerjaanIbu || '' },
+      { id: 'pendidikanIbu', label: 'Pendidikan Ibu', colKey: 'pendidikanIbu', isAlwaysVisible: false, getValue: (s: Santri) => s.pendidikanIbu || '' },
+      { id: 'alamat', label: 'Alamat', colKey: 'alamat', isAlwaysVisible: false, getValue: (s: Santri) => s.alamat || '' },
+      { id: 'rt', label: 'RT', colKey: 'rt', isAlwaysVisible: false, getValue: (s: Santri) => s.rt || '' },
+      { id: 'rw', label: 'RW', colKey: 'rw', isAlwaysVisible: false, getValue: (s: Santri) => s.rw || '' },
+      { id: 'desa', label: 'Desa / Kelurahan', colKey: 'desa', isAlwaysVisible: false, getValue: (s: Santri) => s.desa || '' },
+      { id: 'kecamatan', label: 'Kecamatan', colKey: 'kecamatan', isAlwaysVisible: false, getValue: (s: Santri) => s.kecamatan || '' },
+      { id: 'kabupaten', label: 'Kabupaten / Kota', colKey: 'kabupaten', isAlwaysVisible: false, getValue: (s: Santri) => s.kabupaten || '' },
+      { id: 'provinsi', label: 'Provinsi', colKey: 'provinsi', isAlwaysVisible: false, getValue: (s: Santri) => s.provinsi || '' },
+      { id: 'jarakRumah', label: 'Jarak (km)', colKey: 'jarakRumah', isAlwaysVisible: false, getValue: (s: Santri) => s.jarakRumah !== undefined ? String(s.jarakRumah) : '' },
+      { id: 'noHp', label: 'No. HP Wali', colKey: 'noHp', isAlwaysVisible: false, getValue: (s: Santri) => s.noHp || '' },
+      { id: 'statusDomisili', label: 'Status Domisili', colKey: 'statusDomisili', isAlwaysVisible: false, getValue: (s: Santri) => s.statusDomisili || '' },
+      { id: 'tanggalMasuk', label: 'Tgl Masuk', colKey: 'tanggalMasuk', isAlwaysVisible: false, getValue: (s: Santri) => s.tanggalMasuk || '' },
+      { id: 'tanggalKeluar', label: 'Tgl Keluar', colKey: 'tanggalKeluar', isAlwaysVisible: false, getValue: (s: Santri) => s.tanggalKeluar || '' },
+      { id: 'statusKeanggotaan', label: 'Status', colKey: 'statusKeanggotaan', isAlwaysVisible: false, getValue: (s: Santri) => s.statusKeanggotaan || 'Aktif' },
+      { id: 'statusEmis', label: 'Emis', colKey: 'statusEmis', isAlwaysVisible: false, getValue: (s: Santri) => s.statusEmis || 'Belum' },
+      { id: 'statusVerval', label: 'Verval', colKey: 'statusVerval', isAlwaysVisible: false, getValue: (s: Santri) => s.statusVerval || 'Proses' },
+      { id: 'catatan', label: 'Catatan', colKey: 'catatan', isAlwaysVisible: false, getValue: (s: Santri) => s.catatan || '' }
     ];
 
-    // Filter columns that are visible
-    const activeColumns = exportColumns.filter(col => col.isAlwaysVisible || (col.colKey && visibleColumns[col.colKey]));
+    return allTableColumns.filter(col => col.isAlwaysVisible || isColumnDisplayed(col.colKey));
+  };
 
-    const headers = activeColumns.map(col => col.label);
-    const rows = sortedSantri.map(s => activeColumns.map(col => col.getValue(s)));
+  const handleExportExcelSantri = (customFileName?: string) => {
+    // Ambil kolom yang persis sesuai dengan tampilan tabel saat ini
+    const activeColumns = getActiveTableExportColumns();
+
+    const headers = ['No', ...activeColumns.map(col => col.label)];
+    const rows = sortedSantri.map((s, idx) => [String(idx + 1), ...activeColumns.map(col => col.getValue(s))]);
 
     const dateStr = new Date().toISOString().split('T')[0];
     const defaultName = `Data_Santri_${dateStr}.xls`;
@@ -952,49 +974,8 @@ export default function SekretarisView({
       return;
     }
 
-    // Definisi kolom ekspor yang sesuai urutan data
-    const exportColumns = [
-      { id: 'nis', label: 'NIS', isAlwaysVisible: true, getValue: (s: Santri) => s.nis || '' },
-      { id: 'nama', label: 'Nama Lengkap', isAlwaysVisible: true, getValue: (s: Santri) => s.nama || '' },
-      { id: 'nisn', label: 'NISN', isAlwaysVisible: false, colKey: 'nisn', getValue: (s: Santri) => s.nisn || '' },
-      { id: 'indukMhd', label: 'INDUK MHD', isAlwaysVisible: false, colKey: 'indukMhd', getValue: (s: Santri) => s.indukMhd || '' },
-      { id: 'indukWustho', label: 'INDUK WUSTHO', isAlwaysVisible: false, colKey: 'indukWustho', getValue: (s: Santri) => s.indukWustho || '' },
-      { id: 'indukUlya', label: 'INDUK ULYA', isAlwaysVisible: false, colKey: 'indukUlya', getValue: (s: Santri) => s.indukUlya || '' },
-      { id: 'nik', label: 'NIK', isAlwaysVisible: false, colKey: 'nik', getValue: (s: Santri) => s.nik || '' },
-      { id: 'noKk', label: 'No. KK', isAlwaysVisible: false, colKey: 'noKk', getValue: (s: Santri) => s.noKk || '' },
-      { id: 'tempatLahir', label: 'Tempat Lahir', isAlwaysVisible: true, getValue: (s: Santri) => s.tempatLahir || '' },
-      { id: 'tanggalLahir', label: 'Tanggal Lahir', isAlwaysVisible: true, getValue: (s: Santri) => s.tanggalLahir || '' },
-      { id: 'gender', label: 'Gender', isAlwaysVisible: false, colKey: 'gender', getValue: (s: Santri) => s.gender || '' },
-      { id: 'pendidikanTerakhir', label: 'Pendidikan Terakhir', isAlwaysVisible: false, colKey: 'pendidikanTerakhir', getValue: (s: Santri) => s.pendidikanTerakhir || '' },
-      { id: 'pendidikanFormal', label: 'Pendidikan Formal', isAlwaysVisible: false, colKey: 'pendidikanFormal', getValue: (s: Santri) => getColumnValueString(s, 'pendidikanFormal', ageFilterConfig, lembagasList, kelasList) },
-      { id: 'anakKe', label: 'Anak Ke', isAlwaysVisible: false, colKey: 'anakKe', getValue: (s: Santri) => s.anakKe !== undefined ? String(s.anakKe) : '' },
-      { id: 'dariBersaudara', label: 'Jumlah Saudara', isAlwaysVisible: false, colKey: 'dariBersaudara', getValue: (s: Santri) => s.dariBersaudara !== undefined ? String(s.dariBersaudara) : '' },
-      { id: 'namaAyah', label: 'Nama Ayah', isAlwaysVisible: false, colKey: 'namaAyah', getValue: (s: Santri) => s.namaAyah || '' },
-      { id: 'nikAyah', label: 'NIK Ayah', isAlwaysVisible: false, colKey: 'nikAyah', getValue: (s: Santri) => s.nikAyah || '' },
-      { id: 'pekerjaanAyah', label: 'Pekerjaan Ayah', isAlwaysVisible: false, colKey: 'pekerjaanAyah', getValue: (s: Santri) => s.pekerjaanAyah || '' },
-      { id: 'pendidikanAyah', label: 'Pendidikan Ayah', isAlwaysVisible: false, colKey: 'pendidikanAyah', getValue: (s: Santri) => s.pendidikanAyah || '' },
-      { id: 'namaIbu', label: 'Nama Ibu', isAlwaysVisible: false, colKey: 'namaIbu', getValue: (s: Santri) => s.namaIbu || '' },
-      { id: 'nikIbu', label: 'NIK Ibu', isAlwaysVisible: false, colKey: 'nikIbu', getValue: (s: Santri) => s.nikIbu || '' },
-      { id: 'pekerjaanIbu', label: 'Pekerjaan Ibu', isAlwaysVisible: false, colKey: 'pekerjaanIbu', getValue: (s: Santri) => s.pekerjaanIbu || '' },
-      { id: 'pendidikanIbu', label: 'Pendidikan Ibu', isAlwaysVisible: false, colKey: 'pendidikanIbu', getValue: (s: Santri) => s.pendidikanIbu || '' },
-      { id: 'alamat', label: 'Alamat', isAlwaysVisible: false, colKey: 'alamat', getValue: (s: Santri) => s.alamat || '' },
-      { id: 'rt', label: 'RT', isAlwaysVisible: false, colKey: 'rt', getValue: (s: Santri) => s.rt || '' },
-      { id: 'rw', label: 'RW', isAlwaysVisible: false, colKey: 'rw', getValue: (s: Santri) => s.rw || '' },
-      { id: 'desa', label: 'Desa / Kelurahan', isAlwaysVisible: true, getValue: (s: Santri) => s.desa || '' },
-      { id: 'kecamatan', label: 'Kecamatan', isAlwaysVisible: true, getValue: (s: Santri) => s.kecamatan || '' },
-      { id: 'kabupaten', label: 'Kabupaten / Kota', isAlwaysVisible: true, getValue: (s: Santri) => s.kabupaten || '' },
-      { id: 'provinsi', label: 'Provinsi', isAlwaysVisible: true, getValue: (s: Santri) => s.provinsi || '' },
-      { id: 'jarakRumah', label: 'Jarak Rumah (km)', isAlwaysVisible: false, colKey: 'jarakRumah', getValue: (s: Santri) => s.jarakRumah !== undefined ? String(s.jarakRumah) : '' },
-      { id: 'noHp', label: 'No. HP Wali', isAlwaysVisible: false, colKey: 'noHp', getValue: (s: Santri) => s.noHp || '' },
-      { id: 'statusDomisili', label: 'Status Domisili', isAlwaysVisible: false, colKey: 'statusDomisili', getValue: (s: Santri) => s.statusDomisili || '' },
-      { id: 'statusKeanggotaan', label: 'Status Keanggotaan', isAlwaysVisible: false, colKey: 'statusKeanggotaan', getValue: (s: Santri) => s.statusKeanggotaan || '' },
-      { id: 'tanggalMasuk', label: 'Tanggal Masuk', isAlwaysVisible: false, colKey: 'tanggalMasuk', getValue: (s: Santri) => s.tanggalMasuk || '' },
-      { id: 'tanggalKeluar', label: 'Tanggal Keluar', isAlwaysVisible: false, colKey: 'tanggalKeluar', getValue: (s: Santri) => s.tanggalKeluar || '' },
-      { id: 'statusVerval', label: 'Status Verval', isAlwaysVisible: false, colKey: 'statusVerval', getValue: (s: Santri) => s.statusVerval || 'Proses' },
-      { id: 'catatan', label: 'Catatan', isAlwaysVisible: true, getValue: (s: Santri) => s.catatan || '' }
-    ];
-
-    const activeColumns = exportColumns.filter(col => col.isAlwaysVisible || (col.colKey && visibleColumns[col.colKey]));
+    // Ambil kolom yang persis sesuai dengan tampilan tabel saat ini
+    const activeColumns = getActiveTableExportColumns();
 
     let html = `
       <html>

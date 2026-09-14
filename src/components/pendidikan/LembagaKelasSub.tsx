@@ -2694,6 +2694,83 @@ export default function LembagaKelasSub({
     }
   };
 
+  // Helper untuk mendapatkan kolom ekspor yang persis sesuai dengan tampilan tabel Lembaga / Kelas saat ini
+  const getActiveLembagaExportColumns = () => {
+    const isCalonPelajarPage = !isIndukPage && !!(effectiveSelectedKelas && (effectiveSelectedKelas.pillType === 'calon' || effectiveSelectedKelas.id === 'default-calon' || effectiveSelectedKelas.id === 'unassigned' || effectiveSelectedKelas.pillType === 'unassigned' || isCalonClass(effectiveSelectedKelas.nama)));
+
+    const shouldShowColumnLocal = (colKey: string): boolean => {
+      if (colKey === 'nama') return true;
+      if (colKey === 'statusEmis') {
+        if (isCalonPelajarPage) {
+          return visibleColumns['statusEmis'] ?? true;
+        }
+        if (isCurrentFormal) {
+          return visibleColumns['statusEmis'] ?? false;
+        }
+        return visibleColumns['statusEmis'] ?? true;
+      }
+      return visibleColumns[colKey] ?? false;
+    };
+
+    const allExportColumns = [
+      { id: 'nama', label: 'Nama Santri', isAlwaysVisible: true, isMono: false, isCenter: false, getValue: (s: Santri) => s.nama || '-' },
+      { id: 'nis', label: 'NIS', colKey: 'nis', isMono: true, isCenter: true, getValue: (s: Santri) => s.nis || '-' },
+      { id: 'nism', label: 'NISM', colKey: 'nism', isMono: true, isCenter: true, getValue: (s: Santri) => getSantriNismForLembaga(s, selectedLembaga) || '-' },
+      { id: 'nisn', label: 'NISN', colKey: 'nisn', isMono: true, isCenter: true, getValue: (s: Santri) => s.nisn || '-' },
+      { id: 'nik', label: 'NIK', colKey: 'nik', isMono: true, isCenter: true, getValue: (s: Santri) => s.nik || '-' },
+      { id: 'statusEmis', label: isCalonPelajarPage ? 'Keterangan EMIS' : 'EMIS', colKey: 'statusEmis', isMono: false, isCenter: true, getValue: (s: Santri) => s.statusEmis || 'Belum' },
+      { id: 'statusVerval', label: 'Verval', colKey: 'statusVerval', isMono: false, isCenter: true, getValue: (s: Santri) => s.statusVerval || (s.nisn && s.nisn.trim() !== '' ? 'Sukses' : 'Proses') },
+      { id: 'statusKeanggotaan', label: 'Status Keaktifan', colKey: 'statusKeanggotaan', isMono: false, isCenter: true, getValue: (s: Santri) => s.statusKeanggotaan || 'Aktif' },
+      { id: 'kelasMhd', label: 'Kelas MHD', colKey: 'kelasMhd', isMono: false, isCenter: false, getValue: (s: Santri) => s.kelasMhd || s.pendidikanInternal || s.indukMhd || '-' },
+      { id: 'indukMhd', label: 'Induk MHD', colKey: 'indukMhd', isMono: true, isCenter: true, getValue: (s: Santri) => s.indukMhd || '-' },
+      { id: 'indukWustho', label: 'Induk Wustho', colKey: 'indukWustho', isMono: true, isCenter: true, getValue: (s: Santri) => s.indukWustho || '-' },
+      { id: 'indukUlya', label: 'Induk Ulya', colKey: 'indukUlya', isMono: true, isCenter: true, getValue: (s: Santri) => s.indukUlya || '-' },
+      { id: 'noKk', label: 'No. KK', colKey: 'noKk', isMono: true, isCenter: true, getValue: (s: Santri) => s.noKk || '-' },
+      { id: 'tempatLahir', label: 'Tempat Lahir', colKey: 'tempatLahir', isMono: false, isCenter: false, getValue: (s: Santri) => s.tempatLahir || '-' },
+      { id: 'tanggalLahir', label: 'Tanggal Lahir', colKey: 'tanggalLahir', isMono: true, isCenter: true, getValue: (s: Santri) => formatTanggalIndo(s.tanggalLahir) },
+      { id: 'gender', label: 'Gender', colKey: 'gender', isMono: false, isCenter: true, getValue: (s: Santri) => s.gender === 'Putra' ? 'L' : s.gender === 'Putri' ? 'P' : (s.gender || '-') },
+      { id: 'pendidikanTerakhir', label: 'Pendidikan Terakhir', colKey: 'pendidikanTerakhir', isMono: false, isCenter: false, getValue: (s: Santri) => s.pendidikanTerakhir || '-' },
+      { id: 'pendidikanFormal', label: 'Pendidikan Formal', colKey: 'pendidikanFormal', isMono: false, isCenter: false, getValue: (s: Santri) => s.pendidikanFormal || '-' },
+      { id: 'kelas', label: 'Kelas', colKey: 'kelas', isMono: false, isCenter: false, getValue: (s: Santri) => s.kelas || '-' },
+      { id: 'kamar', label: 'Kamar', colKey: 'kamar', isMono: false, isCenter: false, getValue: (s: Santri) => s.kamar || '-' },
+      { id: 'asal', label: 'Asal Sekolah', colKey: 'asal', isMono: false, isCenter: false, getValue: (s: Santri) => s.asal || '-' },
+      { id: 'namaAyah', label: 'Nama Ayah', colKey: 'namaAyah', isMono: false, isCenter: false, getValue: (s: Santri) => s.namaAyah || '-' },
+      { id: 'nikAyah', label: 'NIK Ayah', colKey: 'nikAyah', isMono: true, isCenter: true, getValue: (s: Santri) => s.nikAyah || '-' },
+      { id: 'pekerjaanAyah', label: 'Pekerjaan Ayah', colKey: 'pekerjaanAyah', isMono: false, isCenter: false, getValue: (s: Santri) => s.pekerjaanAyah || '-' },
+      { id: 'pendidikanAyah', label: 'Pendidikan Ayah', colKey: 'pendidikanAyah', isMono: false, isCenter: false, getValue: (s: Santri) => s.pendidikanAyah || '-' },
+      { id: 'namaIbu', label: 'Nama Ibu', colKey: 'namaIbu', isMono: false, isCenter: false, getValue: (s: Santri) => s.namaIbu || '-' },
+      { id: 'nikIbu', label: 'NIK Ibu', colKey: 'nikIbu', isMono: true, isCenter: true, getValue: (s: Santri) => s.nikIbu || '-' },
+      { id: 'pekerjaanIbu', label: 'Pekerjaan Ibu', colKey: 'pekerjaanIbu', isMono: false, isCenter: false, getValue: (s: Santri) => s.pekerjaanIbu || '-' },
+      { id: 'pendidikanIbu', label: 'Pendidikan Ibu', colKey: 'pendidikanIbu', isMono: false, isCenter: false, getValue: (s: Santri) => s.pendidikanIbu || '-' },
+      { id: 'anakKe', label: 'Anak Ke', colKey: 'anakKe', isMono: false, isCenter: true, getValue: (s: Santri) => s.anakKe !== undefined ? String(s.anakKe) : '-' },
+      { id: 'dariBersaudara', label: 'Jumlah Saudara', colKey: 'dariBersaudara', isMono: false, isCenter: true, getValue: (s: Santri) => s.dariBersaudara !== undefined ? String(s.dariBersaudara) : '-' },
+      { id: 'alamat', label: 'Alamat', colKey: 'alamat', isMono: false, isCenter: false, getValue: (s: Santri) => s.alamat || '-' },
+      { id: 'rt', label: 'RT', colKey: 'rt', isMono: false, isCenter: true, getValue: (s: Santri) => s.rt || '-' },
+      { id: 'rw', label: 'RW', colKey: 'rw', isMono: false, isCenter: true, getValue: (s: Santri) => s.rw || '-' },
+      { id: 'desa', label: 'Desa', colKey: 'desa', isMono: false, isCenter: false, getValue: (s: Santri) => s.desa || '-' },
+      { id: 'kecamatan', label: 'Kecamatan', colKey: 'kecamatan', isMono: false, isCenter: false, getValue: (s: Santri) => s.kecamatan || '-' },
+      { id: 'kabupaten', label: 'Kabupaten', colKey: 'kabupaten', isMono: false, isCenter: false, getValue: (s: Santri) => s.kabupaten || '-' },
+      { id: 'provinsi', label: 'Provinsi', colKey: 'provinsi', isMono: false, isCenter: false, getValue: (s: Santri) => s.provinsi || '-' },
+      { id: 'jarakRumah', label: 'Jarak (km)', colKey: 'jarakRumah', isMono: false, isCenter: true, getValue: (s: Santri) => s.jarakRumah !== undefined ? String(s.jarakRumah) : '-' },
+      { id: 'noHp', label: 'No. HP', colKey: 'noHp', isMono: true, isCenter: true, getValue: (s: Santri) => s.noHp || '-' },
+      { id: 'statusDomisili', label: 'Status Domisili', colKey: 'statusDomisili', isMono: false, isCenter: true, getValue: (s: Santri) => s.statusDomisili || '-' },
+      { id: 'tahunMasuk', label: 'Tahun Masuk', colKey: 'tahunMasuk', isMono: true, isCenter: true, getValue: (s: Santri) => s.tahunMasuk || getSantriTahunMasuk(s) || '-' },
+      { id: 'tanggalMasuk', label: 'Tgl Masuk', colKey: 'tanggalMasuk', isMono: true, isCenter: true, getValue: (s: Santri) => formatTanggalIndo(s.tanggalMasuk) },
+      { id: 'tanggalKeluar', label: 'Tgl Keluar', colKey: 'tanggalKeluar', isMono: true, isCenter: true, getValue: (s: Santri) => formatTanggalIndo(s.tanggalKeluar) },
+      { id: 'nomorLemari', label: 'No. Lemari', colKey: 'nomorLemari', isMono: false, isCenter: false, getValue: (s: Santri) => s.nomorLemari || '-' },
+      { id: 'catatan', label: 'Catatan', colKey: 'catatan', isMono: false, isCenter: false, getValue: (s: Santri) => s.catatan || '-' }
+    ];
+
+    return allExportColumns.filter(col => col.isAlwaysVisible || (col.colKey && shouldShowColumnLocal(col.colKey)));
+  };
+
+  const escapeXml = (str: any) => String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+
   // Handle exporting XML-based Excel file for Lembaga (context-aware)
   const handleExportExcelLembaga = (customFileName?: string) => {
     if (!selectedLembaga) return;
@@ -2708,69 +2785,24 @@ export default function LembagaKelasSub({
     const npsn = selectedLembaga.npsn || '-';
     const dateStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 
-    const headers = [
-      'NO',
-      'NISM',
-      'THN MASUK',
-      'NISN',
-      'NAMA',
-      'TEMPAT LAHIR',
-      'TANGGAL LAHIR',
-      'UMUR',
-      'JENIS KELAMIN',
-      'NAMA AYAH',
-      'NAMA IBU',
-      'EMIS',
-      'VERVAL',
-      'STATUS KEAKTIFAN',
-      'KELAS MHD',
-      'SEMESTER'
-    ];
+    const activeCols = getActiveLembagaExportColumns();
+    const headers = ['NO', ...activeCols.map(c => c.label)];
 
     const rows = studentsToExport.map((s, idx) => [
       idx + 1,
-      getSantriNismForLembaga(s, selectedLembaga) || '-',
-      s.tahunMasuk || getSantriTahunMasuk(s) || '-',
-      s.nisn || '-',
-      s.nama || '-',
-      s.tempatLahir || '-',
-      formatTanggalIndo(s.tanggalLahir),
-      getSantriAgeDisplay(s.tanggalLahir),
-      s.gender === 'Putra' ? 'L' : s.gender === 'Putri' ? 'P' : (s.gender || '-'),
-      s.namaAyah || '-',
-      s.namaIbu || '-',
-      s.statusEmis || 'Belum',
-      s.statusVerval || (s.nisn && s.nisn.trim() !== '' ? 'Sukses' : 'Proses'),
-      s.statusKeanggotaan || 'Aktif',
-      s.kelasMhd || s.pendidikanInternal || s.indukMhd || '-',
-      s.semester || 'Semester 1'
+      ...activeCols.map(c => c.getValue(s))
     ]);
 
     const colWidths = [
       35,  // NO
-      110, // NISM
-      65,  // THN MASUK
-      85,  // NISN
-      160, // NAMA
-      100, // TEMPAT LAHIR
-      90,  // TANGGAL LAHIR
-      55,  // UMUR
-      75,  // JENIS KELAMIN
-      120, // NAMA AYAH
-      120, // NAMA IBU
-      75,  // EMIS
-      75,  // VERVAL
-      100, // STATUS KEAKTIFAN
-      95,  // KELAS MHD
-      85   // SEMESTER
+      ...activeCols.map(c => {
+        if (c.id === 'nama') return 160;
+        if (c.id === 'nism' || c.id === 'nik' || c.id === 'noKk' || c.id === 'nikAyah' || c.id === 'nikIbu') return 120;
+        if (c.id === 'tempatLahir' || c.id === 'namaAyah' || c.id === 'namaIbu' || c.id === 'alamat') return 130;
+        if (c.id === 'tanggalLahir' || c.id === 'tanggalMasuk' || c.id === 'tanggalKeluar') return 95;
+        return 85;
+      })
     ];
-
-    const escapeXml = (str: any) => String(str || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&apos;');
 
     let xml = `<?xml version="1.0"?>
 <?mso-application progid="Excel.Sheet"?>
@@ -2901,24 +2933,18 @@ export default function LembagaKelasSub({
       year: 'numeric'
     });
 
+    const activeCols = getActiveLembagaExportColumns();
+
     const rowsHtml = studentsToPrint.map((s, idx) => `
       <tr>
         <td style="text-align: center;">${idx + 1}</td>
-        <td style="font-family: monospace; font-size: 8.5px;">${getSantriNismForLembaga(s, selectedLembaga) || '-'}</td>
-        <td style="font-family: monospace; font-size: 8.5px; text-align: center;">${s.tahunMasuk || getSantriTahunMasuk(s) || '-'}</td>
-        <td style="font-family: monospace; font-size: 8.5px;">${s.nisn || '-'}</td>
-        <td><strong>${s.nama}</strong></td>
-        <td>${s.tempatLahir || '-'}</td>
-        <td style="font-family: monospace; font-size: 8.5px;">${formatTanggalIndo(s.tanggalLahir)}</td>
-        <td style="text-align: center;">${getSantriAgeDisplay(s.tanggalLahir)}</td>
-        <td style="text-align: center; font-weight: bold;">${s.gender === 'Putra' ? 'L' : s.gender === 'Putri' ? 'P' : (s.gender || '-')}</td>
-        <td>${s.namaAyah || '-'}</td>
-        <td>${s.namaIbu || '-'}</td>
-        <td style="text-align: center;">${s.statusEmis || 'Belum'}</td>
-        <td style="text-align: center;">${s.statusVerval || (s.nisn && s.nisn.trim() !== '' ? 'Sukses' : 'Proses')}</td>
-        <td style="text-align: center;">${s.statusKeanggotaan || 'Aktif'}</td>
-        <td>${s.kelasMhd || s.pendidikanInternal || s.indukMhd || '-'}</td>
-        <td style="text-align: center;">${s.semester || 'Semester 1'}</td>
+        ${activeCols.map(c => {
+          const val = c.getValue(s);
+          const isMono = c.isMono ? 'font-family: monospace; font-size: 8.5px;' : '';
+          const isCenter = c.isCenter ? 'text-align: center;' : '';
+          const isBold = c.id === 'nama' ? 'font-weight: bold;' : '';
+          return `<td style="${isMono} ${isCenter} ${isBold}">${escapeXml(val)}</td>`;
+        }).join('')}
       </tr>
     `).join('');
 
@@ -2965,22 +2991,8 @@ export default function LembagaKelasSub({
         <table>
           <thead>
             <tr>
-              <th style="width: 22px;">NO</th>
-              <th style="width: 80px;">NISM</th>
-              <th style="width: 45px;">THN MASUK</th>
-              <th style="width: 65px;">NISN</th>
-              <th>NAMA</th>
-              <th style="width: 75px;">TEMPAT LAHIR</th>
-              <th style="width: 60px;">TGL LAHIR</th>
-              <th style="width: 35px;">UMUR</th>
-              <th style="width: 25px;">L/P</th>
-              <th style="width: 75px;">NAMA AYAH</th>
-              <th style="width: 75px;">NAMA IBU</th>
-              <th style="width: 50px;">EMIS</th>
-              <th style="width: 50px;">VERVAL</th>
-              <th style="width: 50px;">STATUS</th>
-              <th style="width: 65px;">KELAS MHD</th>
-              <th style="width: 55px;">SEMESTER</th>
+              <th style="width: 25px; text-align: center;">NO</th>
+              ${activeCols.map(c => `<th>${escapeXml(c.label)}</th>`).join('')}
             </tr>
           </thead>
           <tbody>

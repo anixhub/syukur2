@@ -2726,16 +2726,16 @@ export default function KeamananView({
       'Nama Santri',
       'NIS',
       'Alamat',
-      'Status Keaktifan',
-      'Jumlah Pelanggaran',
+      'Status',
+      'Jumlah Kasus',
       'Total Poin Sanksi',
-      'Indikator Kedisiplinan'
+      'Kedisiplinan'
     ];
 
     const rows = sortedSantriList.map((student, idx) => {
       const stats = getStudentStats(student.nama, student.id);
       const ind = getDisciplineIndicator(stats.points);
-      const alamatStr = [student.desa, student.kecamatan, student.kabupaten].filter(Boolean).join(', ') || '-';
+      const alamatStr = formatAlamatFormatUser(student);
       
       return [
         String(idx + 1),
@@ -3310,7 +3310,7 @@ export default function KeamananView({
         sortedSantriList.forEach((student, idx) => {
           const stats = getStudentStats(student.nama, student.id);
           const ind = getDisciplineIndicator(stats.points);
-          const alamatStr = [student.desa, student.kecamatan, student.kabupaten].filter(Boolean).join(', ') || '-';
+          const alamatStr = formatAlamatFormatUser(student);
           santriRowsHTML += `
             <tr>
               <td class="p-1-5 text-center font-mono" style="border: 1px solid #cbd5e1; padding: 6px; text-align: center; font-family: monospace;">${idx + 1}</td>
