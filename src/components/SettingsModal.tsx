@@ -3011,7 +3011,6 @@ export default function SettingsModal({
                   </div>
                   <div>
                     <h3 className="text-sm sm:text-base font-bold text-slate-900">Minta Akses Reset Sandi</h3>
-                    <p className="text-[11px] text-slate-500">Ajukan permohonan reset ke Superadmin</p>
                   </div>
                 </div>
                 <button
@@ -3039,7 +3038,7 @@ export default function SettingsModal({
               </div>
 
               <div className="p-3 rounded-xl bg-blue-50/80 border border-blue-100 text-blue-900 text-xs leading-relaxed">
-                Dengan mengajukan permohonan ini, akun Anda akan berstatus <strong className="font-bold text-blue-800">"Minta Reset Sandi"</strong>. Superadmin akan memberikan izin reset dengan menyetel kata sandi sementara (<span className="font-mono font-bold">1234</span>).
+                Dengan mengajukan permohonan ini, akun Anda akan berstatus <strong className="font-bold text-blue-800">"Minta Reset Sandi"</strong>.
               </div>
 
               <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
@@ -3314,10 +3313,7 @@ export default function SettingsModal({
                 <KeyRound className="w-6 h-6 stroke-[2]" />
               </div>
               <div className="space-y-1">
-                <h3 className="text-base font-bold text-slate-900">Beri Akses / Reset Sandi?</h3>
-                <p className="text-xs text-slate-500 leading-relaxed">
-                  Kata sandi untuk <strong className="text-slate-800">{credResetConfirm.user.displayName || credResetConfirm.user.username}</strong> akan disetel ulang ke kata sandi sementara: <span className="font-mono font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">1234</span> dan status akun diaktifkan kembali.
-                </p>
+                <h3 className="text-base font-bold text-slate-900">Beri Akses & Sandi Sementara</h3>
               </div>
               <div className="flex items-center justify-center gap-2.5 pt-2">
                 <button

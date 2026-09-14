@@ -349,14 +349,24 @@ export default function KamarSub({
     });
   };
 
-  // Searched & Sorted Rooms for grid
-  const searchedRooms = activeRooms.filter(r => {
-    if (!roomSearchQuery) return true;
-    const q = roomSearchQuery.toLowerCase();
-    return (
-      (r.nama || '').toLowerCase().includes(q) ||
-      (r.ketuaKamar || '').toLowerCase().includes(q)
+  // Searched & Sorted Rooms for grid (searches across all complexes of current gender when searching)
+  const roomsPool = roomSearchQuery.trim()
+    ? kamarList.filter(r => currentGenderKompleks.some(k => k.id === r.kompleksId))
+    : activeRooms;
+
+  const searchedRooms = roomsPool.filter(r => {
+    if (!roomSearchQuery.trim()) return true;
+    const q = roomSearchQuery.trim().toLowerCase();
+    const matchRoomName = (r.nama || '').toLowerCase().includes(q);
+    const matchKetua = (r.ketuaKamar || '').toLowerCase().includes(q);
+    const complex = kompleksList.find(k => k.id === r.kompleksId);
+    const matchComplex = (complex?.nama || '').toLowerCase().includes(q);
+    const matchStudent = santriList.some(s => 
+      (s.kamar || '').trim().toLowerCase() === (r.nama || '').trim().toLowerCase() &&
+      isGenderMatch(selectedGender, s.gender) &&
+      ((s.nama || (s as any).namaLengkap || (s as any).nama_lengkap || '').toLowerCase().includes(q) || (s.nis || (s as any).nism || '').toLowerCase().includes(q))
     );
+    return matchRoomName || matchKetua || matchComplex || matchStudent;
   });
 
   const sortedRooms = [...searchedRooms].sort((a, b) => {
@@ -391,11 +401,12 @@ export default function KamarSub({
   const filteredStudents = currentRoomMembers.filter(s => {
     // Search query
     if (studentSearchQuery) {
-      const q = studentSearchQuery.toLowerCase();
-      const matchName = (s.nama || '').toLowerCase().includes(q);
-      const matchNis = (s.nis || '').toLowerCase().includes(q);
+      const q = studentSearchQuery.trim().toLowerCase();
+      const matchName = (s.nama || (s as any).namaLengkap || (s as any).nama_lengkap || '').toLowerCase().includes(q);
+      const matchNis = (s.nis || (s as any).nism || '').toLowerCase().includes(q);
       const matchLemari = (s.nomorLemari || '').toLowerCase().includes(q);
-      if (!matchName && !matchNis && !matchLemari) return false;
+      const matchAlamat = `${s.desa || ''} ${s.kecamatan || ''} ${s.kabupaten || ''}`.toLowerCase().includes(q);
+      if (!matchName && !matchNis && !matchLemari && !matchAlamat) return false;
     }
 
     // Status filter (Muqim vs Kampung)
@@ -818,12 +829,13 @@ export default function KamarSub({
 
     // Filter by search query
     if (addMemberSearch) {
-      const q = addMemberSearch.toLowerCase();
-      const mName = (s.nama || '').toLowerCase().includes(q);
-      const mNis = (s.nis || '').toLowerCase().includes(q);
+      const q = addMemberSearch.trim().toLowerCase();
+      const mName = (s.nama || (s as any).namaLengkap || (s as any).nama_lengkap || '').toLowerCase().includes(q);
+      const mNis = (s.nis || (s as any).nism || '').toLowerCase().includes(q);
       const mKamar = (s.kamar || '').toLowerCase().includes(q);
       const mLemari = (s.nomorLemari || '').toLowerCase().includes(q);
-      if (!mName && !mNis && !mKamar && !mLemari) return false;
+      const mAlamat = `${s.desa || ''} ${s.kecamatan || ''} ${s.kabupaten || ''}`.toLowerCase().includes(q);
+      if (!mName && !mNis && !mKamar && !mLemari && !mAlamat) return false;
     }
 
     return true;

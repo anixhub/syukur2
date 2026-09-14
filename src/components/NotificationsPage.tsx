@@ -165,8 +165,8 @@ export default function NotificationsPage({
       }`}
     >
       {/* Top Header */}
-      <div className={`p-4 ${isMobile ? 'pt-8' : 'pt-4 pb-3'} w-full border-b border-gray-100 bg-white shrink-0`}>
-        <div className={`flex items-center justify-between w-full ${isMobile ? 'mt-4' : 'mt-0'}`}>
+      <div className="px-4 py-3 w-full border-b border-gray-100 bg-white shrink-0">
+        <div className="flex items-center justify-between w-full">
           <div className="flex items-center gap-2">
             {/* Back Button matching search page on mobile, or back button on desktop */}
             <button

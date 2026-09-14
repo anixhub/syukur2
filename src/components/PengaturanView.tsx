@@ -3637,11 +3637,8 @@ export default function PengaturanView({
             
             <div className="space-y-2">
               <h3 className="font-display text-xl font-bold text-slate-900">
-                Konfirmasi Reset Sandi
+                Beri Akses & Sandi Sementara
               </h3>
-              <p className="text-sm text-slate-500 leading-relaxed font-semibold">
-                Apakah Anda yakin ingin menyetel ulang kata sandi akun <span className="text-slate-800 font-bold">{resetConfirmUser.username}</span>? Kata sandi akan diubah menjadi <strong className="text-blue-600">"1234"</strong> dan status akun akan diaktifkan kembali.
-              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3 mt-2">
@@ -3657,7 +3654,7 @@ export default function PengaturanView({
                 onClick={() => executeResetPasswordAdmin(resetConfirmUser.id, resetConfirmUser.username)}
                 className="px-4 py-3 rounded-xl bg-blue-600 text-white font-bold text-xs hover:bg-blue-700 transition-all cursor-pointer shadow-sm shadow-blue-600/20 active:scale-95"
               >
-                Ya, Reset ke 1234
+                Beri Akses
               </button>
             </div>
           </motion.div>

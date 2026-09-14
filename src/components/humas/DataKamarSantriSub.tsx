@@ -373,48 +373,66 @@ export default function DataKamarSantriSub({
     }
 
     // 2. Search Query
-    const formattedRoom = getKamarFormat(s) || "Belum Mendapatkan Kamar";
-    const matchesSearch =
-      (s.nama || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.nis || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (getFormattedAlamat(s) || "")
-        .toLowerCase()
-        .includes(searchQuery.toLowerCase()) ||
-      (s.nomorLemari || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      formattedRoom.toLowerCase().includes(searchQuery.toLowerCase());
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      const sNama = (s.nama || (s as any).namaLengkap || (s as any).nama_lengkap || "").toLowerCase();
+      const sNis = (s.nis || (s as any).nism || "").toLowerCase();
+      const sKamar = (s.kamar || "").toLowerCase();
+      const formattedRoom = (getKamarFormat(s) || "Belum Mendapatkan Kamar").toLowerCase();
+      const sAlamat = (getFormattedAlamat(s) || `${s.desa || ''} ${s.kecamatan || ''} ${s.kabupaten || ''}`).toLowerCase();
+      const sLemari = (s.nomorLemari || "").toLowerCase();
 
-    if (!matchesSearch) return false;
+      // Also check kompleks name for this santri's room
+      const matchingKamar = kamarList.find(
+        (r) => r.nama && s.kamar && r.nama.toLowerCase() === s.kamar.toLowerCase()
+      );
+      const kompleksObj = matchingKamar ? kompleksList.find((k) => k.id === matchingKamar.kompleksId) : null;
+      const kompleksName = (kompleksObj?.nama || "").toLowerCase();
 
-    // 3. Status Tergabung Kamar Filter
-    const hasRoom = hasValidRoom(s.kamar);
-    if (kamarStatusFilter === "sudah" && !hasRoom) {
-      return false;
+      const matchesSearch =
+        sNama.includes(q) ||
+        sNis.includes(q) ||
+        sKamar.includes(q) ||
+        kompleksName.includes(q) ||
+        sLemari.includes(q) ||
+        sAlamat.includes(q) ||
+        formattedRoom.includes(q);
+
+      if (!matchesSearch) return false;
     }
-    if (kamarStatusFilter === "belum" && hasRoom) {
-      return false;
-    }
 
-    // Only apply Filter 2 & 3 if Filter 1 is NOT 'belum'
-    if (kamarStatusFilter !== "belum") {
-      // 4. Kompleks Filter
-      if (kompleksFilter !== "semua") {
-        if (!hasValidRoom(s.kamar)) return false;
-        const matchingKamar = kamarList.find(
-          (r) =>
-            r.nama && s.kamar && r.nama.toLowerCase() === s.kamar.toLowerCase(),
-        );
-        if (!matchingKamar || matchingKamar.kompleksId !== kompleksFilter) {
-          return false;
-        }
+    // 3. Status Tergabung Kamar Filter (only if no active search text or explicitly filtered)
+    if (!q) {
+      const hasRoom = hasValidRoom(s.kamar);
+      if (kamarStatusFilter === "sudah" && !hasRoom) {
+        return false;
+      }
+      if (kamarStatusFilter === "belum" && hasRoom) {
+        return false;
       }
 
-      // 5. Kamar Filter
-      if (kamarFilter !== "semua") {
-        if (
-          !hasValidRoom(s.kamar) ||
-          (s.kamar || "").toLowerCase() !== kamarFilter.toLowerCase()
-        ) {
-          return false;
+      // Only apply Filter 2 & 3 if Filter 1 is NOT 'belum'
+      if (kamarStatusFilter !== "belum") {
+        // 4. Kompleks Filter
+        if (kompleksFilter !== "semua") {
+          if (!hasValidRoom(s.kamar)) return false;
+          const matchingKamar = kamarList.find(
+            (r) =>
+              r.nama && s.kamar && r.nama.toLowerCase() === s.kamar.toLowerCase(),
+          );
+          if (!matchingKamar || matchingKamar.kompleksId !== kompleksFilter) {
+            return false;
+          }
+        }
+
+        // 5. Kamar Filter
+        if (kamarFilter !== "semua") {
+          if (
+            !hasValidRoom(s.kamar) ||
+            (s.kamar || "").toLowerCase() !== kamarFilter.toLowerCase()
+          ) {
+            return false;
+          }
         }
       }
     }
@@ -1705,6 +1723,50 @@ export default function DataKamarSantriSub({
                 Santri {genderFilter} tidak ditemukan dengan kata kunci
                 pencarian atau kriteria filter yang sedang aktif.
               </p>
+              {(() => {
+                const oppositeGender = genderFilter === "Putra" ? "Putri" : "Putra";
+                const oppositeMatchesCount = searchQuery.trim() ? santriList.filter((s) => {
+                  const statusKg = (s.statusKeanggotaan || "Aktif").trim().toLowerCase();
+                  if (statusKg === "alumni" || statusKg === "meninggal") return false;
+                  if (!isGenderMatch(oppositeGender, s.gender)) return false;
+                  const q = searchQuery.trim().toLowerCase();
+                  const sNama = (s.nama || (s as any).namaLengkap || (s as any).nama_lengkap || "").toLowerCase();
+                  const sNis = (s.nis || (s as any).nism || "").toLowerCase();
+                  const sKamar = (s.kamar || "").toLowerCase();
+                  return sNama.includes(q) || sNis.includes(q) || sKamar.includes(q);
+                }).length : 0;
+
+                if (oppositeMatchesCount > 0) {
+                  return (
+                    <div className="mt-4 flex flex-col items-center gap-2">
+                      <p className="text-xs text-purple-700 font-semibold bg-purple-50 border border-purple-200 px-3 py-1.5 rounded-xl">
+                        Ditemukan {oppositeMatchesCount} santri di kategori <strong>{oppositeGender}</strong>
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setGenderFilter(oppositeGender)}
+                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer"
+                      >
+                        Beralih ke Asrama {oppositeGender}
+                      </button>
+                    </div>
+                  );
+                }
+
+                if (searchQuery.trim()) {
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery("")}
+                      className="mt-4 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      Hapus Kata Kunci Pencarian
+                    </button>
+                  );
+                }
+
+                return null;
+              })()}
             </div>
           ) : (
             <table className="w-full border-collapse text-left text-sm text-slate-600 min-w-[1000px]">
