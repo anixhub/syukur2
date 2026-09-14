@@ -20,6 +20,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { getPermissionsForRole, normalizeRoleId } from '../lib/permissions';
+import SettingsModal, { SettingsTab } from './SettingsModal';
 
 interface DrawerProps {
   isOpen: boolean;
@@ -98,12 +99,6 @@ const MENU_ITEMS: MenuItemDef[] = [
       { id: 'bukuinduk', label: 'Buku Induk Sanksi' },
       { id: 'perizinan', label: 'Perizinan' }
     ]
-  },
-  {
-    id: 'group_chat',
-    label: 'Group Chat',
-    icon: MessageSquare,
-    submenus: []
   }
 ];
 
@@ -128,9 +123,27 @@ export default function Drawer({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [openAccordion, setOpenAccordion] = useState<string | null>(activeModule);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [settingsModalTab, setSettingsModalTab] = useState<SettingsTab>('general');
   const profileMenuRef = useRef<HTMLDivElement>(null);
 
-  const [displayName, setDisplayName] = useState(() => localStorage.getItem('smartsantri_active_display_name') || 'Aniq M');
+  const [displayName, setDisplayName] = useState(() => localStorage.getItem('smartsantri_active_display_name') || 'Mang Daud');
+  const [avatarUrl, setAvatarUrl] = useState(() => localStorage.getItem('smartsantri_profile_avatar') || '');
+  const [activeRole, setActiveRole] = useState(() => localStorage.getItem('smartsantri_active_role') || 'superadmin');
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      setDisplayName(localStorage.getItem('smartsantri_active_display_name') || 'Mang Daud');
+      setAvatarUrl(localStorage.getItem('smartsantri_profile_avatar') || '');
+      setActiveRole(localStorage.getItem('smartsantri_active_role') || 'superadmin');
+    };
+    window.addEventListener('smartsantri_profile_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      window.removeEventListener('smartsantri_profile_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
+  }, []);
 
   // Reset search when drawer closes
   useEffect(() => {
@@ -146,18 +159,6 @@ export default function Drawer({
     setSearchQuery('');
     if (onSearchModeChange) onSearchModeChange(false);
   };
-
-  useEffect(() => {
-    const handleUpdate = () => {
-      setDisplayName(localStorage.getItem('smartsantri_active_display_name') || 'Aniq M');
-    };
-    window.addEventListener('smartsantri_profile_updated', handleUpdate);
-    window.addEventListener('storage', handleUpdate);
-    return () => {
-      window.removeEventListener('smartsantri_profile_updated', handleUpdate);
-      window.removeEventListener('storage', handleUpdate);
-    };
-  }, []);
 
   // Close profile dropdown when clicked outside
   useEffect(() => {
@@ -177,7 +178,6 @@ export default function Drawer({
     }
   }, [activeModule]);
 
-  const activeRole = localStorage.getItem('smartsantri_active_role') || 'superadmin';
   const permissions = getPermissionsForRole(activeRole);
 
   const filteredMenuItems = useMemo(() => {
@@ -276,7 +276,7 @@ export default function Drawer({
       const kamar = (s.kamar || s.namaKamar || '').toLowerCase();
       const asrama = (s.asrama || '').toLowerCase();
       return nama.includes(q) || nis.includes(q) || nism.includes(q) || kamar.includes(q) || asrama.includes(q);
-    }).slice(0, 15);
+    });
   }, [searchQuery, santriList]);
 
   const handleMenuClick = (item: MenuItemDef) => {
@@ -381,7 +381,7 @@ export default function Drawer({
 
       {/* When in Search Mode: Full-screen Search Results (Sidebar is hidden) */}
       {isSearchMode ? (
-        <div className="flex-1 w-full overflow-y-auto px-4 py-2 space-y-4">
+        <div className="flex-1 min-h-0 w-full overflow-y-auto px-4 py-2 space-y-4 scrollbar-thin overscroll-contain">
           {!searchQuery.trim() ? (
             <div className="space-y-4 pt-2">
               <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 px-1">
@@ -395,20 +395,25 @@ export default function Drawer({
                   { label: 'Kelola Kamar', mod: 'humasy', sub: 'kamar' },
                   { label: 'Perizinan & Sanksi', mod: 'keamanan', sub: 'overview' },
                   { label: 'Pengaturan Akun', mod: 'pengaturan', sub: 'keamanan' },
-                ].map((tag) => (
-                  <button
-                    key={tag.label}
-                    type="button"
-                    onClick={() => {
-                      onChangeModule(tag.mod, tag.sub);
-                      onClose();
-                      handleExitSearch();
-                    }}
-                    className="px-3 py-2 rounded-full text-xs font-medium bg-gray-100 text-gray-700 hover:bg-blue-50 hover:text-blue-600 active:bg-blue-100 transition-colors cursor-pointer"
-                  >
-                    {tag.label}
-                  </button>
-                ))}
+                ].map((tag) => {
+                  const isTagActive = activeModule === tag.mod && (!tag.sub || activeSubTab === tag.sub);
+                  return (
+                    <button
+                      key={tag.label}
+                      type="button"
+                      onClick={() => {
+                        onChangeModule(tag.mod, tag.sub);
+                      }}
+                      className={`px-3 py-2 rounded-full text-xs font-medium transition-colors cursor-pointer ${
+                        isTagActive
+                          ? 'bg-blue-600 text-white font-semibold shadow-xs'
+                          : 'bg-gray-100 text-gray-700 hover:bg-blue-50 hover:text-blue-600 active:bg-blue-100'
+                      }`}
+                    >
+                      {tag.label}
+                    </button>
+                  );
+                })}
               </div>
               <div className="text-xs text-gray-400 px-1 pt-2">
                 Ketik nama menu, fitur aplikasi, atau nama santri untuk memulai pencarian.
@@ -424,28 +429,40 @@ export default function Drawer({
                   </div>
                   {matchedMenus.map((item, idx) => {
                     const Icon = item.icon;
+                    const isItemActive = activeModule === item.module && (!item.subTab || activeSubTab === item.subTab);
                     return (
                       <button
                         key={`${item.module}-${item.subTab || idx}`}
                         type="button"
                         onClick={() => {
                           onChangeModule(item.module, item.subTab);
-                          onClose();
-                          handleExitSearch();
                         }}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-100 active:bg-blue-50 text-left transition-colors cursor-pointer group"
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer group ${
+                          isItemActive 
+                            ? 'bg-blue-50/90 text-blue-700 font-semibold ring-1 ring-blue-200/80 shadow-2xs' 
+                            : 'hover:bg-gray-100 active:bg-blue-50 text-gray-800'
+                        }`}
                       >
-                        <div className="w-8 h-8 rounded-lg bg-gray-100 group-hover:bg-blue-100 flex items-center justify-center text-gray-600 group-hover:text-blue-600 transition-colors shrink-0">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors shrink-0 ${
+                          isItemActive 
+                            ? 'bg-blue-600 text-white' 
+                            : 'bg-gray-100 group-hover:bg-blue-100 text-gray-600 group-hover:text-blue-600'
+                        }`}>
                           <Icon className="w-4 h-4" />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="text-sm font-medium text-gray-800 group-hover:text-blue-600 truncate">
+                          <div className={`text-sm truncate ${
+                            isItemActive ? 'font-bold text-blue-700' : 'font-medium text-gray-800 group-hover:text-blue-600'
+                          }`}>
                             {item.title}
                           </div>
                           <div className="text-xs text-gray-400 truncate">
                             {item.category}
                           </div>
                         </div>
+                        {isItemActive && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0" />
+                        )}
                       </button>
                     );
                   })}
@@ -468,8 +485,6 @@ export default function Drawer({
                         } else {
                           onChangeModule('sekretaris', 'santri');
                         }
-                        onClose();
-                        handleExitSearch();
                       }}
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-100 active:bg-blue-50 text-left transition-colors cursor-pointer group"
                     >
@@ -531,15 +546,15 @@ export default function Drawer({
                       isActive ? 'bg-blue-50' : ''
                     }`}
                   >
-                    <div className={`flex items-center space-x-3 w-full ${hasSubmenus && isExpanded ? 'flex-col' : ''}`}>
-                      <div className="flex items-center space-x-3 w-full">
+                    <div className="w-full">
+                      <div className="flex items-center gap-3 w-full">
                         <span className={isActive ? 'text-blue-600' : 'text-gray-500'}>
-                          <Icon className="w-5 h-5" />
+                          <Icon className="w-5 h-5 shrink-0" />
                         </span>
                         <span className={isActive ? 'text-blue-600' : 'text-gray-800'}>
                           {item.label}
                         </span>
-                        {hasSubmenus ? (
+                        {hasSubmenus && (
                           <span 
                             className={`text-gray-400 text-sm ml-auto transition-transform duration-200 ${
                               isExpanded ? 'rotate-180 text-blue-600' : ''
@@ -547,16 +562,12 @@ export default function Drawer({
                           >
                             <ChevronDown className="w-4 h-4" />
                           </span>
-                        ) : item.id === 'group_chat' && (unreadChatCount > 0 || hasMentionNotification) ? (
-                          <span className="ml-auto px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500 text-white shadow-xs">
-                            {hasMentionNotification ? '@' : (unreadChatCount > 99 ? '99+' : unreadChatCount)}
-                          </span>
-                        ) : null}
+                        )}
                       </div>
 
                       {/* Submenu List when expanded */}
                       {hasSubmenus && isExpanded && (
-                        <ul className="mt-2 space-y-1 w-full pl-10">
+                        <ul className="mt-2 space-y-1 w-full pl-8">
                           {item.submenus!.map((sub) => {
                             const isSubActive = isActive && (activeSubTab === sub.id || (!activeSubTab && sub.id === item.submenus![0].id));
                             return (
@@ -586,88 +597,52 @@ export default function Drawer({
             })}
           </nav>
 
-          {/* User Profile Bottom */}
-          <div className="p-4 flex items-center justify-between mt-auto bg-white w-[80%] pt-8 relative" ref={profileMenuRef}>
+          {/* User Profile Bottom Container */}
+          <div className="p-3 w-[85%] mt-auto pb-4">
             <div 
               onClick={() => {
-                onChangeModule('pengaturan', 'keamanan');
+                setShowSettingsModal(true);
                 onClose();
               }}
-              className="flex items-center space-x-3 cursor-pointer group"
-              title="Buka Pengaturan Akun"
+              className="p-2.5 flex items-center justify-between bg-transparent hover:bg-slate-100 active:bg-slate-200 rounded-2xl cursor-pointer transition-colors"
+              title="Buka Pengaturan"
+              id="mobile-drawer-profile-container"
             >
-              {/* Avatar */}
-              <div className="w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center text-white font-semibold text-sm">
-                {initialLetter}
+              <div className="flex items-center space-x-3 min-w-0 flex-1">
+                {/* Avatar */}
+                <div className="w-8 h-8 rounded-full bg-[#9E362B] text-white font-medium text-xs flex items-center justify-center shrink-0 shadow-xs uppercase overflow-hidden">
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt={displayName} className="w-full h-full object-cover" />
+                  ) : (
+                    (displayName.trim().slice(0, 2) || 'MD').toUpperCase()
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="font-bold text-xs text-slate-900 block truncate">
+                    {displayName}
+                  </span>
+                  <span className="text-[10px] text-slate-400 capitalize block -mt-0.5 truncate">
+                    {activeRole === 'superadmin' ? 'Super Admin' : (activeRole || 'Pengurus')}
+                  </span>
+                </div>
               </div>
-              <span className="font-medium text-sm text-gray-800 group-hover:text-blue-600 transition-colors">
-                {displayName}
-              </span>
+
+              {/* Three dots button */}
+              <div 
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg shrink-0"
+                aria-label="Pengaturan"
+              >
+                <MoreHorizontal className="w-4 h-4" />
+              </div>
             </div>
-
-            {/* Three dots button */}
-            <button 
-              onClick={() => setShowProfileMenu(!showProfileMenu)}
-              className="text-gray-400 hover:text-gray-600 focus:outline-none p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-              aria-label="Menu Opsi Pengguna"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
-              </svg>
-            </button>
-
-            {/* Popover Menu on Three Dots */}
-            {showProfileMenu && (
-              <div className="absolute bottom-16 right-4 w-48 bg-white rounded-xl shadow-xl border border-gray-100 py-1 z-30 animate-in fade-in zoom-in-95 duration-150">
-                <button
-                  onClick={() => {
-                    setShowProfileMenu(false);
-                    onChangeModule('pengaturan');
-                    onClose();
-                  }}
-                  className="flex items-center gap-2.5 w-full px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 text-left"
-                >
-                  <Settings className="w-4 h-4 text-gray-500" />
-                  <span>Pengaturan Sistem</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setShowProfileMenu(false);
-                    onClose();
-                    if (onOpenHelp) onOpenHelp();
-                  }}
-                  className="flex items-center gap-2.5 w-full px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 text-left"
-                >
-                  <HelpCircle className="w-4 h-4 text-blue-500" />
-                  <span>Pusat Bantuan</span>
-                </button>
-
-                <div className="border-t border-gray-100 my-1" />
-
-                <button
-                  onClick={() => {
-                    setShowProfileMenu(false);
-                    onClose();
-                    localStorage.removeItem('smartsantri_is_logged_in');
-                    localStorage.removeItem('smartsantri_active_role');
-                    localStorage.removeItem('smartsantri_active_username');
-                    localStorage.removeItem('smartsantri_active_display_name');
-                    localStorage.removeItem('smartsantri_profile_avatar');
-                    if (onLogout) {
-                      onLogout();
-                    } else {
-                      window.location.reload();
-                    }
-                  }}
-                  className="flex items-center gap-2.5 w-full px-3 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50 text-left"
-                >
-                  <LogOut className="w-4 h-4 text-rose-500" />
-                  <span>Keluar</span>
-                </button>
-              </div>
-            )}
           </div>
+
+          <SettingsModal
+            isOpen={showSettingsModal}
+            onClose={() => setShowSettingsModal(false)}
+            defaultTab={settingsModalTab}
+            onLogout={onLogout}
+          />
         </>
       )}
     </motion.aside>

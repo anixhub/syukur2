@@ -121,6 +121,7 @@ export default function App() {
   const [hasMentionNotification, setHasMentionNotification] = useState<boolean>(false);
   const [headerSelectedSantri, setHeaderSelectedSantri] = useState<Santri | null>(null);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState<boolean>(false);
+  const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState<boolean>(true);
 
   // Pending user registrations for Superadmin
   const [pendingRegistrations, setPendingRegistrations] = useState<any[]>([]);
@@ -1007,14 +1008,19 @@ export default function App() {
         }}
       />
 
-      {/* Sidebar - Persistent floating sidebar on desktop, hidden on mobile */}
+      {/* Sidebar - Desktop sidebar identical to mobile drawer, hidden on mobile */}
       <Sidebar 
+        isOpen={isDesktopSidebarOpen}
+        onClose={() => setIsDesktopSidebarOpen(false)}
+        onToggleExpand={() => setIsDesktopSidebarOpen(prev => !prev)}
         activeModule={activeModule}
         activeSubTab={activeSubTab}
         onChangeModule={handleChangeModule}
         isSelectionMode={isSelectionMode}
         onLogout={() => setIsLoggedIn(false)}
         onOpenHelp={() => setShowHelpModal(true)}
+        santriList={santriList}
+        onSelectSantri={(santri) => setHeaderSelectedSantri(santri)}
       />
 
       {/* Main Container - Pushed to right with rounded-2.5rem and scaled relatively to screen size when drawer open on mobile */}
@@ -1026,6 +1032,7 @@ export default function App() {
             ? isDrawerSearchMode
               ? {
                   x: '100%',
+                  marginRight: '0px',
                   scale: 0.88,
                   opacity: 0,
                   borderRadius: '40px',
@@ -1034,20 +1041,32 @@ export default function App() {
                 }
               : {
                   x: '80%',
+                  marginRight: '0px',
                   scale: 0.88,
                   opacity: 1,
                   borderRadius: '40px',
                   boxShadow: '0px 20px 50px 0px rgba(0, 0, 0, 0.25)',
                   borderColor: 'rgba(229, 231, 235, 1)',
                 }
-            : {
-                x: '0%',
-                scale: 1,
-                opacity: 1,
-                borderRadius: '0px',
-                boxShadow: '0px 0px 0px 0px rgba(0, 0, 0, 0)',
-                borderColor: 'rgba(229, 231, 235, 0)',
-              }
+            : !isMobile && isNotificationsOpen
+              ? {
+                  x: '0%',
+                  marginRight: '380px',
+                  scale: 1,
+                  opacity: 1,
+                  borderRadius: '0px',
+                  boxShadow: '0px 0px 0px 0px rgba(0, 0, 0, 0)',
+                  borderColor: 'rgba(229, 231, 235, 0)',
+                }
+              : {
+                  x: '0%',
+                  marginRight: '0px',
+                  scale: 1,
+                  opacity: 1,
+                  borderRadius: '0px',
+                  boxShadow: '0px 0px 0px 0px rgba(0, 0, 0, 0)',
+                  borderColor: 'rgba(229, 231, 235, 0)',
+                }
         }
         transition={{ type: 'tween', ease: [0.25, 1, 0.5, 1], duration: 0.32 }}
         onAnimationComplete={() => {
@@ -1096,33 +1115,30 @@ export default function App() {
             activeModule={activeModule}
             activeSubTab={activeSubTab}
             onOpenDrawer={() => {
-              if (isDrawerOpen) {
-                handleCloseDrawer();
+              if (isMobile) {
+                if (isDrawerOpen) {
+                  handleCloseDrawer();
+                } else {
+                  setIsDrawerOpen(true);
+                  setIsDrawerClosing(false);
+                  setIsDrawerSearchMode(false);
+                }
               } else {
-                setIsDrawerOpen(true);
-                setIsDrawerClosing(false);
-                setIsDrawerSearchMode(false);
+                setIsDesktopSidebarOpen(prev => !prev);
               }
             }}
+            onOpenChat={() => setIsChatOpen(prev => !prev)}
+            isChatOpen={isChatOpen}
+            unreadChatCount={unreadChatCount}
+            hasMentionNotification={hasMentionNotification}
             pendingRegistrationsCount={pendingRegistrations.length}
             onOpenPendingModal={() => setShowPendingModal(true)}
-            onOpenNotifications={() => setIsNotificationsOpen(true)}
+            onOpenNotifications={() => setIsNotificationsOpen(prev => !prev)}
+            isNotificationsOpen={isNotificationsOpen}
             santriList={santriList}
             onChangeModule={handleChangeModule}
             onSelectSantri={(santri) => setHeaderSelectedSantri(santri)}
           />
-
-          {/* Full Page Notifications View */}
-          <AnimatePresence>
-            {isNotificationsOpen && (
-              <NotificationsPage
-                isOpen={isNotificationsOpen}
-                onClose={() => setIsNotificationsOpen(false)}
-                pendingRegistrationsCount={pendingRegistrations.length}
-                onOpenPendingModal={() => setShowPendingModal(true)}
-              />
-            )}
-          </AnimatePresence>
 
           {/* Modal Pending User Registrations for Superadmin */}
           {showPendingModal && (
@@ -1192,6 +1208,19 @@ export default function App() {
           </footer>
         </motion.div>
       </motion.div>
+
+      {/* Notifications Drawer (Mobile full-page or Desktop push side-panel) */}
+      <AnimatePresence>
+        {isNotificationsOpen && (
+          <NotificationsPage
+            isOpen={isNotificationsOpen}
+            onClose={() => setIsNotificationsOpen(false)}
+            pendingRegistrationsCount={pendingRegistrations.length}
+            onOpenPendingModal={() => setShowPendingModal(true)}
+            isMobile={isMobile}
+          />
+        )}
+      </AnimatePresence>
 
     </div>
   );

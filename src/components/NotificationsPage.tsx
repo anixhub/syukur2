@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { 
   ChevronLeft, 
@@ -10,7 +10,8 @@ import {
   Clock, 
   Sparkles,
   BookOpen,
-  DollarSign
+  DollarSign,
+  X
 } from 'lucide-react';
 
 interface NotificationItem {
@@ -29,16 +30,44 @@ interface NotificationsPageProps {
   onClose: () => void;
   pendingRegistrationsCount: number;
   onOpenPendingModal?: () => void;
+  isMobile?: boolean;
 }
 
 export default function NotificationsPage({
   isOpen,
   onClose,
   pendingRegistrationsCount,
-  onOpenPendingModal
+  onOpenPendingModal,
+  isMobile: isMobileProp
 }: NotificationsPageProps) {
   const [activeFilter, setActiveFilter] = useState<'all' | 'unread' | 'registration' | 'system'>('all');
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
+
+  // Detect mobile width if prop not provided
+  const [isMobileWindow, setIsMobileWindow] = useState<boolean>(() => 
+    typeof window !== 'undefined' ? window.innerWidth < 768 : false
+  );
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobileWindow(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const isMobile = isMobileProp !== undefined ? isMobileProp : isMobileWindow;
+
+  // Listen to Escape key to close on desktop
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   // Base list of notifications
   const notifications: NotificationItem[] = [
@@ -124,32 +153,36 @@ export default function NotificationsPage({
 
   return (
     <motion.div
-      id="notifications-full-page"
+      id="notifications-panel"
       initial={{ x: '100%' }}
       animate={{ x: 0 }}
       exit={{ x: '100%' }}
-      transition={{ type: 'tween', ease: [0.16, 1, 0.3, 1], duration: 0.18 }}
-      className="fixed inset-0 z-50 bg-white flex flex-col overflow-hidden select-none"
+      transition={{ type: 'tween', ease: [0.25, 1, 0.5, 1], duration: 0.32 }}
+      className={`fixed top-0 bottom-0 right-0 z-50 md:z-40 bg-white flex flex-col overflow-hidden select-none border-l border-slate-200/90 shadow-2xl ${
+        isMobile 
+          ? 'left-0 w-full h-full' 
+          : 'w-[380px] h-screen'
+      }`}
     >
-      {/* Top Header - Matches the Search Screen Header Layout, Size, and Button */}
-      <div className="p-4 pt-8 w-full border-b border-gray-100 bg-white shrink-0">
-        <div className="flex items-center justify-between w-full mt-4">
-          <div className="flex items-center gap-2.5">
-            {/* Back Button matching search page */}
+      {/* Top Header */}
+      <div className={`p-4 ${isMobile ? 'pt-8' : 'pt-4 pb-3'} w-full border-b border-gray-100 bg-white shrink-0`}>
+        <div className={`flex items-center justify-between w-full ${isMobile ? 'mt-4' : 'mt-0'}`}>
+          <div className="flex items-center gap-2">
+            {/* Back Button matching search page on mobile, or back button on desktop */}
             <button
               id="btn-back-notifications"
               type="button"
               onClick={onClose}
               className="p-2 -ml-2 text-gray-700 hover:text-gray-950 hover:bg-gray-100 active:bg-gray-200 rounded-full transition-colors shrink-0 cursor-pointer"
               aria-label="Kembali"
-              title="Kembali ke halaman sebelumnya"
+              title={isMobile ? "Kembali ke halaman sebelumnya" : "Tutup panel notifikasi"}
             >
               <ChevronLeft className="w-6 h-6 text-gray-800" />
             </button>
 
             {/* Page Title */}
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-gray-900 tracking-tight">
+              <h1 className="text-lg sm:text-xl font-bold text-gray-900 tracking-tight">
                 Notifikasi
               </h1>
               {unreadCount > 0 && (
@@ -160,21 +193,38 @@ export default function NotificationsPage({
             </div>
           </div>
 
-          {/* Mark all as read button */}
-          {unreadCount > 0 && (
-            <button
-              type="button"
-              onClick={handleMarkAllAsRead}
-              className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 p-1.5 rounded-lg hover:bg-emerald-50 transition-colors flex items-center gap-1 cursor-pointer"
-            >
-              <CheckCheck className="w-4 h-4" />
-              <span className="hidden sm:inline">Tandai Dibaca</span>
-            </button>
-          )}
+          <div className="flex items-center gap-1.5">
+            {/* Mark all as read button */}
+            {unreadCount > 0 && (
+              <button
+                type="button"
+                onClick={handleMarkAllAsRead}
+                className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 p-1.5 rounded-lg hover:bg-emerald-50 transition-colors flex items-center gap-1 cursor-pointer"
+                title="Tandai semua sebagai sudah dibaca"
+              >
+                <CheckCheck className="w-4 h-4" />
+                <span className="hidden sm:inline">Tandai Dibaca</span>
+              </button>
+            )}
+
+            {/* Desktop direct close button */}
+            {!isMobile && (
+              <button
+                id="btn-close-notifications-panel"
+                type="button"
+                onClick={onClose}
+                className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                title="Tutup Notifikasi (Esc)"
+                aria-label="Tutup Notifikasi"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Filter Chips */}
-        <div className="flex items-center gap-2 mt-4 overflow-x-auto no-scrollbar pb-1">
+        <div className="flex items-center gap-2 mt-3.5 overflow-x-auto no-scrollbar pb-1">
           <button
             type="button"
             onClick={() => setActiveFilter('all')}
@@ -225,7 +275,7 @@ export default function NotificationsPage({
       </div>
 
       {/* Notifications List Content */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3 bg-slate-50/50">
+      <div className="flex-1 overflow-y-auto p-3.5 sm:p-4 space-y-2.5 bg-slate-50/50">
         {filteredNotifications.length === 0 ? (
           <div className="py-20 text-center flex flex-col items-center justify-center">
             <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-3">

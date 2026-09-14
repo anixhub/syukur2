@@ -2578,9 +2578,14 @@ export default function PengaturanView({
                                           </span>
                                         )}
                                         {c.status === 'minta_reset' && (
-                                          <span className="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-100 animate-pulse">
-                                            Minta Reset Sandi
-                                          </span>
+                                          <div className="flex flex-col items-center justify-center gap-1">
+                                            <span className="inline-flex items-center px-3 py-0.5 rounded-full text-[11px] font-bold bg-[#E2FBF6] text-[#0D9488]">
+                                              Aktif
+                                            </span>
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                              Lupa Sandi
+                                            </span>
+                                          </div>
                                         )}
                                       </td>
                                       <td className="py-5 px-6 text-right">
@@ -2601,7 +2606,7 @@ export default function PengaturanView({
                                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-200 transition-colors cursor-pointer"
                                               >
                                                 <Ban className="h-4 w-4 text-rose-600" />
-                                                <span>Tolak</span>
+                                                <span>Blokir</span>
                                               </button>
                                             </>
                                           )}
@@ -2614,7 +2619,7 @@ export default function PengaturanView({
                                                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0284C7] hover:bg-[#0369A1] text-white font-bold text-xs shadow-sm transition-all cursor-pointer active:scale-95"
                                               >
                                                 <Lock className="h-4 w-4" />
-                                                <span>Reset Sandi</span>
+                                                <span>Beri Akses</span>
                                               </button>
                                               <button
                                                 type="button"
@@ -2622,7 +2627,7 @@ export default function PengaturanView({
                                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-200 transition-colors cursor-pointer"
                                               >
                                                 <Ban className="h-4 w-4 text-rose-600" />
-                                                <span>Tolak</span>
+                                                <span>Blokir</span>
                                               </button>
                                             </>
                                           )}
@@ -2645,7 +2650,7 @@ export default function PengaturanView({
                                               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition-all cursor-pointer active:scale-95"
                                             >
                                               <Check className="h-4 w-4" />
-                                              <span>Buka Blokir</span>
+                                              <span>Unblock</span>
                                             </button>
                                           )}
 

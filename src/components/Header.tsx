@@ -1,7 +1,8 @@
 import React from 'react';
 import { 
   Menu, 
-  Bell
+  Bell,
+  MessageCircle
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -9,11 +10,13 @@ interface HeaderProps {
   activeSubTab?: string;
   onOpenDrawer: () => void;
   onOpenChat?: () => void;
+  isChatOpen?: boolean;
   unreadChatCount?: number;
   hasMentionNotification?: boolean;
   pendingRegistrationsCount?: number;
   onOpenPendingModal?: () => void;
   onOpenNotifications?: () => void;
+  isNotificationsOpen?: boolean;
   santriList?: any[];
   onChangeModule?: (mod: string, subTab?: string) => void;
   onSelectSantri?: (santri: any) => void;
@@ -23,9 +26,14 @@ export default function Header({
   activeModule, 
   activeSubTab, 
   onOpenDrawer,
+  onOpenChat,
+  isChatOpen = false,
+  unreadChatCount = 0,
+  hasMentionNotification = false,
   pendingRegistrationsCount = 0,
   onOpenPendingModal,
-  onOpenNotifications
+  onOpenNotifications,
+  isNotificationsOpen = false
 }: HeaderProps) {
   return (
     <header className="sticky top-0 z-40 w-full bg-white/95 backdrop-blur-md border-b border-slate-200/70 shadow-xs">
@@ -34,13 +42,14 @@ export default function Header({
         {/* Header Layout */}
         <div className="relative flex h-16 w-full items-center justify-between">
           
-          {/* Left: Mobile Drawer Toggle (No background container on hover, only stroke color changes) */}
+          {/* Left: Sidebar / Drawer Toggle */}
           <div className="flex items-center z-10">
             <button
               id="btn-open-drawer"
               onClick={onOpenDrawer}
-              className="flex md:hidden items-center justify-center w-10 h-10 p-2 text-slate-700 hover:text-emerald-600 transition-colors cursor-pointer focus:outline-none"
+              className="flex items-center justify-center w-10 h-10 p-2 text-slate-700 hover:text-emerald-600 transition-colors cursor-pointer focus:outline-none rounded-full hover:bg-slate-100/60"
               aria-label="Buka Menu Sidebar"
+              title="Buka / Tutup Menu Sidebar"
             >
               <Menu className="h-5 w-5 sm:h-5.5 sm:w-5.5" strokeWidth={2} />
             </button>
@@ -53,14 +62,39 @@ export default function Header({
             </h1>
           </div>
 
-          {/* Right Action Buttons: Bell Notifications (No background container on hover, only stroke color changes) */}
+          {/* Right Action Buttons: Message / Chat & Bell Notifications */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 z-10">
+            {/* Tombol Pesan (Chat) */}
+            <button 
+              id="btn-chat-header"
+              onClick={onOpenChat}
+              className={`relative flex items-center justify-center w-10 h-10 p-2 transition-colors cursor-pointer focus:outline-none rounded-full ${
+                isChatOpen 
+                  ? 'text-emerald-600 bg-emerald-50/90 ring-1 ring-emerald-300' 
+                  : 'text-slate-700 hover:text-emerald-600 hover:bg-slate-100/60'
+              }`}
+              title={isChatOpen ? "Tutup Pesan" : "Pesan & Diskusi"}
+              aria-label={isChatOpen ? "Tutup Pesan" : "Buka Pesan"}
+            >
+              <MessageCircle className="h-5 w-5 sm:h-5.5 sm:w-5.5" strokeWidth={2} />
+              {(unreadChatCount > 0 || hasMentionNotification) ? (
+                <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-emerald-500 text-white font-extrabold text-[10px] shadow-xs animate-pulse">
+                  {hasMentionNotification ? '@' : (unreadChatCount > 99 ? '99+' : unreadChatCount)}
+                </span>
+              ) : null}
+            </button>
+
+            {/* Tombol Notifikasi */}
             <button 
               id="btn-notifications-desktop"
               onClick={onOpenNotifications}
-              className="relative flex items-center justify-center w-10 h-10 p-2 text-slate-700 hover:text-emerald-600 transition-colors cursor-pointer focus:outline-none"
-              title="Notifikasi Sistem"
-              aria-label="Buka Notifikasi"
+              className={`relative flex items-center justify-center w-10 h-10 p-2 transition-colors cursor-pointer focus:outline-none rounded-full ${
+                isNotificationsOpen 
+                  ? 'text-emerald-600 bg-emerald-50/90 ring-1 ring-emerald-300' 
+                  : 'text-slate-700 hover:text-emerald-600 hover:bg-slate-100/60'
+              }`}
+              title={isNotificationsOpen ? "Tutup Notifikasi" : "Notifikasi Sistem"}
+              aria-label={isNotificationsOpen ? "Tutup Notifikasi" : "Buka Notifikasi"}
             >
               <Bell className="h-5 w-5 sm:h-5.5 sm:w-5.5" strokeWidth={2} />
               {pendingRegistrationsCount > 0 ? (

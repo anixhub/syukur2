@@ -212,6 +212,18 @@ export default function AdminChatDrawer({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState<boolean>(() => 
+    typeof window !== 'undefined' ? window.innerWidth < 640 : false
+  );
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Attachment Menu & Pending Attachment State
   const [showAttachMenu, setShowAttachMenu] = useState<boolean>(false);
@@ -1663,6 +1675,9 @@ export default function AdminChatDrawer({
 
   // Layout mode class selector
   const getLayoutClasses = () => {
+    if (isMobile) {
+      return 'w-full h-full h-[100dvh] rounded-none my-0 right-0 top-0 border-none shadow-none';
+    }
     switch (layoutMode) {
       case 'full':
         return 'w-full h-screen rounded-none my-0 right-0 top-0 border-none shadow-none';
@@ -1676,7 +1691,9 @@ export default function AdminChatDrawer({
 
   return (
     <div className={`fixed inset-0 z-[100] flex overflow-hidden pointer-events-none transition-all ${
-      layoutMode === 'full' ? 'justify-stretch items-stretch p-0' : 'justify-end items-center p-2 sm:p-4'
+      isMobile || layoutMode === 'full' 
+        ? 'justify-stretch items-stretch p-0' 
+        : 'justify-stretch items-stretch p-0 sm:justify-end sm:items-center sm:p-4'
     }`}>
       {/* Hidden File Inputs */}
       <input 
@@ -1697,10 +1714,10 @@ export default function AdminChatDrawer({
       {/* Main Chat Box Window with Fast Bottom-to-Top Entrance & Top-to-Bottom Exit Animation */}
       <div 
         style={{
-          width: layoutMode === 'floating' ? `${floatingWidth}px` : undefined,
-          minWidth: layoutMode === 'floating' ? '340px' : undefined,
-          maxWidth: layoutMode === 'floating' ? '100vw' : undefined,
-          transform: layoutMode === 'floating' ? `translateX(${positionX}px)` : undefined,
+          width: (!isMobile && layoutMode === 'floating') ? `${floatingWidth}px` : undefined,
+          minWidth: (!isMobile && layoutMode === 'floating') ? '340px' : undefined,
+          maxWidth: (!isMobile && layoutMode === 'floating') ? '100vw' : undefined,
+          transform: (!isMobile && layoutMode === 'floating') ? `translateX(${positionX}px)` : undefined,
           overscrollBehavior: 'contain'
         }}
         className={`relative z-10 pointer-events-auto flex flex-col bg-white border-slate-200/90 shadow-2xl ${
@@ -1711,8 +1728,8 @@ export default function AdminChatDrawer({
             : 'animate-in fade-in slide-in-from-bottom-full duration-150 ease-out'
         } ${getLayoutClasses()}`}
       >
-        {/* Drag Handle on Left Edge for Floating Width Resizing */}
-        {layoutMode === 'floating' && (
+        {/* Drag Handle on Left Edge for Floating Width Resizing (Hanya di tablet/desktop, tersembunyi di HP) */}
+        {!isMobile && layoutMode === 'floating' && (
           <div 
             onMouseDown={(e) => {
               e.preventDefault();
@@ -1727,15 +1744,15 @@ export default function AdminChatDrawer({
                 startPosX: positionXRef.current
               };
             }}
-            className={`absolute left-0 top-0 bottom-0 w-2.5 cursor-ew-resize z-30 group hover:bg-purple-500/20 transition-colors flex items-center justify-center ${isResizing ? 'bg-purple-500/30' : ''}`}
+            className={`absolute left-0 top-0 bottom-0 w-2.5 cursor-ew-resize z-30 group hover:bg-purple-500/20 transition-colors hidden sm:flex items-center justify-center ${isResizing ? 'bg-purple-500/30' : ''}`}
             title="Tarik sisi kiri untuk merubah lebar obrolan (Hingga batas layar)"
           >
             <div className="w-1 h-8 rounded-full bg-slate-300 group-hover:bg-purple-600 transition-colors" />
           </div>
         )}
 
-        {/* Drag Handle on Right Edge for Floating Width Resizing */}
-        {layoutMode === 'floating' && (
+        {/* Drag Handle on Right Edge for Floating Width Resizing (Hanya di tablet/desktop, tersembunyi di HP) */}
+        {!isMobile && layoutMode === 'floating' && (
           <div 
             onMouseDown={(e) => {
               e.preventDefault();
@@ -1750,7 +1767,7 @@ export default function AdminChatDrawer({
                 startPosX: positionXRef.current
               };
             }}
-            className={`absolute right-0 top-0 bottom-0 w-2.5 cursor-ew-resize z-30 group hover:bg-purple-500/20 transition-colors flex items-center justify-center ${isResizing ? 'bg-purple-500/30' : ''}`}
+            className={`absolute right-0 top-0 bottom-0 w-2.5 cursor-ew-resize z-30 group hover:bg-purple-500/20 transition-colors hidden sm:flex items-center justify-center ${isResizing ? 'bg-purple-500/30' : ''}`}
             title="Tarik sisi kanan untuk merubah lebar obrolan (Hingga batas layar)"
           >
             <div className="w-1 h-8 rounded-full bg-slate-300 group-hover:bg-purple-600 transition-colors" />
@@ -1809,7 +1826,7 @@ export default function AdminChatDrawer({
         ) : (
           <div 
             onMouseDown={(e) => {
-              if (layoutMode === 'floating') {
+              if (!isMobile && layoutMode === 'floating') {
                 e.preventDefault();
                 document.body.style.userSelect = 'none';
                 isDraggingWindowRef.current = true;
@@ -1823,11 +1840,11 @@ export default function AdminChatDrawer({
               }
             }}
             className={`flex h-16 shrink-0 items-center justify-between border-b border-slate-100 bg-white px-4 sm:px-5 ${
-              layoutMode === 'floating' 
+              !isMobile && layoutMode === 'floating' 
                 ? 'cursor-grab active:cursor-grabbing select-none' 
                 : ''
             }`}
-            title={layoutMode === 'floating' ? 'Tahan dan geser area header untuk memindahkan kotak obrolan' : undefined}
+            title={!isMobile && layoutMode === 'floating' ? 'Tahan dan geser area header untuk memindahkan kotak obrolan' : undefined}
           >
             {/* Left: Chat / Media Switcher Pill */}
             <div className="flex items-center gap-2" onMouseDown={(e) => e.stopPropagation()}>
@@ -1893,8 +1910,8 @@ export default function AdminChatDrawer({
                 <Search className="w-5 h-5 text-slate-700" />
               </button>
 
-              {/* Layout Mode Switcher [|] */}
-              <div className="relative" ref={layoutMenuRef}>
+              {/* Layout Mode Switcher [|] - Disembunyikan di mode HP */}
+              <div className="relative hidden sm:block" ref={layoutMenuRef}>
                 <button
                   type="button"
                   onClick={() => setShowLayoutMenu(!showLayoutMenu)}
