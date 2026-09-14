@@ -1021,6 +1021,10 @@ export default function App() {
         onOpenHelp={() => setShowHelpModal(true)}
         santriList={santriList}
         onSelectSantri={(santri) => setHeaderSelectedSantri(santri)}
+        onOpenChat={() => setIsChatOpen(prev => !prev)}
+        isChatOpen={isChatOpen}
+        unreadChatCount={unreadChatCount}
+        hasMentionNotification={hasMentionNotification}
       />
 
       {/* Main Container - Pushed to right with rounded-2.5rem and scaled relatively to screen size when drawer open on mobile */}
@@ -1181,7 +1185,7 @@ export default function App() {
             />
 
           {/* Main Responsive Content Zone */}
-          <main className="flex-1 w-full max-w-7xl mx-auto px-4 py-6 pb-6 sm:px-6 lg:px-8 focus:outline-none">
+          <main className="flex-1 w-full px-4 py-6 pb-6 sm:px-6 lg:px-8 focus:outline-none">
             {/* Animated clean transitions for active module view */}
             <AnimatePresence mode="wait">
               <motion.div
@@ -1198,7 +1202,7 @@ export default function App() {
 
           {/* Modern minimal footer */}
           <footer className="w-full border-t border-slate-200/60 bg-white py-5 text-center mt-12 hidden md:block">
-            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-slate-400 text-xs font-semibold">
+            <div className="w-full px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-slate-400 text-xs font-semibold">
               <p>© 2026 AttarOkey 4.0. Hak Cipta Dilindungi Pengurus Pesantren.</p>
               <div className="flex gap-4">
                 <span className="text-emerald-700">Tepat • Cepat • Teratur</span>

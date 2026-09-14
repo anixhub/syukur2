@@ -19,7 +19,8 @@ import {
   ChevronRight,
   Check,
   Plus,
-  UserPlus
+  UserPlus,
+  MessageCircle
 } from 'lucide-react';
 import { getPermissionsForRole, normalizeRoleId } from '../lib/permissions';
 import { getSavedAccounts, switchAccount, logoutCurrentAccount, SavedAccount } from '../lib/accountManager';
@@ -38,6 +39,10 @@ interface SidebarProps {
   onOpenHelp?: () => void;
   santriList?: any[];
   onSelectSantri?: (santri: any) => void;
+  onOpenChat?: () => void;
+  isChatOpen?: boolean;
+  unreadChatCount?: number;
+  hasMentionNotification?: boolean;
 }
 
 export interface MenuItemDef {
@@ -55,6 +60,12 @@ const MENU_ITEMS: MenuItemDef[] = [
     submenus: [
       { id: 'dashboard', label: 'Dashboard Utama' }
     ]
+  },
+  { 
+    id: 'group_chat', 
+    label: 'Group Chat', 
+    icon: MessageCircle,
+    submenus: []
   },
   { 
     id: 'sekretaris', 
