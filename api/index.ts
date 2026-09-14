@@ -267,11 +267,11 @@ export function getMySQLPool(): mysql.Pool | null {
     return null; // Circuit breaker active - seamlessly use memoryStore fallback
   }
 
-  const host = process.env.MYSQL_HOST || process.env.DB_HOST || "localhost";
-  const user = process.env.MYSQL_USER || process.env.DB_USER;
-  const password = process.env.MYSQL_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS || "";
-  const database = process.env.MYSQL_DATABASE || process.env.DB_NAME || process.env.DB_DATABASE;
-  const port = Number(process.env.MYSQL_PORT || process.env.DB_PORT || 3306);
+  const host = (process.env.MYSQL_HOST || process.env.DB_HOST || "localhost").trim();
+  const user = (process.env.MYSQL_USER || process.env.DB_USER || "").trim();
+  const password = (process.env.MYSQL_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS || "").trim();
+  const database = (process.env.MYSQL_DATABASE || process.env.DB_NAME || process.env.DB_DATABASE || "").trim();
+  const port = Number(String(process.env.MYSQL_PORT || process.env.DB_PORT || 3306).trim()) || 3306;
 
   if (!user || !database) {
     return null;
@@ -279,14 +279,14 @@ export function getMySQLPool(): mysql.Pool | null {
 
   if (!mysqlPool) {
     try {
-      const connLimit = Number(process.env.DB_CONNECTION_LIMIT || process.env.MYSQL_CONNECTION_LIMIT || 10);
+      const connLimit = Number(String(process.env.DB_CONNECTION_LIMIT || process.env.MYSQL_CONNECTION_LIMIT || 10).trim()) || 10;
       mysqlPool = mysql.createPool({
         host,
         user,
         password,
         database,
         port,
-        connectTimeout: 3000,
+        connectTimeout: 4000,
         waitForConnections: true,
         connectionLimit: connLimit,
         maxIdle: connLimit,
@@ -511,24 +511,39 @@ function stripPassword(table: string, data: any): any {
 // -------------------------------------------------------------
 app.post("/api/auth/login", async (req, res) => {
   const { username, password } = req.body;
-  const emailLower = (username || "").trim().toLowerCase();
+  const rawInput = (username || "").trim();
+  const emailLower = rawInput.toLowerCase();
+  
+  // Normalized identifiers for matching (with domain and without domain)
+  const usernameWithoutDomain = emailLower.includes('@') ? emailLower.split('@')[0].trim() : emailLower;
+  const emailWithDomain = emailLower.includes('@') ? emailLower : `${emailLower}@attaroqqy.com`;
+  
+  const inputPass = String(password || "").trim();
   const defaultUser = 'superadmin@attaroqqy.com';
   const defaultPass = '1234';
 
   const pool = getMySQLPool();
   if (pool) {
     try {
+      // Query MySQL with flexible match: username, id, username without domain, username with domain
       const [rows]: any = await pool.query(
-        "SELECT * FROM `app_credentials` WHERE LOWER(`username`) = ? LIMIT 1",
-        [emailLower]
+        `SELECT * FROM \`app_credentials\` 
+         WHERE LOWER(TRIM(\`username\`)) = ? 
+            OR LOWER(TRIM(\`username\`)) = ? 
+            OR LOWER(TRIM(\`username\`)) = ? 
+            OR LOWER(TRIM(\`id\`)) = ? 
+            OR LOWER(TRIM(\`id\`)) = ?
+         LIMIT 1`,
+        [emailLower, usernameWithoutDomain, emailWithDomain, emailLower, usernameWithoutDomain]
       );
 
       let matchedUser = rows?.[0];
 
-      if (!matchedUser && emailLower === defaultUser && password === defaultPass) {
+      // Auto-bootstrap default superadmin if matching default credentials and not present
+      if (!matchedUser && (emailLower === defaultUser || emailLower === 'superadmin') && inputPass === defaultPass) {
         const newId = 'superadmin';
         await pool.query(
-          "INSERT INTO `app_credentials` (`id`, `username`, `password`, `role`, `status`) VALUES (?, ?, ?, 'superadmin', 'approved') ON DUPLICATE KEY UPDATE `id`=`id`",
+          "INSERT INTO `app_credentials` (`id`, `username`, `password`, `role`, `status`, `display_name`) VALUES (?, ?, ?, 'superadmin', 'approved', 'Super Admin') ON DUPLICATE KEY UPDATE `id`=`id`",
           [newId, defaultUser, defaultPass]
         );
         return res.json({
@@ -537,35 +552,50 @@ app.post("/api/auth/login", async (req, res) => {
             id: newId,
             username: defaultUser,
             role: 'superadmin',
-            status: 'approved'
+            status: 'approved',
+            displayName: 'Super Admin'
           }
         });
       }
 
       if (!matchedUser) {
-        return res.status(401).json({ success: false, error: "Email atau Kata Sandi salah atau akun Anda tidak terdaftar." });
+        return res.status(401).json({ 
+          success: false, 
+          error: `Akun '${rawInput}' tidak ditemukan di database. Pastikan Username atau Email Anda sudah terdaftar di tabel app_credentials.` 
+        });
       }
 
-      if (matchedUser.password !== password) {
-        return res.status(401).json({ success: false, error: "Email atau Kata Sandi salah." });
+      const storedPass = String(matchedUser.password || "").trim();
+      if (storedPass !== inputPass) {
+        return res.status(401).json({ 
+          success: false, 
+          error: "Kata Sandi salah. Harap periksa kembali huruf besar, huruf kecil, dan angka kata sandi Anda." 
+        });
       }
 
-      if (matchedUser.status === 'pending') {
-        return res.status(403).json({ success: false, error: "Sesi Tertunda: Pendaftaran akun Anda masih menunggu persetujuan (approval) dari Superadmin." });
-      } else if (matchedUser.status === 'rejected') {
-        return res.status(403).json({ success: false, error: "Akses Ditolak: Pendaftaran akun Anda ditolak oleh Superadmin." });
+      const statusLower = String(matchedUser.status || "").trim().toLowerCase();
+      if (statusLower === 'pending' || statusLower === 'menunggu') {
+        return res.status(403).json({ 
+          success: false, 
+          error: "Sesi Tertunda: Pendaftaran akun Anda masih menunggu persetujuan (approval) dari Superadmin." 
+        });
+      } else if (statusLower === 'rejected' || statusLower === 'ditolak') {
+        return res.status(403).json({ 
+          success: false, 
+          error: "Akses Ditolak: Permohonan pendaftaran akun Anda ditolak oleh Superadmin." 
+        });
       }
 
       return res.json({
         success: true,
-        needsCancelReset: matchedUser.status === 'minta_reset',
+        needsCancelReset: statusLower === 'minta_reset' || statusLower === 'reset_requested',
         user: {
           id: matchedUser.id,
           username: matchedUser.username,
-          role: matchedUser.role,
-          status: matchedUser.status,
-          displayName: matchedUser.display_name || matchedUser.displayName,
-          avatarUrl: matchedUser.avatar_url || matchedUser.avatarUrl
+          role: matchedUser.role || 'superadmin',
+          status: matchedUser.status || 'approved',
+          displayName: matchedUser.display_name || matchedUser.displayName || matchedUser.nama || matchedUser.username,
+          avatarUrl: matchedUser.avatar_url || matchedUser.avatarUrl || ''
         }
       });
     } catch (err: any) {
@@ -576,44 +606,69 @@ app.post("/api/auth/login", async (req, res) => {
 
   // Memory store fallback authentication
   const list = memoryStore.get("app_credentials") || [];
-  let matchedUser = list.find((u: any) => (u.username || "").toLowerCase() === emailLower);
+  let matchedUser = list.find((u: any) => {
+    const uName = String(u.username || "").trim().toLowerCase();
+    const uId = String(u.id || "").trim().toLowerCase();
+    return (
+      uName === emailLower || 
+      uName === usernameWithoutDomain || 
+      uName === emailWithDomain || 
+      uId === emailLower || 
+      uId === usernameWithoutDomain
+    );
+  });
 
-  if (!matchedUser && emailLower === defaultUser && password === defaultPass) {
+  if (!matchedUser && (emailLower === defaultUser || emailLower === 'superadmin') && inputPass === defaultPass) {
     matchedUser = {
       id: "superadmin",
       username: defaultUser,
       password: defaultPass,
       role: "superadmin",
-      status: "approved"
+      status: "approved",
+      displayName: "Super Admin"
     };
     list.push(matchedUser);
     memoryStore.set("app_credentials", list);
   }
 
   if (!matchedUser) {
-    return res.status(401).json({ success: false, error: "Email atau Kata Sandi salah atau akun Anda tidak terdaftar." });
+    return res.status(401).json({ 
+      success: false, 
+      error: `Akun '${rawInput}' tidak ditemukan. Pastikan Username atau Email Anda sudah terdaftar.` 
+    });
   }
 
-  if (matchedUser.password !== password) {
-    return res.status(401).json({ success: false, error: "Email atau Kata Sandi salah." });
+  const storedPass = String(matchedUser.password || "").trim();
+  if (storedPass && storedPass !== inputPass) {
+    return res.status(401).json({ 
+      success: false, 
+      error: "Kata Sandi salah. Harap periksa kembali huruf besar dan kecil kata sandi Anda." 
+    });
   }
 
-  if (matchedUser.status === 'pending') {
-    return res.status(403).json({ success: false, error: "Sesi Tertunda: Pendaftaran akun Anda masih menunggu persetujuan (approval) dari Superadmin." });
-  } else if (matchedUser.status === 'rejected') {
-    return res.status(403).json({ success: false, error: "Akses Ditolak: Pendaftaran akun Anda ditolak oleh Superadmin." });
+  const statusLower = String(matchedUser.status || "").trim().toLowerCase();
+  if (statusLower === 'pending' || statusLower === 'menunggu') {
+    return res.status(403).json({ 
+      success: false, 
+      error: "Sesi Tertunda: Pendaftaran akun Anda masih menunggu persetujuan (approval) dari Superadmin." 
+    });
+  } else if (statusLower === 'rejected' || statusLower === 'ditolak') {
+    return res.status(403).json({ 
+      success: false, 
+      error: "Akses Ditolak: Permohonan pendaftaran akun Anda ditolak oleh Superadmin." 
+    });
   }
 
   return res.json({
     success: true,
-    needsCancelReset: matchedUser.status === 'minta_reset',
+    needsCancelReset: statusLower === 'minta_reset' || statusLower === 'reset_requested',
     user: {
       id: matchedUser.id,
       username: matchedUser.username,
-      role: matchedUser.role,
-      status: matchedUser.status,
-      displayName: matchedUser.display_name || matchedUser.displayName,
-      avatarUrl: matchedUser.avatar_url || matchedUser.avatarUrl
+      role: matchedUser.role || 'superadmin',
+      status: matchedUser.status || 'approved',
+      displayName: matchedUser.display_name || matchedUser.displayName || matchedUser.nama || matchedUser.username,
+      avatarUrl: matchedUser.avatar_url || matchedUser.avatarUrl || ''
     }
   });
 });
