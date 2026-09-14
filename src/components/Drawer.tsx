@@ -52,9 +52,7 @@ const MENU_ITEMS: MenuItemDef[] = [
     id: 'home', 
     label: 'Home', 
     icon: Home,
-    submenus: [
-      { id: 'dashboard', label: 'Dashboard Utama' }
-    ]
+    submenus: []
   },
   { 
     id: 'group_chat', 
