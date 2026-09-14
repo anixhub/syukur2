@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, 
@@ -110,8 +110,53 @@ export default function HomeView({
   const [selectedTaskDetail, setSelectedTaskDetail] = useState<TaskItem | null>(null);
   const [selectedSantriForDetail, setSelectedSantriForDetail] = useState<Santri | null>(null);
 
-  // Tab for Top 10 Card (Pelanggaran vs Pelanggar)
+  // Tab and Gender Filter for Top 10 Card (Pelanggaran vs Pelanggar & Semua/Putra/Putri)
   const [violationsTab, setViolationsTab] = useState<'pelanggaran' | 'pelanggar'>('pelanggaran');
+  const [violationsGenderFilter, setViolationsGenderFilter] = useState<'Semua' | 'Putra' | 'Putri'>('Semua');
+
+  // Keamanan records state for Home module Top 10 cards - strictly synchronized with Modul Keamanan
+  const [liveKeamananList, setLiveKeamananList] = useState<KeamananRecord[]>(() => {
+    if (Array.isArray(keamananList)) return keamananList;
+    try {
+      const cached = localStorage.getItem('smartsantri_keamananList');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  });
+
+  // Keep liveKeamananList strictly synchronized with keamananList prop from App.tsx
+  useEffect(() => {
+    if (Array.isArray(keamananList)) {
+      setLiveKeamananList(keamananList);
+    }
+  }, [keamananList]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadKeamanan = async () => {
+      try {
+        const data = await fetchTableData<KeamananRecord>('keamanan', 'smartsantri_keamananList', []);
+        if (isMounted && Array.isArray(data)) {
+          setLiveKeamananList(data);
+        }
+      } catch (err) {}
+    };
+    loadKeamanan();
+
+    const unsubscribeWs = subscribeRealtimeChanges((payload: any) => {
+      if (!payload.table || payload.table === 'keamanan' || payload.action === 'truncate_all') {
+        loadKeamanan();
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribeWs();
+    };
+  }, []);
 
   // Add task form states
   const [taskFormText, setTaskFormText] = useState('');
@@ -1069,37 +1114,113 @@ export default function HomeView({
 
   const currentActivity = allActivities[activityIndex] || allActivities[0];
 
-  // 6. Top Violators (Santri) strictly from keamananList
-  const topViolators = useMemo(() => {
-    if (!keamananList || keamananList.length === 0) return [];
-    const map = new Map<string, { nama: string; poin: number; count: number }>();
-    keamananList.forEach(k => {
-      const existing = map.get(k.namaSantri) || { nama: k.namaSantri, poin: 0, count: 0 };
-      existing.poin += k.poin || 0;
-      existing.count += 1;
-      map.set(k.namaSantri, existing);
-    });
-    return Array.from(map.values())
-      .sort((a, b) => b.poin - a.poin)
-      .slice(0, 10);
-  }, [keamananList]);
+  // Student lookup helper matching santriId, NIS, or Student Name (identical to KeamananView)
+  const findStudentForRecord = useCallback((rec: KeamananRecord): Santri | undefined => {
+    if (rec.santriId) {
+      const found = santriList.find(s => s.id === rec.santriId);
+      if (found) return found;
+    }
+    const recNis = (rec.nis || '').trim();
+    if (recNis && recNis !== '-') {
+      const found = santriList.find(s => (s.nis || '').trim() === recNis);
+      if (found) return found;
+    }
+    const recName = (rec.namaSantri || (rec as any).nama || '').trim().toLowerCase();
+    if (!recName) return undefined;
+    return santriList.find(s => (s.nama || '').trim().toLowerCase() === recName);
+  }, [santriList]);
 
-  // 7. Top Violation Types (Jenis Pelanggaran) strictly from keamananList
+  // Real data source prioritized from keamananList prop or liveKeamananList (strictly real data)
+  const currentKeamananData = useMemo<KeamananRecord[]>(() => {
+    if (Array.isArray(keamananList) && keamananList.length > 0) {
+      return keamananList;
+    }
+    if (Array.isArray(liveKeamananList) && liveKeamananList.length > 0) {
+      return liveKeamananList;
+    }
+    try {
+      const cached = localStorage.getItem('smartsantri_keamananList');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  }, [keamananList, liveKeamananList]);
+
+  // Filtered list by gender matching Keamanan module logic
+  const filteredKeamananList = useMemo(() => {
+    if (!currentKeamananData || currentKeamananData.length === 0) return [];
+    if (violationsGenderFilter === 'Semua') return currentKeamananData;
+    return currentKeamananData.filter(rec => {
+      const student = findStudentForRecord(rec);
+      if (student && student.gender) {
+        return student.gender === violationsGenderFilter;
+      }
+      return true;
+    });
+  }, [currentKeamananData, violationsGenderFilter, findStudentForRecord]);
+
+  // 6. Top Violators (Santri) strictly aggregated from Modul Keamanan data
+  const topViolators = useMemo(() => {
+    if (!filteredKeamananList || filteredKeamananList.length === 0) return [];
+    const map = new Map<string, { 
+      id: string;
+      nama: string; 
+      santriId?: string; 
+      poin: number; 
+      count: number; 
+      santri?: Santri;
+      kelas: string;
+      kamar: string;
+    }>();
+
+    filteredKeamananList.forEach(k => {
+      const student = findStudentForRecord(k);
+      const studentName = (student?.nama || k.namaSantri || (k as any).nama || 'Santri').trim();
+      const key = student ? student.id : studentName.toLowerCase();
+      const existing = map.get(key) || { 
+        id: key,
+        nama: studentName, 
+        santriId: student?.id || k.santriId,
+        poin: 0, 
+        count: 0,
+        santri: student,
+        kelas: student?.kelas || k.kelas || 'Tanpa Kelas',
+        kamar: student?.kamar || k.kamar || 'Tanpa Kamar'
+      };
+      existing.poin += Number(k.poin) || 0;
+      existing.count += 1;
+      if (student && !existing.santri) {
+        existing.santri = student;
+        existing.kelas = student.kelas || existing.kelas;
+        existing.kamar = student.kamar || existing.kamar;
+      }
+      map.set(key, existing);
+    });
+
+    // Identical sorting rule with Modul Keamanan: count first, then points
+    return Array.from(map.values())
+      .sort((a, b) => b.count - a.count || b.poin - a.poin)
+      .slice(0, 10);
+  }, [filteredKeamananList, findStudentForRecord]);
+
+  // 7. Top Violation Types (Jenis Pelanggaran) strictly from Modul Keamanan data
   const topViolationTypes = useMemo(() => {
-    if (!keamananList || keamananList.length === 0) return [];
+    if (!filteredKeamananList || filteredKeamananList.length === 0) return [];
     const map = new Map<string, { jenis: string; poin: number; count: number }>();
-    keamananList.forEach(k => {
-      const jenisName = (k.jenisPelanggaran || (k as any).pelanggaran || 'Pelanggaran').trim();
+    filteredKeamananList.forEach(k => {
+      const jenisName = (k.jenisPelanggaran || (k as any).pelanggaran || (k as any).jenis_pelanggaran || 'Pelanggaran Lainnya').trim();
       if (!jenisName) return;
       const existing = map.get(jenisName) || { jenis: jenisName, poin: 0, count: 0 };
-      existing.poin += k.poin || 0;
+      existing.poin += Number(k.poin) || 0;
       existing.count += 1;
       map.set(jenisName, existing);
     });
     return Array.from(map.values())
       .sort((a, b) => b.count - a.count || b.poin - a.poin)
       .slice(0, 10);
-  }, [keamananList]);
+  }, [filteredKeamananList]);
 
   // Format task deadline / overdue remaining time with ticking seconds
   const formatTaskTime = (targetTimestamp?: number, currentNow: number = Date.now()) => {
@@ -1860,136 +1981,190 @@ export default function HomeView({
 
         {/* Top 10 Pelanggaran / Pelanggar Card */}
         <div className="md:col-span-7 bg-[#008265] rounded-3xl p-4 md:p-5 text-white shadow-md border border-emerald-600/40 flex flex-col justify-between h-full relative overflow-hidden">
-          {/* Header Top Pills Tabs (Top 10 Pelanggaran & Top 10 Pelanggar) */}
-          <div className="flex items-center justify-between gap-2 mb-3 pb-2.5 border-b border-emerald-600/30 shrink-0">
-            <div className="flex items-center gap-2">
+          {/* Header Top Pills Tabs (Top 10 Pelanggaran & Top 10 Pelanggar + Gender Filter) */}
+          <div className="flex flex-wrap items-center justify-between gap-2.5 mb-3 pb-2.5 border-b border-emerald-600/30 shrink-0">
+            {/* Left: Tab Selector */}
+            <div className="flex items-center gap-1.5 bg-[#006e55] p-1 rounded-full border border-emerald-500/30">
               <button 
                 onClick={() => setViolationsTab('pelanggaran')}
-                className={`text-xs px-4 py-1.5 rounded-full font-black transition-all cursor-pointer ${
+                className={`text-xs px-3.5 py-1 rounded-full font-black transition-all cursor-pointer ${
                   violationsTab === 'pelanggaran'
                     ? 'bg-[#80ED99] text-[#005944] shadow-sm'
-                    : 'bg-[#007359] hover:bg-[#00634c] text-white border border-emerald-400/30'
+                    : 'text-white hover:text-emerald-100 hover:bg-emerald-700/40'
                 }`}
               >
                 Top 10 Pelanggaran
               </button>
               <button 
                 onClick={() => setViolationsTab('pelanggar')}
-                className={`text-xs px-4 py-1.5 rounded-full font-black transition-all cursor-pointer ${
+                className={`text-xs px-3.5 py-1 rounded-full font-black transition-all cursor-pointer ${
                   violationsTab === 'pelanggar'
                     ? 'bg-[#80ED99] text-[#005944] shadow-sm'
-                    : 'bg-[#007359] hover:bg-[#00634c] text-white border border-emerald-400/30'
+                    : 'text-white hover:text-emerald-100 hover:bg-emerald-700/40'
                 }`}
               >
                 Top 10 Pelanggar
               </button>
             </div>
 
-            <button 
-              onClick={() => onChangeModule('keamanan')}
-              className="p-1.5 text-emerald-200 hover:text-white transition-colors cursor-pointer flex items-center gap-1 text-xs font-extrabold"
-              title="Buka Modul Keamanan"
-            >
-              <span className="hidden sm:inline">Modul Keamanan</span>
-              <ArrowUpRight className="w-4.5 h-4.5" />
-            </button>
+            {/* Right: Gender Filter Pills & Module Link */}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center bg-[#006e55] p-0.5 rounded-full border border-emerald-500/30 text-[11px] font-bold">
+                {(['Semua', 'Putra', 'Putri'] as const).map((g) => (
+                  <button
+                    key={g}
+                    onClick={() => setViolationsGenderFilter(g)}
+                    className={`px-2.5 py-0.5 rounded-full transition-all cursor-pointer ${
+                      violationsGenderFilter === g
+                        ? 'bg-white text-[#005944] font-black shadow-xs'
+                        : 'text-emerald-100 hover:text-white'
+                    }`}
+                  >
+                    {g}
+                  </button>
+                ))}
+              </div>
+
+              <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-800/70 border border-emerald-400/20 text-[10px] font-black text-[#80ED99]">
+                {filteredKeamananList.length} Kasus
+              </span>
+
+              <button 
+                onClick={() => onChangeModule('keamanan', 'overview')}
+                className="p-1 text-emerald-200 hover:text-white transition-colors cursor-pointer flex items-center gap-1 text-xs font-black"
+                title="Buka Modul Keamanan & Perizinan"
+              >
+                <span className="hidden lg:inline">Modul Keamanan</span>
+                <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
+              </button>
+            </div>
           </div>
 
           {/* List Content - RATA ATAS dengan rounded-full pill items dan scrollable */}
-          <div className="space-y-2 overflow-y-auto max-h-[210px] pr-1 flex-1">
-            {violationsTab === 'pelanggaran' ? (
+          <div className="space-y-2 overflow-y-auto max-h-[220px] pr-1 flex-1">
+            {filteredKeamananList.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-7 px-4 text-center">
+                <div className="w-11 h-11 rounded-2xl bg-emerald-700/60 border border-emerald-400/30 flex items-center justify-center text-[#80ED99] mb-2.5 shadow-inner">
+                  <CheckCircle2 className="w-6 h-6 stroke-[2.5]" />
+                </div>
+                <p className="text-sm font-black text-white">Alhamdulillah, Belum Ada Catatan Pelanggaran</p>
+                <p className="text-xs text-emerald-100/80 mt-1 max-w-sm">
+                  {violationsGenderFilter === 'Semua' 
+                    ? 'Data sinkron langsung dengan Modul Keamanan. Semua santri tertib dan disiplin.' 
+                    : `Tidak ada catatan pelanggaran santri ${violationsGenderFilter.toLowerCase()} pada Modul Keamanan.`}
+                </p>
+                <button
+                  onClick={() => onChangeModule('keamanan', 'catatan')}
+                  className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#80ED99] hover:bg-[#6ee788] text-[#005944] font-black text-xs transition-all shadow-sm active:scale-95 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                  <span>Input Pelanggaran Baru</span>
+                </button>
+              </div>
+            ) : violationsTab === 'pelanggaran' ? (
               topViolationTypes.length > 0 ? (
-                topViolationTypes.slice(0, 10).map((item, idx) => {
+                topViolationTypes.map((item, idx) => {
                   const rank = idx + 1;
-                  let rankNumColor = 'text-[#008265]';
-                  if (rank === 1) rankNumColor = 'text-[#FF3B3B]';
-                  else if (rank === 2) rankNumColor = 'text-[#FF8C00]';
-                  else if (rank === 3) rankNumColor = 'text-[#EAB308]';
+                  let rankBadge = 'bg-white text-[#008265]';
+                  if (rank === 1) rankBadge = 'bg-rose-500 text-white shadow-xs';
+                  else if (rank === 2) rankBadge = 'bg-amber-500 text-white shadow-xs';
+                  else if (rank === 3) rankBadge = 'bg-yellow-400 text-slate-900 shadow-xs';
 
                   return (
                     <div 
                       key={idx}
-                      onClick={() => onChangeModule('keamanan')}
-                      className="bg-[#12A07E] hover:bg-[#0F9172] border border-emerald-400/20 rounded-full py-2 px-3.5 flex items-center justify-between cursor-pointer transition-all group shadow-2xs"
+                      onClick={() => onChangeModule('keamanan', 'riwayat')}
+                      title="Klik untuk membuka riwayat di Modul Keamanan"
+                      className="bg-[#12A07E] hover:bg-[#0F9172] border border-emerald-400/20 rounded-full py-2 px-3.5 flex items-center justify-between cursor-pointer transition-all group shadow-2xs active:scale-[0.99]"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <span className={`w-7 h-7 rounded-full bg-white ${rankNumColor} font-black flex items-center justify-center text-sm shrink-0 shadow-xs`}>
+                        <span className={`w-7 h-7 rounded-full ${rankBadge} font-black flex items-center justify-center text-xs shrink-0`}>
                           {rank}
                         </span>
-                        <span className="text-white font-extrabold text-sm md:text-base truncate group-hover:text-yellow-200 transition-colors">
+                        <span className="text-white font-extrabold text-xs sm:text-sm truncate group-hover:text-yellow-200 transition-colors">
                           {item.jenis}
                         </span>
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-[#80ED99] font-black text-sm md:text-base">{item.count}x</span>
-                        <span className="text-white/90 text-xs font-semibold italic mr-1">Kejadian</span>
-                        <span className="text-[#80ED99] font-black text-sm md:text-base">{item.poin}</span>
-                        <span className="text-white/90 text-xs font-semibold italic">Poin</span>
-                        <ArrowUpRight className="w-4 h-4 text-white ml-1 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform stroke-[2.5]" />
+                        <span className="text-[#80ED99] font-black text-xs sm:text-sm">{item.count}x</span>
+                        <span className="text-white/90 text-[11px] font-semibold italic mr-1">Kejadian</span>
+                        <span className="text-yellow-300 font-black text-xs sm:text-sm">{item.poin}</span>
+                        <span className="text-white/90 text-[11px] font-semibold italic">Poin</span>
+                        <ArrowUpRight className="w-4 h-4 text-white ml-0.5 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform stroke-[2.5]" />
                       </div>
                     </div>
                   );
                 })
               ) : (
-                <div className="flex flex-col items-center justify-center h-full py-10 text-white/80 text-xs font-semibold">
-                  <span>Belum ada data catatan pelanggaran</span>
+                <div className="flex flex-col items-center justify-center h-full py-8 text-white/80 text-xs font-semibold">
+                  <span>Tidak ada data pelanggaran untuk kategori ini</span>
                 </div>
               )
             ) : (
               topViolators.length > 0 ? (
-                topViolators.slice(0, 10).map((item, idx) => {
+                topViolators.map((item, idx) => {
                   const rank = idx + 1;
-                  let rankNumColor = 'text-[#008265]';
-                  if (rank === 1) rankNumColor = 'text-[#FF3B3B]';
-                  else if (rank === 2) rankNumColor = 'text-[#FF8C00]';
-                  else if (rank === 3) rankNumColor = 'text-[#EAB308]';
+                  let rankBadge = 'bg-white text-[#008265]';
+                  if (rank === 1) rankBadge = 'bg-rose-500 text-white shadow-xs';
+                  else if (rank === 2) rankBadge = 'bg-amber-500 text-white shadow-xs';
+                  else if (rank === 3) rankBadge = 'bg-yellow-400 text-slate-900 shadow-xs';
 
                   return (
                     <div 
-                      key={idx}
+                      key={item.id || idx}
                       onClick={() => {
-                        const found = santriList.find(s => s.nama.toLowerCase() === item.nama.toLowerCase());
-                        if (found) {
-                          setSelectedSantriForDetail(found);
+                        const student = item.santri || santriList.find(s => 
+                          (item.santriId && s.id === item.santriId) ||
+                          s.nama.toLowerCase().trim() === item.nama.toLowerCase().trim()
+                        );
+                        if (student) {
+                          setSelectedSantriForDetail(student);
                         } else {
                           setSelectedSantriForDetail({
-                            id: 'fallback-' + idx,
+                            id: item.santriId || ('fallback-' + idx),
                             nis: '-',
                             nama: item.nama,
-                            kelas: '-',
-                            kamar: '-',
+                            kelas: item.kelas || '-',
+                            kamar: item.kamar || '-',
                             asal: '-',
-                            gender: 'Putra',
+                            gender: violationsGenderFilter === 'Putri' ? 'Putri' : 'Putra',
                             tanggalMasuk: '-',
                             statusKeanggotaan: 'Aktif'
                           });
                         }
                       }}
-                      className="bg-[#12A07E] hover:bg-[#0F9172] border border-emerald-400/20 rounded-full py-2 px-3.5 flex items-center justify-between cursor-pointer transition-all group shadow-2xs"
+                      title="Klik untuk melihat profil santri & riwayat pelanggaran"
+                      className="bg-[#12A07E] hover:bg-[#0F9172] border border-emerald-400/20 rounded-full py-1.5 px-3.5 flex items-center justify-between cursor-pointer transition-all group shadow-2xs active:scale-[0.99]"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <span className={`w-7 h-7 rounded-full bg-white ${rankNumColor} font-black flex items-center justify-center text-sm shrink-0 shadow-xs`}>
+                        <span className={`w-7 h-7 rounded-full ${rankBadge} font-black flex items-center justify-center text-xs shrink-0`}>
                           {rank}
                         </span>
-                        <span className="text-white font-extrabold text-sm md:text-base truncate group-hover:text-yellow-200 transition-colors">
-                          {item.nama}
-                        </span>
+
+                        <div className="min-w-0">
+                          <span className="text-white font-black text-xs sm:text-sm truncate block group-hover:text-yellow-200 transition-colors">
+                            {item.nama}
+                          </span>
+                          <span className="text-emerald-100/90 text-[10px] font-medium block truncate">
+                            {item.kelas} • {item.kamar}
+                          </span>
+                        </div>
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-[#80ED99] font-black text-sm md:text-base">{item.poin}</span>
-                        <span className="text-white/90 text-xs font-semibold italic mr-1">Poin</span>
-                        <span className="text-[#80ED99] font-black text-sm md:text-base">{item.count}x</span>
-                        <span className="text-white/90 text-xs font-semibold italic">Pelanggaran</span>
-                        <ArrowUpRight className="w-4 h-4 text-white ml-1 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform stroke-[2.5]" />
+                        <span className="text-[#80ED99] font-black text-xs sm:text-sm">{item.count}x</span>
+                        <span className="text-white/90 text-[11px] font-semibold italic mr-1">Kasus</span>
+                        <span className="text-yellow-300 font-black text-xs sm:text-sm">{item.poin}</span>
+                        <span className="text-white/90 text-[11px] font-semibold italic">Poin</span>
+                        <ArrowUpRight className="w-4 h-4 text-white ml-0.5 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform stroke-[2.5]" />
                       </div>
                     </div>
                   );
                 })
               ) : (
-                <div className="flex flex-col items-center justify-center h-full py-10 text-white/80 text-xs font-semibold">
-                  <span>Belum ada data santri pelanggar</span>
+                <div className="flex flex-col items-center justify-center h-full py-8 text-white/80 text-xs font-semibold">
+                  <span>Tidak ada santri pelanggar untuk filter ini</span>
                 </div>
               )
             )}

@@ -202,8 +202,10 @@ export default function KamarSub({
   const [menuDropdown, setMenuDropdown] = useState<{
     type: 'kompleks' | 'kamar' | 'santri';
     id: string;
-    top: number;
+    top?: number;
+    bottom?: number;
     right: number;
+    openUpward: boolean;
     data?: any;
   } | null>(null);
 
@@ -220,15 +222,36 @@ export default function KamarSub({
       return;
     }
     const rect = e.currentTarget.getBoundingClientRect();
-    const right = Math.max(8, window.innerWidth - rect.right);
-    const top = rect.bottom + 4;
-    setMenuDropdown({ type, id, top, right, data });
+    const right = Math.max(10, window.innerWidth - rect.right);
+    
+    // Estimate menu height depending on menu type
+    const estimatedHeight = type === 'santri' ? 240 : 120;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    
+    // Open upward if near bottom of screen and more space above
+    const openUpward = spaceBelow < estimatedHeight && spaceAbove > 140;
+    
+    let top: number | undefined;
+    let bottom: number | undefined;
+
+    if (openUpward) {
+      bottom = Math.max(10, window.innerHeight - rect.top + 4);
+    } else {
+      top = Math.max(10, Math.min(window.innerHeight - estimatedHeight - 10, rect.bottom + 4));
+    }
+
+    setMenuDropdown({ type, id, top, bottom, right, openUpward, data });
   };
 
-  // Close dropdown menu automatically on any scroll event
+  // Close dropdown menu automatically on outer window scroll, but allow scrolling inside menu
   useEffect(() => {
     if (!menuDropdown) return;
-    const handleScroll = () => {
+    const handleScroll = (e: Event) => {
+      const target = e.target as HTMLElement;
+      if (target && target.closest && target.closest('.fixed.z-50')) {
+        return;
+      }
       setMenuDropdown(null);
     };
     window.addEventListener('scroll', handleScroll, true);
@@ -356,17 +379,28 @@ export default function KamarSub({
 
   const searchedRooms = roomsPool.filter(r => {
     if (!roomSearchQuery.trim()) return true;
-    const q = roomSearchQuery.trim().toLowerCase();
-    const matchRoomName = (r.nama || '').toLowerCase().includes(q);
-    const matchKetua = (r.ketuaKamar || '').toLowerCase().includes(q);
+    const tokens = roomSearchQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const roomName = (r.nama || '').toLowerCase();
+    const ketua = (r.ketuaKamar || '').toLowerCase();
     const complex = kompleksList.find(k => k.id === r.kompleksId);
-    const matchComplex = (complex?.nama || '').toLowerCase().includes(q);
-    const matchStudent = santriList.some(s => 
-      (s.kamar || '').trim().toLowerCase() === (r.nama || '').trim().toLowerCase() &&
-      isGenderMatch(selectedGender, s.gender) &&
-      ((s.nama || (s as any).namaLengkap || (s as any).nama_lengkap || '').toLowerCase().includes(q) || (s.nis || (s as any).nism || '').toLowerCase().includes(q))
-    );
-    return matchRoomName || matchKetua || matchComplex || matchStudent;
+    const complexName = (complex?.nama || '').toLowerCase();
+
+    // Check if room metadata or room occupants match ALL search tokens
+    return tokens.every(token => {
+      if (roomName.includes(token) || ketua.includes(token) || complexName.includes(token)) {
+        return true;
+      }
+      return santriList.some(s => 
+        (s.kamar || '').trim().toLowerCase() === roomName &&
+        isGenderMatch(selectedGender, s.gender) &&
+        (
+          (s.nama || (s as any).namaLengkap || (s as any).nama_lengkap || '').toLowerCase().includes(token) || 
+          (s.nis || (s as any).nism || '').toLowerCase().includes(token) ||
+          (s.nomorLemari || '').toLowerCase().includes(token) ||
+          `${s.desa || ''} ${s.kecamatan || ''} ${s.kabupaten || ''} ${s.asal || ''}`.toLowerCase().includes(token)
+        )
+      );
+    });
   });
 
   const sortedRooms = [...searchedRooms].sort((a, b) => {
@@ -400,13 +434,15 @@ export default function KamarSub({
   // Filtered members for detail view
   const filteredStudents = currentRoomMembers.filter(s => {
     // Search query
-    if (studentSearchQuery) {
-      const q = studentSearchQuery.trim().toLowerCase();
-      const matchName = (s.nama || (s as any).namaLengkap || (s as any).nama_lengkap || '').toLowerCase().includes(q);
-      const matchNis = (s.nis || (s as any).nism || '').toLowerCase().includes(q);
-      const matchLemari = (s.nomorLemari || '').toLowerCase().includes(q);
-      const matchAlamat = `${s.desa || ''} ${s.kecamatan || ''} ${s.kabupaten || ''}`.toLowerCase().includes(q);
-      if (!matchName && !matchNis && !matchLemari && !matchAlamat) return false;
+    if (studentSearchQuery.trim()) {
+      const tokens = studentSearchQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      const sNama = (s.nama || (s as any).namaLengkap || (s as any).nama_lengkap || '').toLowerCase();
+      const sNis = (s.nis || (s as any).nism || '').toLowerCase();
+      const sLemari = (s.nomorLemari || '').toLowerCase();
+      const sAlamat = `${s.desa || ''} ${s.kecamatan || ''} ${s.kabupaten || ''} ${s.alamat || ''} ${s.asal || ''}`.toLowerCase();
+      const sStatus = (s.statusDomisili || s.status || 'Muqim').toLowerCase();
+      const combined = `${sNama} ${sNis} ${sLemari} ${sAlamat} ${sStatus}`;
+      if (!tokens.every(token => combined.includes(token))) return false;
     }
 
     // Status filter (Muqim vs Kampung)
@@ -2986,12 +3022,17 @@ export default function KamarSub({
               onClick={() => setMenuDropdown(null)}
             />
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: -4 }}
+              initial={{ opacity: 0, scale: 0.95, y: menuDropdown.openUpward ? 6 : -6 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: -4 }}
-              transition={{ duration: 0.1 }}
-              style={{ top: menuDropdown.top, right: menuDropdown.right }}
-              className="fixed w-36 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1.5 text-xs font-bold text-slate-700"
+              exit={{ opacity: 0, scale: 0.95, y: menuDropdown.openUpward ? 6 : -6 }}
+              transition={{ duration: 0.12 }}
+              style={{ 
+                top: menuDropdown.top, 
+                bottom: menuDropdown.bottom, 
+                right: menuDropdown.right,
+                maxHeight: 'calc(100vh - 20px)'
+              }}
+              className="fixed w-44 max-w-[calc(100vw-24px)] bg-white border border-slate-200/90 rounded-2xl shadow-2xl z-50 py-1.5 text-xs font-bold text-slate-700 overflow-y-auto"
               onClick={e => e.stopPropagation()}
             >
               {menuDropdown.type === 'kompleks' && (

@@ -320,7 +320,16 @@ export default function App() {
   // Unified States for Pesantren Records (Full online Supabase state)
   const [santriList, setSantriList] = useState<Santri[]>([]);
   const [bendaharaList, setBendaharaList] = useState<BendaharaRecord[]>([]);
-  const [keamananList, setKeamananList] = useState<KeamananRecord[]>([]);
+  const [keamananList, setKeamananList] = useState<KeamananRecord[]>(() => {
+    try {
+      const cached = localStorage.getItem('smartsantri_keamananList');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  });
   const [humasList, setHumasList] = useState<HumasAgenda[]>([]);
   const [pendidikanList, setPendidikanList] = useState<KelasPendidikan[]>([]);
   
@@ -455,7 +464,7 @@ export default function App() {
         });
     }
 
-    if (activeModule === 'keamanan' && !loadedModulesRef.current.has('keamanan')) {
+    if ((activeModule === 'keamanan' || activeModule === 'home') && !loadedModulesRef.current.has('keamanan')) {
       loadedModulesRef.current.add('keamanan');
       fetchTableData<KeamananRecord>('keamanan', 'smartsantri_keamananList', [])
         .then(data => {

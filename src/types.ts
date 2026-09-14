@@ -94,6 +94,9 @@ export interface KeamananRecord {
   poin: number;
   santriId?: string;
   nis?: string;
+  kelas?: string;
+  kategori?: string;
+  status?: string;
 }
 
 export interface BendaharaRecord {
