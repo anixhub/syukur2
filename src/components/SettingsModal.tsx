@@ -282,6 +282,21 @@ export default function SettingsModal({
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [passwordModalError, setPasswordModalError] = useState<string | null>(null);
   const [passwordModalSuccess, setPasswordModalSuccess] = useState<string | null>(null);
+  const [isOldPasswordWrong, setIsOldPasswordWrong] = useState(false);
+  const [isResetRequestModalOpen, setIsResetRequestModalOpen] = useState(false);
+  const [resetRequestSubmitting, setResetRequestSubmitting] = useState(false);
+  const [passwordAlertPopup, setPasswordAlertPopup] = useState<{
+    isOpen: boolean;
+    type: 'error' | 'success' | 'warning' | 'info';
+    title: string;
+    message: string;
+    onConfirm?: () => void;
+  }>({
+    isOpen: false,
+    type: 'info',
+    title: '',
+    message: ''
+  });
 
   // Pondok Profile State
   const [pondokProfile, setPondokProfile] = useState<PesantrenProfile>(() => {
@@ -599,43 +614,197 @@ export default function SettingsModal({
     setPasswordModalError(null);
     setPasswordModalSuccess(null);
 
+    // 1. Validasi input kata sandi lama kosong
     if (!currentPassword.trim()) {
-      setPasswordModalError('Silakan masukkan kata sandi lama.');
+      setPasswordAlertPopup({
+        isOpen: true,
+        type: 'error',
+        title: 'Kata Sandi Lama Kosong',
+        message: 'Silakan masukkan kata sandi lama Anda saat ini untuk verifikasi keamanan.'
+      });
       return;
     }
+
+    // 2. Validasi input kata sandi baru kosong
     if (!newPassword) {
-      setPasswordModalError('Silakan masukkan kata sandi baru.');
+      setPasswordAlertPopup({
+        isOpen: true,
+        type: 'error',
+        title: 'Kata Sandi Baru Kosong',
+        message: 'Silakan masukkan kata sandi baru yang ingin Anda gunakan.'
+      });
       return;
     }
+
+    // 3. Validasi panjang minimal kata sandi baru
     if (newPassword.length < 4) {
-      setPasswordModalError('Kata sandi baru minimal 4 karakter.');
+      setPasswordAlertPopup({
+        isOpen: true,
+        type: 'error',
+        title: 'Kata Sandi Terlalu Pendek',
+        message: 'Kata sandi baru minimal harus terdiri dari 4 karakter.'
+      });
       return;
     }
+
+    // 4. Validasi kesamaan kata sandi baru dengan konfirmasi kata sandi baru
     if (newPassword !== confirmPassword) {
-      setPasswordModalError('Konfirmasi kata sandi baru tidak cocok.');
+      setPasswordAlertPopup({
+        isOpen: true,
+        type: 'error',
+        title: 'Konfirmasi Sandi Tidak Cocok',
+        message: 'Kata sandi baru yang diinput harus sama persis dengan ulangi kata sandi baru. Silakan periksa kembali ketikan Anda.'
+      });
       return;
     }
 
     setPasswordSaving(true);
     try {
-      const updatePayload: any = {
-        password: newPassword
-      };
-      await updateTableRow<any>('app_credentials', 'smartsantri_app_credentials', username, updatePayload);
+      // 5. Verifikasi kata sandi lama terhadap akun saat ini di database / credentials
+      const credData = await fetchTableData<AppCredentials>('app_credentials', 'smartsantri_app_credentials');
+      const activeUserCred = (credData || []).find(
+        c => c.username && c.username.toLowerCase() === username.toLowerCase()
+      );
 
-      setPasswordModalSuccess('Kata sandi berhasil diubah!');
-      setTimeout(() => {
-        setIsPasswordModalOpen(false);
-        setCurrentPassword('');
-        setNewPassword('');
-        setConfirmPassword('');
-        setPasswordModalSuccess(null);
-        setProfileSuccessMsg('Kata sandi berhasil diperbarui.');
-      }, 750);
+      const defaultPass = '1234';
+      const expectedPassword = activeUserCred?.password || (
+        (activeUserCred?.id === 'superadmin' || username.toLowerCase() === 'superadmin@attaroqqy.com') 
+          ? defaultPass 
+          : ''
+      );
+
+      // Jika kata sandi lama salah
+      if (currentPassword !== expectedPassword) {
+        setIsOldPasswordWrong(true);
+        setPasswordAlertPopup({
+          isOpen: true,
+          type: 'error',
+          title: 'Kata Sandi Lama Salah',
+          message: 'Kata sandi lama yang Anda masukkan tidak sesuai dengan kata sandi saat ini. Jika Anda lupa kata sandi lama, silakan gunakan tombol "Lupa Kata Sandi" untuk meminta akses reset kata sandi kepada Superadmin.'
+        });
+        return;
+      }
+
+      // Jika kata sandi lama benar
+      setIsOldPasswordWrong(false);
+
+      const targetId = activeUserCred?.id || username;
+      const updatePayload: any = {
+        password: newPassword,
+        status: 'approved'
+      };
+
+      await updateTableRow<any>('app_credentials', 'smartsantri_app_credentials', targetId, updatePayload);
+
+      // Update in state
+      setCredentials(prev => prev.map(c => (c.username.toLowerCase() === username.toLowerCase() ? { ...c, password: newPassword } : c)));
+
+      // Update in localStorage
+      const localCredsStr = localStorage.getItem('smartsantri_app_credentials');
+      if (localCredsStr) {
+        try {
+          const parsed = JSON.parse(localCredsStr);
+          if (Array.isArray(parsed)) {
+            const updated = parsed.map((c: any) => c.username && c.username.toLowerCase() === username.toLowerCase() ? { ...c, password: newPassword } : c);
+            localStorage.setItem('smartsantri_app_credentials', JSON.stringify(updated));
+          }
+        } catch (e) {}
+      }
+
+      window.dispatchEvent(new Event('smartsantri_activity_updated'));
+      window.dispatchEvent(new Event('storage'));
+
+      // Tampilkan popup sukses
+      setPasswordAlertPopup({
+        isOpen: true,
+        type: 'success',
+        title: 'Kata Sandi Berhasil Diubah',
+        message: 'Kata sandi akun Anda telah berhasil diperbarui. Silakan gunakan kata sandi baru untuk login berikutnya.',
+        onConfirm: () => {
+          setIsPasswordModalOpen(false);
+          setCurrentPassword('');
+          setNewPassword('');
+          setConfirmPassword('');
+          setIsOldPasswordWrong(false);
+          setProfileSuccessMsg('Kata sandi berhasil diperbarui.');
+        }
+      });
     } catch (err: any) {
-      setPasswordModalError(err.message || 'Gagal mengubah kata sandi.');
+      setPasswordAlertPopup({
+        isOpen: true,
+        type: 'error',
+        title: 'Gagal Mengubah Kata Sandi',
+        message: err.message || 'Terjadi kesalahan sistem saat memperbarui kata sandi. Silakan coba lagi.'
+      });
     } finally {
       setPasswordSaving(false);
+    }
+  };
+
+  // Minta Akses Reset Sandi Handler
+  const handleSendResetRequest = async () => {
+    setResetRequestSubmitting(true);
+    try {
+      if (role === 'superadmin' || username.toLowerCase() === 'superadmin@attaroqqy.com') {
+        setPasswordAlertPopup({
+          isOpen: true,
+          type: 'warning',
+          title: 'Akun Superadmin',
+          message: 'Akun Superadmin adalah akun utama sistem dan tidak dapat mengajukan reset mandiri ke superadmin.'
+        });
+        return;
+      }
+
+      const credData = await fetchTableData<AppCredentials>('app_credentials', 'smartsantri_app_credentials');
+      const activeUserCred = (credData || []).find(
+        c => c.username && c.username.toLowerCase() === username.toLowerCase()
+      );
+
+      const targetId = activeUserCred?.id || username;
+      const updatePayload: any = {
+        status: 'minta_reset'
+      };
+
+      await updateTableRow<any>('app_credentials', 'smartsantri_app_credentials', targetId, updatePayload);
+
+      setCredentials(prev => prev.map(c => (c.username.toLowerCase() === username.toLowerCase() ? { ...c, status: 'minta_reset' } : c)));
+
+      const localCredsStr = localStorage.getItem('smartsantri_app_credentials');
+      if (localCredsStr) {
+        try {
+          const parsed = JSON.parse(localCredsStr);
+          if (Array.isArray(parsed)) {
+            const updated = parsed.map((c: any) => c.username && c.username.toLowerCase() === username.toLowerCase() ? { ...c, status: 'minta_reset' } : c);
+            localStorage.setItem('smartsantri_app_credentials', JSON.stringify(updated));
+          }
+        } catch (e) {}
+      }
+
+      window.dispatchEvent(new Event('smartsantri_activity_updated'));
+      window.dispatchEvent(new Event('storage'));
+
+      setIsResetRequestModalOpen(false);
+      setIsPasswordModalOpen(false);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setIsOldPasswordWrong(false);
+
+      setPasswordAlertPopup({
+        isOpen: true,
+        type: 'success',
+        title: 'Permintaan Reset Sandi Terkirim',
+        message: 'Permintaan akses reset kata sandi telah berhasil diajukan ke Superadmin. Status akun Anda kini menjadi "Minta Reset Sandi". Silakan konfirmasi ke Superadmin untuk menyetujui dan mereset kata sandi Anda ke default (1234).'
+      });
+    } catch (err: any) {
+      setPasswordAlertPopup({
+        isOpen: true,
+        type: 'error',
+        title: 'Gagal Mengirim Permintaan',
+        message: err.message || 'Gagal mengajukan permintaan reset kata sandi. Silakan coba kembali.'
+      });
+    } finally {
+      setResetRequestSubmitting(false);
     }
   };
 
@@ -1346,14 +1515,11 @@ export default function SettingsModal({
 
                 {/* Informasi Akun */}
                 <div className="space-y-4 pt-2">
-                  <div className="flex items-center gap-2.5 pb-2.5 border-b border-slate-100">
-                    <div className="w-7 h-7 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 border border-slate-200/80">
+                  <div className="flex items-center gap-2.5 pb-2 border-b border-slate-100">
+                    <div className="w-6 h-6 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 border border-slate-200/80">
                       <User className="w-3.5 h-3.5 stroke-[2.2]" />
                     </div>
-                    <div>
-                      <h4 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight">Informasi Pengguna</h4>
-                      <p className="text-[11px] text-slate-500 font-medium">Nama tampilan dan kredensial login aktif</p>
-                    </div>
+                    <h4 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight">Informasi Pengguna</h4>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1393,14 +1559,11 @@ export default function SettingsModal({
 
                 {/* Tombol Ganti Kata Sandi */}
                 <div className="pt-2">
-                  <div className="flex items-center gap-2.5 pb-2.5 mb-3 border-b border-slate-100">
-                    <div className="w-7 h-7 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0 border border-amber-200/80">
+                  <div className="flex items-center gap-2.5 pb-2 mb-3 border-b border-slate-100">
+                    <div className="w-6 h-6 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center shrink-0 border border-amber-200/80">
                       <KeyRound className="w-3.5 h-3.5 stroke-[2.2]" />
                     </div>
-                    <div>
-                      <h4 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight">Keamanan &amp; Kata Sandi</h4>
-                      <p className="text-[11px] text-slate-500 font-medium">Perbarui kata sandi akun secara berkala untuk menjaga keamanan</p>
-                    </div>
+                    <h4 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight">Keamanan &amp; Kata Sandi</h4>
                   </div>
 
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/70 p-4 rounded-2xl border border-slate-200/80">
@@ -1414,6 +1577,7 @@ export default function SettingsModal({
                         setCurrentPassword('');
                         setNewPassword('');
                         setConfirmPassword('');
+                        setIsOldPasswordWrong(false);
                         setPasswordModalError(null);
                         setPasswordModalSuccess(null);
                         setIsPasswordModalOpen(true);
@@ -1509,14 +1673,11 @@ export default function SettingsModal({
 
                 {/* 1. Identitas & Legalitas Lembaga */}
                 <div className="space-y-4 pt-2">
-                  <div className="flex items-center gap-2.5 pb-2.5 border-b border-slate-100">
-                    <div className="w-7 h-7 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 border border-slate-200/80">
+                  <div className="flex items-center gap-2.5 pb-2 border-b border-slate-100">
+                    <div className="w-6 h-6 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 border border-slate-200/80">
                       <Building className="w-3.5 h-3.5 stroke-[2.2]" />
                     </div>
-                    <div>
-                      <h4 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight">Identitas &amp; Legalitas Lembaga</h4>
-                      <p className="text-[11px] text-slate-500 font-medium">Informasi resmi pesantren, badan hukum/yayasan, dan nomor izin</p>
-                    </div>
+                    <h4 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight">Identitas &amp; Legalitas Lembaga</h4>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1568,14 +1729,11 @@ export default function SettingsModal({
 
                 {/* 2. Susunan Pengasuh & Pengurus */}
                 <div className="space-y-4 pt-2">
-                  <div className="flex items-center gap-2.5 pb-2.5 border-b border-slate-100">
-                    <div className="w-7 h-7 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0 border border-blue-100">
+                  <div className="flex items-center gap-2.5 pb-2 border-b border-slate-100">
+                    <div className="w-6 h-6 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center shrink-0 border border-blue-100">
                       <Users className="w-3.5 h-3.5 stroke-[2.2]" />
                     </div>
-                    <div>
-                      <h4 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight">Susunan Pengasuh &amp; Pengurus</h4>
-                      <p className="text-[11px] text-slate-500 font-medium">Struktur kepemimpinan, dewan pengasuh, dan pengurus harian pondok</p>
-                    </div>
+                    <h4 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight">Susunan Pengasuh &amp; Pengurus</h4>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1654,14 +1812,11 @@ export default function SettingsModal({
 
                 {/* 3. Kontak & Alamat Lembaga */}
                 <div className="space-y-4 pt-2">
-                  <div className="flex items-center gap-2.5 pb-2.5 border-b border-slate-100">
-                    <div className="w-7 h-7 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-100">
+                  <div className="flex items-center gap-2.5 pb-2 border-b border-slate-100">
+                    <div className="w-6 h-6 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-100">
                       <MapPin className="w-3.5 h-3.5 stroke-[2.2]" />
                     </div>
-                    <div>
-                      <h4 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight">Kontak &amp; Alamat Lembaga</h4>
-                      <p className="text-[11px] text-slate-500 font-medium">Alamat domisili, nomor telepon WhatsApp, dan email resmi</p>
-                    </div>
+                    <h4 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight">Kontak &amp; Alamat Lembaga</h4>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -2707,24 +2862,35 @@ export default function SettingsModal({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setIsPasswordModalOpen(false)}
+                  onClick={() => {
+                    setIsPasswordModalOpen(false);
+                    setIsOldPasswordWrong(false);
+                  }}
                   className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              {passwordModalSuccess && (
-                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-800 text-xs font-semibold flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>{passwordModalSuccess}</span>
-                </div>
-              )}
-
-              {passwordModalError && (
-                <div className="p-3 rounded-xl bg-rose-50 border border-rose-100 text-rose-800 text-xs font-semibold flex items-center gap-2">
-                  <Info className="w-4 h-4 text-rose-600 shrink-0" />
-                  <span>{passwordModalError}</span>
+              {/* Banner Peringatan Kata Sandi Lama Salah + Tombol Lupa Kata Sandi */}
+              {isOldPasswordWrong && (
+                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 space-y-2 animate-in fade-in duration-150">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <div className="text-xs text-rose-800 font-medium leading-relaxed">
+                      Kata sandi lama yang Anda masukkan tidak sesuai dengan kata sandi saat ini.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsResetRequestModalOpen(true);
+                    }}
+                    className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs active:scale-98 transition-all cursor-pointer"
+                  >
+                    <KeyRound className="w-3.5 h-3.5" />
+                    <span>Lupa Kata Sandi? Minta Akses Reset Sandi</span>
+                  </button>
                 </div>
               )}
 
@@ -2736,9 +2902,15 @@ export default function SettingsModal({
                       type={showCurrentPassword ? 'text' : 'password'}
                       required
                       value={currentPassword}
-                      onChange={(e) => setCurrentPassword(e.target.value)}
-                      placeholder="Masukkan kata sandi lama"
-                      className="w-full pl-3.5 pr-10 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-medium focus:outline-none focus:border-blue-500"
+                      onChange={(e) => {
+                        setCurrentPassword(e.target.value);
+                      }}
+                      placeholder="Masukkan kata sandi lama saat ini"
+                      className={`w-full pl-3.5 pr-10 py-2.5 rounded-xl border text-xs sm:text-sm font-medium focus:outline-none transition-colors ${
+                        isOldPasswordWrong 
+                          ? 'border-rose-400 bg-rose-50/40 text-rose-900 focus:border-rose-500' 
+                          : 'border-slate-200 focus:border-blue-500'
+                      }`}
                     />
                     <button
                       type="button"
@@ -2798,7 +2970,10 @@ export default function SettingsModal({
                 <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
                   <button
                     type="button"
-                    onClick={() => setIsPasswordModalOpen(false)}
+                    onClick={() => {
+                      setIsPasswordModalOpen(false);
+                      setIsOldPasswordWrong(false);
+                    }}
                     className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
                   >
                     Batal
@@ -2812,6 +2987,137 @@ export default function SettingsModal({
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal Minta Akses Reset Sandi */}
+      <AnimatePresence>
+        {isResetRequestModalOpen && (
+          <div className="fixed inset-0 z-[1000000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 8 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 8 }}
+              transition={{ duration: 0.15 }}
+              className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4 text-left"
+              id="dialog-minta-reset-sandi"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
+                    <KeyRound className="w-4.5 h-4.5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm sm:text-base font-bold text-slate-900">Minta Akses Reset Sandi</h3>
+                    <p className="text-[11px] text-slate-500">Ajukan permohonan reset ke Superadmin</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsResetRequestModalOpen(false)}
+                  className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2 text-xs text-slate-700">
+                <div className="flex justify-between items-center py-0.5">
+                  <span className="text-slate-500 font-medium">Akun Pengguna</span>
+                  <span className="font-bold text-slate-900">{displayName}</span>
+                </div>
+                <div className="flex justify-between items-center py-0.5">
+                  <span className="text-slate-500 font-medium">Email / Username</span>
+                  <span className="font-mono font-medium text-slate-800">{username}</span>
+                </div>
+                <div className="flex justify-between items-center py-0.5">
+                  <span className="text-slate-500 font-medium">Peran / Hak Akses</span>
+                  <span className="font-bold text-slate-800 capitalize">{role === 'superadmin' ? 'Super Admin' : (role || 'Pengurus')}</span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-blue-50/80 border border-blue-100 text-blue-900 text-xs leading-relaxed">
+                Dengan mengajukan permohonan ini, akun Anda akan berstatus <strong className="font-bold text-blue-800">"Minta Reset Sandi"</strong>. Superadmin akan memberikan izin reset dengan menyetel kata sandi sementara (<span className="font-mono font-bold">1234</span>).
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsResetRequestModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={resetRequestSubmitting}
+                  onClick={handleSendResetRequest}
+                  className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-md shadow-amber-600/20 active:scale-95 transition-all cursor-pointer disabled:opacity-60 flex items-center gap-1.5"
+                >
+                  {resetRequestSubmitting ? 'Mengirim...' : 'Kirim Permintaan Reset'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal Popup Alert Kata Sandi (Sukses / Gagal / Validasi) */}
+      <AnimatePresence>
+        {passwordAlertPopup.isOpen && (
+          <div className="fixed inset-0 z-[10000000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.92, opacity: 0, y: 10 }}
+              transition={{ duration: 0.15 }}
+              className="bg-white rounded-3xl max-w-sm w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4 text-center"
+              id="dialog-password-alert-popup"
+            >
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mx-auto ${
+                passwordAlertPopup.type === 'success' 
+                  ? 'bg-emerald-100 text-emerald-600' 
+                  : passwordAlertPopup.type === 'warning'
+                  ? 'bg-amber-100 text-amber-600'
+                  : 'bg-rose-100 text-rose-600'
+              }`}>
+                {passwordAlertPopup.type === 'success' ? (
+                  <CheckCircle2 className="w-6 h-6 stroke-[2.2]" />
+                ) : passwordAlertPopup.type === 'warning' ? (
+                  <AlertTriangle className="w-6 h-6 stroke-[2.2]" />
+                ) : (
+                  <Info className="w-6 h-6 stroke-[2.2]" />
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <h3 className="text-base font-bold text-slate-900">{passwordAlertPopup.title}</h3>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  {passwordAlertPopup.message}
+                </p>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const cb = passwordAlertPopup.onConfirm;
+                    setPasswordAlertPopup(prev => ({ ...prev, isOpen: false }));
+                    if (cb) cb();
+                  }}
+                  className={`w-full py-2.5 rounded-xl text-white text-xs font-bold shadow-md active:scale-95 transition-all cursor-pointer ${
+                    passwordAlertPopup.type === 'success'
+                      ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20'
+                      : passwordAlertPopup.type === 'warning'
+                      ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/20'
+                      : 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20'
+                  }`}
+                >
+                  {passwordAlertPopup.type === 'success' ? 'Selesai' : 'Mengerti'}
+                </button>
+              </div>
             </motion.div>
           </div>
         )}

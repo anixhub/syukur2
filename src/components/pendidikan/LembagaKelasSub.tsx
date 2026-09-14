@@ -4353,9 +4353,9 @@ export default function LembagaKelasSub({
                                     {shouldShowColumn('gender') && (
                                       <td className="w-[90px] min-w-[90px] text-center px-2 py-3.5 border-r border-slate-100">
                                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold ${
-                                          s.gender === "L" ? "bg-blue-50 text-blue-700" : "bg-pink-50 text-pink-700"
+                                          (s.gender as any) === "L" || s.gender === "Putra" ? "bg-blue-50 text-blue-700" : "bg-pink-50 text-pink-700"
                                         }`}>
-                                          {s.gender === "L" ? "Laki-laki" : s.gender === "P" ? "Perempuan" : (s.gender || "-")}
+                                          {(s.gender as any) === "L" || s.gender === "Putra" ? "Laki-laki" : (s.gender as any) === "P" || s.gender === "Putri" ? "Perempuan" : (s.gender || "-")}
                                         </span>
                                       </td>
                                     )}

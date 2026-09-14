@@ -150,6 +150,18 @@ CREATE TABLE IF NOT EXISTS `kelompok_rombel` (
   FOREIGN KEY (`kategori_id`) REFERENCES `kategori_rombel`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS `rombel_assignment` (
+  `id` VARCHAR(100) NOT NULL PRIMARY KEY,
+  `santri_id` VARCHAR(50),
+  `kategori_id` VARCHAR(50),
+  `kelompok_id` VARCHAR(50),
+  `assigned_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY `santri_kategori_unique` (`santri_id`, `kategori_id`),
+  FOREIGN KEY (`santri_id`) REFERENCES `santri`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`kategori_id`) REFERENCES `kategori_rombel`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`kelompok_id`) REFERENCES `kelompok_rombel`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- 6. TABEL SURAT, BENDAHARA, KEAMANAN, PERIODE, PERIZINAN
 CREATE TABLE IF NOT EXISTS `surat` (
   `id` VARCHAR(50) NOT NULL PRIMARY KEY,
