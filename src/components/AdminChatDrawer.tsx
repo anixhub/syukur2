@@ -98,6 +98,11 @@ interface AdminChatDrawerProps {
   onClose: () => void;
   unreadCount: number;
   onClearUnread: () => void;
+  layoutMode?: 'sidebar' | 'floating' | 'full';
+  onLayoutModeChange?: (mode: 'sidebar' | 'floating' | 'full') => void;
+  sidebarWidth?: number;
+  onSidebarWidthChange?: (width: number) => void;
+  onResizeStateChange?: (isResizing: boolean) => void;
 }
 
 const LOCAL_STORAGE_KEY = 'smartsantri_admin_chat_messages';
@@ -198,12 +203,65 @@ export default function AdminChatDrawer({
   isOpen,
   onClose,
   unreadCount,
-  onClearUnread
+  onClearUnread,
+  layoutMode: propLayoutMode,
+  onLayoutModeChange,
+  sidebarWidth: propSidebarWidth,
+  onSidebarWidthChange,
+  onResizeStateChange
 }: AdminChatDrawerProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [activeTab, setActiveTab] = useState<'chat' | 'media'>('chat');
-  const [layoutMode, setLayoutMode] = useState<'sidebar' | 'floating' | 'full'>('floating');
+  
+  const [internalLayoutMode, setInternalLayoutMode] = useState<'sidebar' | 'floating' | 'full'>(() => {
+    if (propLayoutMode) return propLayoutMode;
+    try {
+      const saved = localStorage.getItem('attarokey_chat_layout_mode');
+      if (saved === 'sidebar' || saved === 'floating' || saved === 'full') return saved;
+    } catch (e) {}
+    return 'sidebar';
+  });
+
+  const layoutMode = propLayoutMode ?? internalLayoutMode;
+
+  const handleSetLayoutMode = (mode: 'sidebar' | 'floating' | 'full') => {
+    setInternalLayoutMode(mode);
+    try {
+      localStorage.setItem('attarokey_chat_layout_mode', mode);
+    } catch (e) {}
+    if (onLayoutModeChange) {
+      onLayoutModeChange(mode);
+    }
+  };
+
+  const [internalSidebarWidth, setInternalSidebarWidth] = useState<number>(() => {
+    if (propSidebarWidth) return propSidebarWidth;
+    try {
+      const saved = localStorage.getItem('attarokey_chat_sidebar_width');
+      if (saved) {
+        const num = parseInt(saved, 10);
+        if (!isNaN(num) && num >= 320 && num <= 800) return num;
+      }
+    } catch (e) {}
+    return 440;
+  });
+
+  const sidebarWidth = propSidebarWidth ?? internalSidebarWidth;
+  const sidebarWidthRef = useRef<number>(sidebarWidth);
+  useEffect(() => {
+    sidebarWidthRef.current = sidebarWidth;
+  }, [sidebarWidth]);
+
+  const handleSetSidebarWidth = (width: number) => {
+    setInternalSidebarWidth(width);
+    try {
+      localStorage.setItem('attarokey_chat_sidebar_width', width.toString());
+    } catch (e) {}
+    if (onSidebarWidthChange) {
+      onSidebarWidthChange(width);
+    }
+  };
   const [showLayoutMenu, setShowLayoutMenu] = useState(false);
   const [showHideTooltip, setShowHideTooltip] = useState(false);
   const [activeChannel, setActiveChannel] = useState<string>('semua');
@@ -493,7 +551,7 @@ export default function AdminChatDrawer({
     setTimeout(() => {
       setIsClosing(false);
       onClose();
-    }, 150);
+    }, 200);
   };
 
   // @ Mention Suggestion State
@@ -833,10 +891,17 @@ export default function AdminChatDrawer({
           const deltaX = startX - e.clientX;
           const newWidth = startWidth + deltaX;
 
-          // Prevent left edge from going past left screen boundary (x = screenMargin)
-          const maxAllowedWidth = Math.max(340, window.innerWidth - (2 * screenMargin) + startPosX);
-          const clampedWidth = Math.max(340, Math.min(newWidth, maxAllowedWidth));
-          setFloatingWidth(clampedWidth);
+          if (layoutMode === 'sidebar') {
+            const minAllowedWidth = 340;
+            const maxAllowedWidth = Math.max(440, Math.floor(window.innerWidth * 0.75));
+            const clampedWidth = Math.max(minAllowedWidth, Math.min(newWidth, maxAllowedWidth));
+            handleSetSidebarWidth(clampedWidth);
+          } else {
+            // Prevent left edge from going past left screen boundary (x = screenMargin)
+            const maxAllowedWidth = Math.max(340, window.innerWidth - (2 * screenMargin) + startPosX);
+            const clampedWidth = Math.max(340, Math.min(newWidth, maxAllowedWidth));
+            setFloatingWidth(clampedWidth);
+          }
         } else if (type === 'resize_right') {
           // Dragging right handle: moving cursor right increases width
           const deltaX = e.clientX - startX;
@@ -872,6 +937,7 @@ export default function AdminChatDrawer({
         isDraggingWindowRef.current = false;
         setIsResizing(false);
         setIsDraggingWindow(false);
+        if (onResizeStateChange) onResizeStateChange(false);
         document.body.style.userSelect = '';
       }
     };
@@ -1682,7 +1748,7 @@ export default function AdminChatDrawer({
       case 'full':
         return 'w-full h-screen rounded-none my-0 right-0 top-0 border-none shadow-none';
       case 'sidebar':
-        return 'w-full sm:w-[420px] md:w-[460px] h-screen rounded-none my-0 right-0 top-0 border-l';
+        return 'h-screen rounded-none my-0 right-0 top-0 border-l border-slate-200/90 shadow-2xl';
       case 'floating':
       default:
         return 'h-[96vh] sm:h-[94vh] my-auto rounded-[28px] border shadow-2xl overflow-hidden';
@@ -1693,6 +1759,8 @@ export default function AdminChatDrawer({
     <div className={`fixed inset-0 z-[100] flex overflow-hidden pointer-events-none transition-all ${
       isMobile || layoutMode === 'full' 
         ? 'justify-stretch items-stretch p-0' 
+        : layoutMode === 'sidebar'
+        ? 'justify-end items-stretch p-0'
         : 'justify-stretch items-stretch p-0 sm:justify-end sm:items-center sm:p-4'
     }`}>
       {/* Hidden File Inputs */}
@@ -1711,12 +1779,14 @@ export default function AdminChatDrawer({
         className="hidden" 
       />
 
-      {/* Main Chat Box Window with Fast Bottom-to-Top Entrance & Top-to-Bottom Exit Animation */}
+      {/* Main Chat Box Window with Entrance & Exit Animations */}
       <div 
         style={{
-          width: (!isMobile && layoutMode === 'floating') ? `${floatingWidth}px` : undefined,
-          minWidth: (!isMobile && layoutMode === 'floating') ? '340px' : undefined,
-          maxWidth: (!isMobile && layoutMode === 'floating') ? '100vw' : undefined,
+          width: (!isMobile && (layoutMode === 'floating' || layoutMode === 'sidebar')) 
+            ? (layoutMode === 'sidebar' ? `${sidebarWidth}px` : `${floatingWidth}px`) 
+            : undefined,
+          minWidth: (!isMobile && (layoutMode === 'floating' || layoutMode === 'sidebar')) ? '340px' : undefined,
+          maxWidth: (!isMobile && layoutMode === 'floating') ? '100vw' : (!isMobile && layoutMode === 'sidebar') ? '75vw' : undefined,
           transform: (!isMobile && layoutMode === 'floating') ? `translateX(${positionX}px)` : undefined,
           overscrollBehavior: 'contain'
         }}
@@ -1724,12 +1794,16 @@ export default function AdminChatDrawer({
           (isResizing || isDraggingWindow) ? 'transition-none' : 'transition-all duration-150 ease-out'
         } overscroll-contain ${
           isClosing 
-            ? 'animate-out fade-out slide-out-to-bottom-full duration-150 ease-in' 
-            : 'animate-in fade-in slide-in-from-bottom-full duration-150 ease-out'
+            ? (layoutMode === 'sidebar'
+                ? 'animate-out fade-out slide-out-to-right-full duration-200 ease-in'
+                : 'animate-out fade-out slide-out-to-bottom-full duration-150 ease-in')
+            : (layoutMode === 'sidebar'
+                ? 'animate-in fade-in slide-in-from-right-full duration-200 ease-out'
+                : 'animate-in fade-in slide-in-from-bottom-full duration-150 ease-out')
         } ${getLayoutClasses()}`}
       >
-        {/* Drag Handle on Left Edge for Floating Width Resizing (Hanya di tablet/desktop, tersembunyi di HP) */}
-        {!isMobile && layoutMode === 'floating' && (
+        {/* Drag Handle on Left Edge for Resizing (Floating and Sidebar mode) */}
+        {!isMobile && (layoutMode === 'floating' || layoutMode === 'sidebar') && (
           <div 
             onMouseDown={(e) => {
               e.preventDefault();
@@ -1737,17 +1811,18 @@ export default function AdminChatDrawer({
               document.body.style.userSelect = 'none';
               isResizingRef.current = true;
               setIsResizing(true);
+              if (onResizeStateChange) onResizeStateChange(true);
               dragStateRef.current = {
                 type: 'resize_left',
                 startX: e.clientX,
-                startWidth: floatingWidthRef.current,
+                startWidth: layoutMode === 'sidebar' ? sidebarWidthRef.current : floatingWidthRef.current,
                 startPosX: positionXRef.current
               };
             }}
-            className={`absolute left-0 top-0 bottom-0 w-2.5 cursor-ew-resize z-30 group hover:bg-purple-500/20 transition-colors hidden sm:flex items-center justify-center ${isResizing ? 'bg-purple-500/30' : ''}`}
-            title="Tarik sisi kiri untuk merubah lebar obrolan (Hingga batas layar)"
+            className={`absolute left-0 top-0 bottom-0 w-2.5 cursor-col-resize z-30 group hover:bg-emerald-500/20 transition-colors hidden sm:flex items-center justify-center ${isResizing ? 'bg-emerald-500/30' : ''}`}
+            title={layoutMode === 'sidebar' ? "Tarik untuk mengatur lebar sidebar chat" : "Tarik sisi kiri untuk merubah lebar obrolan (Hingga batas layar)"}
           >
-            <div className="w-1 h-8 rounded-full bg-slate-300 group-hover:bg-purple-600 transition-colors" />
+            <div className="w-1 h-8 rounded-full bg-slate-300 group-hover:bg-emerald-600 transition-colors" />
           </div>
         )}
 
@@ -1933,7 +2008,7 @@ export default function AdminChatDrawer({
                     <button
                       type="button"
                       onClick={() => {
-                        setLayoutMode('sidebar');
+                        handleSetLayoutMode('sidebar');
                         setShowLayoutMenu(false);
                       }}
                       onMouseDown={(e) => e.stopPropagation()}
@@ -1948,7 +2023,7 @@ export default function AdminChatDrawer({
                     <button
                       type="button"
                       onClick={() => {
-                        setLayoutMode('floating');
+                        handleSetLayoutMode('floating');
                         setShowLayoutMenu(false);
                       }}
                       onMouseDown={(e) => e.stopPropagation()}
@@ -1963,7 +2038,7 @@ export default function AdminChatDrawer({
                     <button
                       type="button"
                       onClick={() => {
-                        setLayoutMode('full');
+                        handleSetLayoutMode('full');
                         setShowLayoutMenu(false);
                       }}
                       onMouseDown={(e) => e.stopPropagation()}

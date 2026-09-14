@@ -117,11 +117,49 @@ export default function App() {
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
   const [isSelectionMode, setIsSelectionMode] = useState<boolean>(false);
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
+  const [chatLayoutMode, setChatLayoutMode] = useState<'sidebar' | 'floating' | 'full'>(() => {
+    try {
+      const saved = localStorage.getItem('attarokey_chat_layout_mode');
+      if (saved === 'sidebar' || saved === 'floating' || saved === 'full') return saved;
+    } catch (e) {}
+    return 'sidebar';
+  });
+  const [chatSidebarWidth, setChatSidebarWidth] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('attarokey_chat_sidebar_width');
+      if (saved) {
+        const num = parseInt(saved, 10);
+        if (!isNaN(num) && num >= 320 && num <= 800) return num;
+      }
+    } catch (e) {}
+    return 440;
+  });
+  const [isResizingChat, setIsResizingChat] = useState<boolean>(false);
   const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
   const [hasMentionNotification, setHasMentionNotification] = useState<boolean>(false);
   const [headerSelectedSantri, setHeaderSelectedSantri] = useState<Santri | null>(null);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState<boolean>(false);
   const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState<boolean>(true);
+
+  const handleToggleChat = React.useCallback(() => {
+    setIsChatOpen(prev => {
+      const next = !prev;
+      if (next && chatLayoutMode === 'sidebar') {
+        setIsNotificationsOpen(false);
+      }
+      return next;
+    });
+  }, [chatLayoutMode]);
+
+  const handleToggleNotifications = React.useCallback(() => {
+    setIsNotificationsOpen(prev => {
+      const next = !prev;
+      if (next && chatLayoutMode === 'sidebar') {
+        setIsChatOpen(false);
+      }
+      return next;
+    });
+  }, [chatLayoutMode]);
 
   // Pending user registrations for Superadmin
   const [pendingRegistrations, setPendingRegistrations] = useState<any[]>([]);
@@ -996,6 +1034,7 @@ export default function App() {
         onOpenHelp={() => setShowHelpModal(true)}
         onOpenChat={() => {
           handleCloseDrawer();
+          setIsNotificationsOpen(false);
           setIsChatOpen(true);
         }}
         unreadChatCount={unreadChatCount}
@@ -1021,7 +1060,7 @@ export default function App() {
         onOpenHelp={() => setShowHelpModal(true)}
         santriList={santriList}
         onSelectSantri={(santri) => setHeaderSelectedSantri(santri)}
-        onOpenChat={() => setIsChatOpen(prev => !prev)}
+        onOpenChat={handleToggleChat}
         isChatOpen={isChatOpen}
         unreadChatCount={unreadChatCount}
         hasMentionNotification={hasMentionNotification}
@@ -1052,6 +1091,16 @@ export default function App() {
                   boxShadow: '0px 20px 50px 0px rgba(0, 0, 0, 0.25)',
                   borderColor: 'rgba(229, 231, 235, 1)',
                 }
+            : !isMobile && isChatOpen && chatLayoutMode === 'sidebar'
+              ? {
+                  x: '0%',
+                  marginRight: `${chatSidebarWidth}px`,
+                  scale: 1,
+                  opacity: 1,
+                  borderRadius: '0px',
+                  boxShadow: '0px 0px 0px 0px rgba(0, 0, 0, 0)',
+                  borderColor: 'rgba(229, 231, 235, 0)',
+                }
             : !isMobile && isNotificationsOpen
               ? {
                   x: '0%',
@@ -1072,7 +1121,11 @@ export default function App() {
                   borderColor: 'rgba(229, 231, 235, 0)',
                 }
         }
-        transition={{ type: 'tween', ease: [0.25, 1, 0.5, 1], duration: 0.32 }}
+        transition={
+          isResizingChat
+            ? { duration: 0 }
+            : { type: 'tween', ease: [0.25, 1, 0.5, 1], duration: 0.32 }
+        }
         onAnimationComplete={() => {
           if (!isDrawerOpen && isDrawerClosing) {
             setIsDrawerClosing(false);
@@ -1131,13 +1184,13 @@ export default function App() {
                 setIsDesktopSidebarOpen(prev => !prev);
               }
             }}
-            onOpenChat={() => setIsChatOpen(prev => !prev)}
+            onOpenChat={handleToggleChat}
             isChatOpen={isChatOpen}
             unreadChatCount={unreadChatCount}
             hasMentionNotification={hasMentionNotification}
             pendingRegistrationsCount={pendingRegistrations.length}
             onOpenPendingModal={() => setShowPendingModal(true)}
-            onOpenNotifications={() => setIsNotificationsOpen(prev => !prev)}
+            onOpenNotifications={handleToggleNotifications}
             isNotificationsOpen={isNotificationsOpen}
             santriList={santriList}
             onChangeModule={handleChangeModule}
@@ -1166,17 +1219,6 @@ export default function App() {
               />
             </React.Suspense>
           )}
-
-          {/* Admin Obrolan Chat Drawer */}
-          <AdminChatDrawer
-            isOpen={isChatOpen}
-            onClose={() => setIsChatOpen(false)}
-            unreadCount={unreadChatCount}
-            onClearUnread={() => {
-              setUnreadChatCount(0);
-              setHasMentionNotification(false);
-            }}
-          />
 
           {/* Global Help Modal */}
           <HelpModal 
@@ -1225,6 +1267,22 @@ export default function App() {
           />
         )}
       </AnimatePresence>
+
+      {/* Admin Obrolan Chat Drawer (Root level - strictly sits above Sidebar and pushes main layout) */}
+      <AdminChatDrawer
+        isOpen={isChatOpen}
+        onClose={() => setIsChatOpen(false)}
+        unreadCount={unreadChatCount}
+        onClearUnread={() => {
+          setUnreadChatCount(0);
+          setHasMentionNotification(false);
+        }}
+        layoutMode={chatLayoutMode}
+        onLayoutModeChange={(mode) => setChatLayoutMode(mode)}
+        sidebarWidth={chatSidebarWidth}
+        onSidebarWidthChange={(width) => setChatSidebarWidth(width)}
+        onResizeStateChange={(resizing) => setIsResizingChat(resizing)}
+      />
 
     </div>
   );
