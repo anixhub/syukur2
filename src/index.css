@@ -234,4 +234,26 @@ body::-webkit-scrollbar,
   background: rgba(13, 138, 104, 0.5);
 }
 
+/* Visible modern horizontal scrollbar for class lists and pills */
+.pills-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(16, 185, 129, 0.4) #f1f5f9;
+}
+.pills-scrollbar::-webkit-scrollbar {
+  height: 6px !important;
+  display: block !important;
+}
+.pills-scrollbar::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 9999px;
+}
+.pills-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(16, 185, 129, 0.4);
+  border-radius: 9999px;
+}
+.pills-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #00693E;
+}
+
+
 
