@@ -2,10 +2,14 @@
 -- SKEMA TERKINI DATABASE SMART SANTRI (HOSTINGER / MySQL / MariaDB / phpMyAdmin)
 -- Terakhir Diperbarui: 2026-09-14
 -- Ringkasan Perubahan:
--- * Format 100% MySQL / MariaDB murni untuk Hostinger phpMyAdmin (bebas syntax error PostgreSQL).
+-- * Format 100% MySQL / MariaDB murni untuk Hostinger phpMyAdmin (bebas syntax error).
+-- * Penataan rapi kolom alamat: Jalan, RT, RW, Desa/Kelurahan, Kecamatan, Kabupaten/Kota,
+--   Provinsi, dan Kode Pos pada tabel profil pesantren (`pesantren_profile`).
+-- * Struktur Kepengurusan Putra & Putri lengkap (Pengasuh, Ketua Pondok, Sekretaris, Bendahara,
+--   Ketua Pendidikan, Ketua Keamanan, Ketua Humasy).
 -- * Tabel lengkap: santri, lembaga, kelas, kompleks, kamar, rombel, akun (app_credentials),
 --   profil pondok (pesantren_profile), surat, bendahara, keamanan, perizinan, chat, tugas.
--- * Idempotent: Aman dijalankan berulang kali (CREATE TABLE IF NOT EXISTS / ON DUPLICATE KEY UPDATE).
+-- * Idempotent: Aman dijalankan berulang kali tanpa merusak atau menghapus data yang ada.
 --
 -- CARA PENGGUNAAN DI HOSTINGER:
 -- 1. Buka cPanel / hPanel Hostinger -> Masuk ke phpMyAdmin.
@@ -56,197 +60,275 @@ CREATE TABLE IF NOT EXISTS `santri` (
   `kecamatan` VARCHAR(50),
   `kabupaten` VARCHAR(50),
   `provinsi` VARCHAR(50),
-  `jarak_rumah` DECIMAL(5,2),
+  `jarak_rumah` VARCHAR(50),
   `no_hp` VARCHAR(20),
-  `status_keanggotaan` VARCHAR(20) DEFAULT 'Aktif',
-  `status_domisili` VARCHAR(20) DEFAULT 'Muqim',
-  `status_emis` VARCHAR(20) DEFAULT 'Belum',
-  `status_verval` VARCHAR(20) DEFAULT 'Belum',
+  `status_keanggotaan` VARCHAR(50) DEFAULT 'Aktif',
+  `status_domisili` VARCHAR(50) DEFAULT 'Mukim',
+  `status_emis` VARCHAR(50) DEFAULT 'Sudah Masuk',
+  `status_verval` VARCHAR(50) DEFAULT 'Selesai',
   `tanggal_keluar` DATE,
   `catatan` TEXT,
-  `file_kk` TEXT,
-  `file_ktp` TEXT,
-  `file_akta` TEXT,
-  `file_ijazah` TEXT,
-  `file_pas_foto` TEXT,
-  `nomor_lemari` VARCHAR(30),
-  `pendidikan_terakhir` VARCHAR(50) DEFAULT 'SD/MI',
-  `pendidikan_formal` TEXT,
-  `pendidikan_internal` TEXT,
+  `foto` LONGTEXT,
+  `nomor_lemari` VARCHAR(50),
+  `pendidikan_terakhir` VARCHAR(50),
+  `pendidikan_formal` VARCHAR(50),
+  `pendidikan_internal` VARCHAR(50),
   `kelas_id` VARCHAR(50),
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 2. TABEL LEMBAGA
+-- 2. TABEL MASTER DATA AKADEMIK & ASRAMA
 CREATE TABLE IF NOT EXISTS `lembaga` (
   `id` VARCHAR(50) NOT NULL PRIMARY KEY,
   `nama` VARCHAR(100) NOT NULL,
-  `kode` VARCHAR(20) NOT NULL,
-  `deskripsi` TEXT,
-  `gender` VARCHAR(10) DEFAULT 'Putra',
-  `jenis` VARCHAR(20) DEFAULT 'Internal',
-  `logo` TEXT,
-  `nomor_statistik` VARCHAR(50),
-  `npsn` VARCHAR(50),
-  `ta_mulai_tanggal` INT DEFAULT 1,
-  `ta_mulai_bulan` INT DEFAULT 7,
-  `ta_selesai_tanggal` INT DEFAULT 30,
-  `ta_selesai_bulan` INT DEFAULT 6,
-  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY `lembaga_kode_gender` (`kode`, `gender`)
+  `kepala_sekolah` VARCHAR(100),
+  `nip` VARCHAR(50),
+  `singkatan` VARCHAR(20),
+  `warna_badge` VARCHAR(30) DEFAULT 'blue',
+  `jenjang` VARCHAR(50),
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 3. TABEL KELAS
 CREATE TABLE IF NOT EXISTS `kelas` (
   `id` VARCHAR(50) NOT NULL PRIMARY KEY,
+  `nama` VARCHAR(100) NOT NULL,
   `lembaga_id` VARCHAR(50),
-  `nama` VARCHAR(50) NOT NULL,
   `wali_kelas` VARCHAR(100),
-  `batas_usia_hari` INT DEFAULT 1,
-  `batas_usia_bulan` INT DEFAULT 7,
-  `batas_usia_umur_min` INT,
-  `batas_usia_umur_max` INT,
-  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (`lembaga_id`) REFERENCES `lembaga`(`id`) ON DELETE CASCADE
+  `nip_wali_kelas` VARCHAR(50),
+  `tingkat` VARCHAR(20),
+  `gender` VARCHAR(10) DEFAULT 'Semua',
+  `lembaga` VARCHAR(50),
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 4. TABEL KOMPLEKS & KAMAR
 CREATE TABLE IF NOT EXISTS `kompleks` (
   `id` VARCHAR(50) NOT NULL PRIMARY KEY,
   `nama` VARCHAR(100) NOT NULL,
-  `kode` VARCHAR(20) NOT NULL,
-  `deskripsi` TEXT,
-  `gender` VARCHAR(10) DEFAULT 'Putra',
-  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY `kompleks_kode_gender` (`kode`, `gender`)
+  `gender` VARCHAR(10) DEFAULT 'putra',
+  `kategori` VARCHAR(50),
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `kamar` (
   `id` VARCHAR(50) NOT NULL PRIMARY KEY,
-  `kompleks_id` VARCHAR(50),
-  `nama` VARCHAR(50) NOT NULL,
-  `ketua_kamar` VARCHAR(100),
-  `kapasitas` INT DEFAULT 15,
-  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (`kompleks_id`) REFERENCES `kompleks`(`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- 5. TABEL ROMBEL & KELOMPOK
-CREATE TABLE IF NOT EXISTS `kategori_rombel` (
-  `id` VARCHAR(50) NOT NULL PRIMARY KEY,
   `nama` VARCHAR(100) NOT NULL,
-  `deskripsi` TEXT,
+  `kompleks_id` VARCHAR(50),
+  `kapasitas` INT DEFAULT 10,
+  `gender` VARCHAR(10) DEFAULT 'putra',
+  `ketua_kamar` VARCHAR(100),
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE IF NOT EXISTS `kelompok_rombel` (
+CREATE TABLE IF NOT EXISTS `rombel_kategori` (
   `id` VARCHAR(50) NOT NULL PRIMARY KEY,
-  `kategori_id` VARCHAR(50),
   `nama` VARCHAR(100) NOT NULL,
-  `pembimbing` VARCHAR(100),
-  `kuota` INT DEFAULT 20,
+  `deskripsi` TEXT,
+  `tipe` VARCHAR(50) DEFAULT 'kegiatan',
+  `gender` VARCHAR(20) DEFAULT 'campur',
+  `icon` VARCHAR(50),
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `rombel_kelompok` (
+  `id` VARCHAR(50) NOT NULL PRIMARY KEY,
+  `kategori_id` VARCHAR(50) NOT NULL,
+  `nama` VARCHAR(100) NOT NULL,
+  `wali_kelompok` VARCHAR(100),
+  `nip_wali_kelompok` VARCHAR(50),
+  `ruangan` VARCHAR(100),
+  `keterangan` TEXT,
+  `kapasitas` INT DEFAULT 30,
+  `gender` VARCHAR(20) DEFAULT 'campur',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `rombel_assignments` (
+  `id` VARCHAR(50) NOT NULL PRIMARY KEY,
+  `santri_id` VARCHAR(50) NOT NULL,
+  `kategori_id` VARCHAR(50) NOT NULL,
+  `kelompok_id` VARCHAR(50) NOT NULL,
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (`kategori_id`) REFERENCES `kategori_rombel`(`id`) ON DELETE CASCADE
+  UNIQUE KEY `unique_santri_kategori` (`santri_id`, `kategori_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE IF NOT EXISTS `rombel_assignment` (
-  `id` VARCHAR(100) NOT NULL PRIMARY KEY,
-  `santri_id` VARCHAR(50),
-  `kategori_id` VARCHAR(50),
-  `kelompok_id` VARCHAR(50),
-  `assigned_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY `santri_kategori_unique` (`santri_id`, `kategori_id`),
-  FOREIGN KEY (`santri_id`) REFERENCES `santri`(`id`) ON DELETE CASCADE,
-  FOREIGN KEY (`kategori_id`) REFERENCES `kategori_rombel`(`id`) ON DELETE CASCADE,
-  FOREIGN KEY (`kelompok_id`) REFERENCES `kelompok_rombel`(`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- 6. TABEL SURAT, BENDAHARA, KEAMANAN, PERIODE, PERIZINAN
+-- 3. TABEL SURAT & KORESPONDENSI (SEKRETARIS)
 CREATE TABLE IF NOT EXISTS `surat` (
   `id` VARCHAR(50) NOT NULL PRIMARY KEY,
-  `no_surat` VARCHAR(100) NOT NULL UNIQUE,
-  `perihal` VARCHAR(255) NOT NULL,
-  `tanggal` DATE DEFAULT (CURRENT_DATE),
-  `jenis` VARCHAR(10),
-  `mitra` VARCHAR(100) NOT NULL,
-  `kategori` VARCHAR(50),
-  `status` VARCHAR(20) DEFAULT 'Dalam Proses'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE TABLE IF NOT EXISTS `bendahara` (
-  `id` VARCHAR(50) NOT NULL PRIMARY KEY,
-  `nama_santri` VARCHAR(100) NOT NULL,
-  `kamar` VARCHAR(50),
-  `bulan` VARCHAR(30) NOT NULL,
-  `nominal` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-  `status` VARCHAR(20) DEFAULT 'Belum Lunas',
-  `tanggal_bayar` DATE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE TABLE IF NOT EXISTS `keamanan` (
-  `id` VARCHAR(50) NOT NULL PRIMARY KEY,
+  `nomor_surat` VARCHAR(100) NOT NULL,
+  `judul` VARCHAR(255) NOT NULL,
+  `tipe` VARCHAR(50) NOT NULL,
+  `penerima` VARCHAR(255),
   `santri_id` VARCHAR(50),
-  `nis` VARCHAR(20),
-  `nama_santri` VARCHAR(100) NOT NULL,
-  `kamar` VARCHAR(50),
-  `jenis_pelanggaran` TEXT NOT NULL,
-  `tanggal` DATE DEFAULT (CURRENT_DATE),
-  `tindakan` TEXT,
-  `poin` INT DEFAULT 0
+  `santri_nama` VARCHAR(100),
+  `santri_kelas` VARCHAR(50),
+  `keterangan` TEXT,
+  `status` VARCHAR(50) DEFAULT 'Diterbitkan',
+  `konten` LONGTEXT,
+  `tanggal_surat` DATE DEFAULT (CURRENT_DATE),
+  `berlaku_sampai` DATE,
+  `penandatangan_nama` VARCHAR(100),
+  `penandatangan_jabatan` VARCHAR(100),
+  `lampiran_url` TEXT,
+  `file_url` TEXT,
+  `keperluan` TEXT,
+  `tujuan` VARCHAR(255),
+  `kategori` VARCHAR(50),
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS `surat_keluar` (
+  `id` VARCHAR(50) NOT NULL PRIMARY KEY,
+  `nomor_surat` VARCHAR(100) NOT NULL,
+  `judul` VARCHAR(255) NOT NULL,
+  `tipe` VARCHAR(50) NOT NULL,
+  `tujuan` VARCHAR(255),
+  `penerima` VARCHAR(255),
+  `santri_id` VARCHAR(50),
+  `santri_nama` VARCHAR(100),
+  `santri_kelas` VARCHAR(50),
+  `keterangan` TEXT,
+  `status` VARCHAR(50) DEFAULT 'Diterbitkan',
+  `konten` LONGTEXT,
+  `tanggal_surat` DATE DEFAULT (CURRENT_DATE),
+  `berlaku_sampai` DATE,
+  `penandatangan_nama` VARCHAR(100),
+  `penandatangan_jabatan` VARCHAR(100),
+  `lampiran_url` TEXT,
+  `file_url` TEXT,
+  `keperluan` TEXT,
+  `kategori` VARCHAR(50),
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `surat_masuk` (
+  `id` VARCHAR(50) NOT NULL PRIMARY KEY,
+  `nomor_surat` VARCHAR(100) NOT NULL,
+  `pengirim` VARCHAR(255) NOT NULL,
+  `perihal` VARCHAR(255) NOT NULL,
+  `tanggal_surat` DATE,
+  `tanggal_terima` DATE DEFAULT (CURRENT_DATE),
+  `keterangan` TEXT,
+  `file_url` TEXT,
+  `status` VARCHAR(50) DEFAULT 'Diterima',
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 4. TABEL KEUANGAN (BENDAHARA)
 CREATE TABLE IF NOT EXISTS `periode` (
   `id` VARCHAR(50) NOT NULL PRIMARY KEY,
   `nama` VARCHAR(100) NOT NULL,
-  `start_date` DATE,
-  `end_date` DATE,
   `is_active` TINYINT(1) DEFAULT 0,
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS `pos_keuangan` (
+  `id` VARCHAR(50) NOT NULL PRIMARY KEY,
+  `nama` VARCHAR(100) NOT NULL,
+  `tipe` VARCHAR(20) NOT NULL,
+  `deskripsi` TEXT,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `transaksi_keuangan` (
+  `id` VARCHAR(50) NOT NULL PRIMARY KEY,
+  `tanggal` DATE NOT NULL,
+  `pos_id` VARCHAR(50),
+  `pos_nama` VARCHAR(100),
+  `tipe` VARCHAR(20) NOT NULL,
+  `jumlah` DECIMAL(15, 2) NOT NULL,
+  `keterangan` TEXT,
+  `santri_id` VARCHAR(50),
+  `santri_nama` VARCHAR(100),
+  `petugas` VARCHAR(100),
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `tabungan_santri` (
+  `id` VARCHAR(50) NOT NULL PRIMARY KEY,
+  `santri_id` VARCHAR(50) NOT NULL,
+  `tanggal` DATE NOT NULL,
+  `tipe` VARCHAR(20) NOT NULL,
+  `jumlah` DECIMAL(15, 2) NOT NULL,
+  `saldo_setelahnya` DECIMAL(15, 2) NOT NULL,
+  `keterangan` TEXT,
+  `petugas` VARCHAR(100),
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `tagihan_pembayaran` (
+  `id` VARCHAR(50) NOT NULL PRIMARY KEY,
+  `santri_id` VARCHAR(50) NOT NULL,
+  `nama_tagihan` VARCHAR(150) NOT NULL,
+  `jumlah` DECIMAL(15, 2) NOT NULL,
+  `terbayar` DECIMAL(15, 2) DEFAULT 0,
+  `status` VARCHAR(50) DEFAULT 'Belum Lunas',
+  `jatuh_tempo` DATE,
+  `kategori` VARCHAR(50),
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `riwayat_pembayaran` (
+  `id` VARCHAR(50) NOT NULL PRIMARY KEY,
+  `tagihan_id` VARCHAR(50) NOT NULL,
+  `santri_id` VARCHAR(50) NOT NULL,
+  `tanggal_bayar` DATE NOT NULL,
+  `jumlah` DECIMAL(15, 2) NOT NULL,
+  `metode` VARCHAR(50) DEFAULT 'Tunai',
+  `petugas` VARCHAR(100),
+  `keterangan` TEXT,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 5. TABEL KEAMANAN & PELANGGARAN
+CREATE TABLE IF NOT EXISTS `keamanan_records` (
+  `id` VARCHAR(50) NOT NULL PRIMARY KEY,
+  `santri_id` VARCHAR(50) NOT NULL,
+  `santri_nama` VARCHAR(100),
+  `santri_kelas` VARCHAR(50),
+  `santri_kamar` VARCHAR(50),
+  `tipe` VARCHAR(50) NOT NULL,
+  `judul` VARCHAR(255) NOT NULL,
+  `kategori` VARCHAR(100),
+  `poin` INT DEFAULT 0,
+  `tanggal` DATE NOT NULL,
+  `keterangan` TEXT,
+  `tindakan` TEXT,
+  `status` VARCHAR(50) DEFAULT 'Diproses',
+  `petugas` VARCHAR(100),
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 6. TABEL PERIZINAN PULANG & KELUAR
 CREATE TABLE IF NOT EXISTS `perizinan` (
   `id` VARCHAR(50) NOT NULL PRIMARY KEY,
-  `santri_id` VARCHAR(50),
-  `nis` VARCHAR(20),
-  `nama_santri` VARCHAR(100) NOT NULL,
-  `kelas` TEXT,
-  `kamar` TEXT,
-  `jenis_izin` VARCHAR(50) NOT NULL,
+  `santri_id` VARCHAR(50) NOT NULL,
+  `santri_nama` VARCHAR(100),
+  `santri_kelas` VARCHAR(50),
+  `santri_kamar` VARCHAR(50),
+  `keperluan` TEXT NOT NULL,
   `tanggal_mulai` DATE NOT NULL,
   `tanggal_selesai` DATE NOT NULL,
-  `keterangan` TEXT,
-  `status` VARCHAR(50) NOT NULL,
-  `tanggal_kembali` DATE,
-  `gender` VARCHAR(10),
-  `is_cabut` TINYINT(1) DEFAULT 0,
-  `tanggal_cabut` DATE,
-  `alasan_cabut` TEXT,
-  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+  `penjemput` VARCHAR(100),
+  `status` VARCHAR(50) DEFAULT 'Menunggu Persetujuan',
+  `catatan` TEXT,
+  `petugas` VARCHAR(100),
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE IF NOT EXISTS `katalog_pelanggaran` (
-  `id` VARCHAR(50) NOT NULL PRIMARY KEY,
-  `nama` VARCHAR(150) NOT NULL,
-  `kategori` VARCHAR(50) NOT NULL,
-  `deskripsi` TEXT,
-  `rules` LONGTEXT,
-  `default_poin` INT DEFAULT 0,
-  `default_tazir` TEXT,
-  `gender` VARCHAR(10),
-  `repetition_strategy` VARCHAR(50) DEFAULT 'repeat_1_2',
-  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- 7. TABEL AKUN / KREDENSIAL (APP_CREDENTIALS)
+-- 7. TABEL AKUN PENGGUNA (APP CREDENTIALS)
 CREATE TABLE IF NOT EXISTS `app_credentials` (
-  `id` VARCHAR(50) NOT NULL PRIMARY KEY DEFAULT 'superadmin',
-  `username` VARCHAR(150) NOT NULL UNIQUE,
-  `password` VARCHAR(255) NOT NULL DEFAULT '1234',
-  `role` VARCHAR(50) DEFAULT 'superadmin',
-  `status` VARCHAR(50) DEFAULT 'approved',
-  `display_name` VARCHAR(100) DEFAULT 'Admin Utama',
+  `id` VARCHAR(50) NOT NULL PRIMARY KEY,
+  `username` VARCHAR(100) NOT NULL UNIQUE,
+  `password` VARCHAR(255) NOT NULL,
+  `role` VARCHAR(50) NOT NULL DEFAULT 'viewer',
+  `status` VARCHAR(50) NOT NULL DEFAULT 'approved',
+  `display_name` VARCHAR(100),
   `avatar_url` TEXT,
+  `nama` VARCHAR(100),
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -255,14 +337,18 @@ INSERT INTO `app_credentials` (`id`, `username`, `password`, `role`, `status`, `
 VALUES ('superadmin', 'superadmin@attaroqqy.com', '1234', 'superadmin', 'approved', 'Super Admin')
 ON DUPLICATE KEY UPDATE `id`=`id`;
 
--- 8. TABEL PROFIL PESANTREN
+-- 8. TABEL PROFIL PESANTREN (STRUKTUR KEPENGURUSAN PUTRA & PUTRI & ALAMAT LENGKAP)
 CREATE TABLE IF NOT EXISTS `pesantren_profile` (
   `id` VARCHAR(50) NOT NULL PRIMARY KEY DEFAULT 'main',
   `nama_pesantren` VARCHAR(100),
   `nama_yayasan` VARCHAR(100),
   `nspp` VARCHAR(50) DEFAULT '121235070001',
   `nomor_notaris` VARCHAR(150),
+  
+  -- Alamat Rapi & Terstruktur
   `alamat` TEXT,
+  `rt` VARCHAR(10),
+  `rw` VARCHAR(10),
   `desa` VARCHAR(50),
   `kecamatan` VARCHAR(50),
   `kabupaten` VARCHAR(50),
@@ -271,18 +357,41 @@ CREATE TABLE IF NOT EXISTS `pesantren_profile` (
   `telepon` VARCHAR(20),
   `email` VARCHAR(100),
   `website` VARCHAR(100),
+  
+  -- Struktur Kepengurusan Putra
+  `nama_pengasuh_putra` VARCHAR(100),
+  `nama_wakil_pengasuh_putra` VARCHAR(100),
+  `nama_ketua_pondok_putra` VARCHAR(100),
+  `nama_sekretaris_putra` VARCHAR(100),
+  `nama_bendahara_putra` VARCHAR(100),
+  `nama_ketua_pendidikan_putra` VARCHAR(100),
+  `nama_ketua_keamanan_putra` VARCHAR(100),
+  `nama_ketua_humasy_putra` VARCHAR(100),
+
+  -- Struktur Kepengurusan Putri
+  `nama_pengasuh_putri` VARCHAR(100),
+  `nama_wakil_pengasuh_putri` VARCHAR(100),
+  `nama_ketua_pondok_putri` VARCHAR(100),
+  `nama_sekretaris_putri` VARCHAR(100),
+  `nama_bendahara_putri` VARCHAR(100),
+  `nama_ketua_pendidikan_putri` VARCHAR(100),
+  `nama_ketua_keamanan_putri` VARCHAR(100),
+  `nama_ketua_humasy_putri` VARCHAR(100),
+
+  -- Kolom Legacy & Tambahan
   `nama_pengasuh` VARCHAR(100),
-  `nama_wakil_pengasuh` VARCHAR(100),
   `nama_ketua_yayasan` VARCHAR(100),
+  `nama_wakil_pengasuh` VARCHAR(100),
   `nama_ketua_pondok` VARCHAR(100),
   `nama_sekretaris` VARCHAR(100),
   `nama_bendahara` VARCHAR(100),
   `nama_ketua_keamanan` VARCHAR(100),
   `nama_ketua_pendidikan` VARCHAR(100),
   `nama_ketua_humasy` VARCHAR(100),
+
   `kota_tanda_tangan` VARCHAR(50),
   `logo_style` VARCHAR(50) DEFAULT 'classic',
-  `logo_url` TEXT,
+  `logo_url` LONGTEXT,
   `kop_tambahan_1` VARCHAR(150),
   `kop_tambahan_2` VARCHAR(150),
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,

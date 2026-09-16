@@ -1403,6 +1403,75 @@ async function ensureTableExists(table: string, pool: mysql.Pool) {
       } catch (e: any) {
         handleMySQLError(e);
       }
+    } else if (table === 'pesantren_profile') {
+      try {
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS \`pesantren_profile\` (
+            \`id\` VARCHAR(50) NOT NULL PRIMARY KEY DEFAULT 'main',
+            \`nama_pesantren\` VARCHAR(100),
+            \`nama_yayasan\` VARCHAR(100),
+            \`nspp\` VARCHAR(50) DEFAULT '121235070001',
+            \`nomor_notaris\` VARCHAR(150),
+            \`alamat\` TEXT,
+            \`desa\` VARCHAR(50),
+            \`kecamatan\` VARCHAR(50),
+            \`kabupaten\` VARCHAR(50),
+            \`provinsi\` VARCHAR(50),
+            \`kode_pos\` VARCHAR(10),
+            \`telepon\` VARCHAR(20),
+            \`email\` VARCHAR(100),
+            \`website\` VARCHAR(100),
+            \`nama_pengasuh\` VARCHAR(100),
+            \`nama_wakil_pengasuh\` VARCHAR(100),
+            \`nama_ketua_yayasan\` VARCHAR(100),
+            \`nama_ketua_pondok\` VARCHAR(100),
+            \`nama_sekretaris\` VARCHAR(100),
+            \`nama_bendahara\` VARCHAR(100),
+            \`nama_ketua_keamanan\` VARCHAR(100),
+            \`nama_ketua_pendidikan\` VARCHAR(100),
+            \`nama_ketua_humasy\` VARCHAR(100),
+            \`nama_wakil_pengasuh_putra\` VARCHAR(100),
+            \`nama_ketua_pondok_putra\` VARCHAR(100),
+            \`nama_sekretaris_putra\` VARCHAR(100),
+            \`nama_bendahara_putra\` VARCHAR(100),
+            \`nama_ketua_keamanan_putra\` VARCHAR(100),
+            \`nama_ketua_pendidikan_putra\` VARCHAR(100),
+            \`nama_ketua_humasy_putra\` VARCHAR(100),
+            \`nama_wakil_pengasuh_putri\` VARCHAR(100),
+            \`nama_ketua_pondok_putri\` VARCHAR(100),
+            \`nama_sekretaris_putri\` VARCHAR(100),
+            \`nama_bendahara_putri\` VARCHAR(100),
+            \`nama_ketua_keamanan_putri\` VARCHAR(100),
+            \`nama_ketua_pendidikan_putri\` VARCHAR(100),
+            \`nama_ketua_humasy_putri\` VARCHAR(100),
+            \`kota_tanda_tangan\` VARCHAR(50),
+            \`logo_style\` VARCHAR(50) DEFAULT 'classic',
+            \`logo_url\` LONGTEXT,
+            \`kop_tambahan_1\` VARCHAR(150),
+            \`kop_tambahan_2\` VARCHAR(150),
+            \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP,
+            \`updated_at\` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        `);
+        const profileCols = [
+          'nama_pesantren', 'nama_yayasan', 'nspp', 'nomor_notaris', 'alamat', 'desa',
+          'kecamatan', 'kabupaten', 'provinsi', 'kode_pos', 'telepon', 'email', 'website',
+          'nama_pengasuh', 'nama_wakil_pengasuh', 'nama_ketua_yayasan', 'nama_ketua_pondok',
+          'nama_sekretaris', 'nama_bendahara', 'nama_ketua_keamanan', 'nama_ketua_pendidikan', 'nama_ketua_humasy',
+          'nama_wakil_pengasuh_putra', 'nama_ketua_pondok_putra', 'nama_sekretaris_putra', 'nama_bendahara_putra',
+          'nama_ketua_keamanan_putra', 'nama_ketua_pendidikan_putra', 'nama_ketua_humasy_putra',
+          'nama_wakil_pengasuh_putri', 'nama_ketua_pondok_putri', 'nama_sekretaris_putri', 'nama_bendahara_putri',
+          'nama_ketua_keamanan_putri', 'nama_ketua_pendidikan_putri', 'nama_ketua_humasy_putri',
+          'kota_tanda_tangan', 'logo_style', 'logo_url', 'kop_tambahan_1', 'kop_tambahan_2'
+        ];
+        for (const col of profileCols) {
+          try {
+            await pool.query(`ALTER TABLE \`pesantren_profile\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
+          } catch (e) {}
+        }
+      } catch (e: any) {
+        handleMySQLError(e);
+      }
     }
   } catch (err: any) {
     handleMySQLError(err);

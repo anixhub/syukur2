@@ -1036,6 +1036,7 @@ export default function App() {
         activeModule={activeModule}
         activeSubTab={activeSubTab}
         onChangeModule={(mod, sub) => {
+          setIsChatOpen(false);
           handleChangeModule(mod, sub);
           handleCloseDrawer();
         }}
@@ -1047,11 +1048,13 @@ export default function App() {
           setIsNotificationsOpen(false);
           setIsChatOpen(true);
         }}
+        isChatOpen={isChatOpen}
         unreadChatCount={unreadChatCount}
         hasMentionNotification={hasMentionNotification}
         onSearchModeChange={(isSearching) => setIsDrawerSearchMode(isSearching)}
         santriList={santriList}
         onSelectSantri={(santri) => {
+          setIsChatOpen(false);
           setHeaderSelectedSantri(santri);
           handleCloseDrawer();
         }}
@@ -1064,12 +1067,16 @@ export default function App() {
         onToggleExpand={() => setIsDesktopSidebarOpen(prev => !prev)}
         activeModule={activeModule}
         activeSubTab={activeSubTab}
-        onChangeModule={handleChangeModule}
+        onChangeModule={(mod, sub) => {
+          handleChangeModule(mod, sub);
+        }}
         isSelectionMode={isSelectionMode}
         onLogout={() => setIsLoggedIn(false)}
         onOpenHelp={() => setShowHelpModal(true)}
         santriList={santriList}
-        onSelectSantri={(santri) => setHeaderSelectedSantri(santri)}
+        onSelectSantri={(santri) => {
+          setHeaderSelectedSantri(santri);
+        }}
         onOpenChat={handleToggleChat}
         isChatOpen={isChatOpen}
         unreadChatCount={unreadChatCount}
@@ -1282,6 +1289,22 @@ export default function App() {
       <AdminChatDrawer
         isOpen={isChatOpen}
         onClose={() => setIsChatOpen(false)}
+        onOpenDrawer={() => {
+          if (isMobile) {
+            if (isDrawerOpen) {
+              handleCloseDrawer();
+            } else {
+              setIsDrawerOpen(true);
+              setIsDrawerClosing(false);
+              setIsDrawerSearchMode(false);
+            }
+          } else {
+            setIsDesktopSidebarOpen(prev => !prev);
+          }
+        }}
+        isDrawerOpen={isDrawerOpen}
+        onCloseDrawer={handleCloseDrawer}
+        isDrawerSearchMode={isDrawerSearchMode}
         unreadCount={unreadChatCount}
         onClearUnread={() => {
           setUnreadChatCount(0);

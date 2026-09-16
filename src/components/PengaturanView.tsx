@@ -46,41 +46,14 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { camelToSnake, snakeToCamel, getSupabaseStatus, updateTableRow, insertTableRow, fetchTableData, deleteTableRow, uploadFileToStorage, subscribeRealtimeChanges, getApiUrl } from '../lib/api';
-import { AppCredentials, Santri, KeamananRecord, RombelAssignment, KelompokRombel, Lembaga, Kelas, KategoriRombel } from '../types';
+import { AppCredentials, Santri, KeamananRecord, RombelAssignment, KelompokRombel, Lembaga, Kelas, KategoriRombel, PesantrenProfile } from '../types';
 import { compressImage } from '../lib/utils';
 import ProfilPesantrenSub from './ProfilPesantrenSub';
 import * as XLSX from 'xlsx';
 import { ModulePermission, AccountRole, buildPermissions, DEFAULT_ROLES, fetchAndSyncPermissionsFromSupabase } from '../lib/permissions';
 import { logAdminActivity } from '../lib/activityLogger';
 
-export interface PesantrenProfile {
-  namaPesantren: string;
-  namaYayasan: string;
-  nspp: string;
-  nomorNotaris: string;
-  alamat: string;
-  desa: string;
-  kecamatan: string;
-  kabupaten: string;
-  provinsi: string;
-  kodePos: string;
-  telepon: string;
-  email: string;
-  website: string;
-  namaPengasuh: string;
-  namaWakilPengasuh: string;
-  namaKetuaYayasan: string;
-  namaKetuaPondok: string;
-  namaSekretaris: string;
-  namaBendahara: string;
-  namaKetuaKeamanan: string;
-  namaKetuaPendidikan: string;
-  kotaTandaTangan: string;
-  logoStyle: 'classic' | 'elegant' | 'modern';
-  kopTambahan1: string;
-  kopTambahan2: string;
-  logoUrl?: string;
-}
+export type { PesantrenProfile };
 
 const DEFAULT_PROFILE: PesantrenProfile = {
   namaPesantren: '',
@@ -96,18 +69,43 @@ const DEFAULT_PROFILE: PesantrenProfile = {
   telepon: '',
   email: '',
   website: '',
+  
+  // Pengasuh & Pimpinan Tunggal
   namaPengasuh: '',
-  namaWakilPengasuh: '',
   namaKetuaYayasan: '',
+  
+  // Susunan Pengurus Putra
+  namaWakilPengasuhPutra: '',
+  namaKetuaPondokPutra: '',
+  namaSekretarisPutra: '',
+  namaBendaharaPutra: '',
+  namaKetuaKeamananPutra: '',
+  namaKetuaPendidikanPutra: '',
+  namaKetuaHumasyPutra: '',
+
+  // Susunan Pengurus Putri
+  namaWakilPengasuhPutri: '',
+  namaKetuaPondokPutri: '',
+  namaSekretarisPutri: '',
+  namaBendaharaPutri: '',
+  namaKetuaKeamananPutri: '',
+  namaKetuaPendidikanPutri: '',
+  namaKetuaHumasyPutri: '',
+
+  // Legacy compatibility
+  namaWakilPengasuh: '',
   namaKetuaPondok: '',
   namaSekretaris: '',
   namaBendahara: '',
   namaKetuaKeamanan: '',
   namaKetuaPendidikan: '',
+  namaKetuaHumasy: '',
+
   kotaTandaTangan: '',
   logoStyle: 'classic',
   kopTambahan1: '',
   kopTambahan2: '',
+  logoUrl: ''
 };
 
 const MODULE_INFOS = [
@@ -962,13 +960,35 @@ export default function PengaturanView({
             email: mainProfile.email ?? DEFAULT_PROFILE.email,
             website: mainProfile.website ?? DEFAULT_PROFILE.website,
             namaPengasuh: mainProfile.namaPengasuh ?? DEFAULT_PROFILE.namaPengasuh,
-            namaWakilPengasuh: mainProfile.namaWakilPengasuh ?? DEFAULT_PROFILE.namaWakilPengasuh,
             namaKetuaYayasan: mainProfile.namaKetuaYayasan ?? DEFAULT_PROFILE.namaKetuaYayasan,
-            namaKetuaPondok: mainProfile.namaKetuaPondok ?? DEFAULT_PROFILE.namaKetuaPondok,
-            namaSekretaris: mainProfile.namaSekretaris ?? DEFAULT_PROFILE.namaSekretaris,
-            namaBendahara: mainProfile.namaBendahara ?? DEFAULT_PROFILE.namaBendahara,
-            namaKetuaKeamanan: mainProfile.namaKetuaKeamanan ?? DEFAULT_PROFILE.namaKetuaKeamanan,
-            namaKetuaPendidikan: mainProfile.namaKetuaPendidikan ?? DEFAULT_PROFILE.namaKetuaPendidikan,
+            
+            // Pengurus Putra
+            namaWakilPengasuhPutra: mainProfile.namaWakilPengasuhPutra ?? mainProfile.namaWakilPengasuh ?? '',
+            namaKetuaPondokPutra: mainProfile.namaKetuaPondokPutra ?? mainProfile.namaKetuaPondok ?? '',
+            namaSekretarisPutra: mainProfile.namaSekretarisPutra ?? mainProfile.namaSekretaris ?? '',
+            namaBendaharaPutra: mainProfile.namaBendaharaPutra ?? mainProfile.namaBendahara ?? '',
+            namaKetuaKeamananPutra: mainProfile.namaKetuaKeamananPutra ?? mainProfile.namaKetuaKeamanan ?? '',
+            namaKetuaPendidikanPutra: mainProfile.namaKetuaPendidikanPutra ?? mainProfile.namaKetuaPendidikan ?? '',
+            namaKetuaHumasyPutra: mainProfile.namaKetuaHumasyPutra ?? mainProfile.namaKetuaHumasy ?? '',
+
+            // Pengurus Putri
+            namaWakilPengasuhPutri: mainProfile.namaWakilPengasuhPutri ?? '',
+            namaKetuaPondokPutri: mainProfile.namaKetuaPondokPutri ?? '',
+            namaSekretarisPutri: mainProfile.namaSekretarisPutri ?? '',
+            namaBendaharaPutri: mainProfile.namaBendaharaPutri ?? '',
+            namaKetuaKeamananPutri: mainProfile.namaKetuaKeamananPutri ?? '',
+            namaKetuaPendidikanPutri: mainProfile.namaKetuaPendidikanPutri ?? '',
+            namaKetuaHumasyPutri: mainProfile.namaKetuaHumasyPutri ?? '',
+
+            // Legacy
+            namaWakilPengasuh: mainProfile.namaWakilPengasuh ?? mainProfile.namaWakilPengasuhPutra ?? '',
+            namaKetuaPondok: mainProfile.namaKetuaPondok ?? mainProfile.namaKetuaPondokPutra ?? '',
+            namaSekretaris: mainProfile.namaSekretaris ?? mainProfile.namaSekretarisPutra ?? '',
+            namaBendahara: mainProfile.namaBendahara ?? mainProfile.namaBendaharaPutra ?? '',
+            namaKetuaKeamanan: mainProfile.namaKetuaKeamanan ?? mainProfile.namaKetuaKeamananPutra ?? '',
+            namaKetuaPendidikan: mainProfile.namaKetuaPendidikan ?? mainProfile.namaKetuaPendidikanPutra ?? '',
+            namaKetuaHumasy: mainProfile.namaKetuaHumasy ?? mainProfile.namaKetuaHumasyPutra ?? '',
+
             kotaTandaTangan: mainProfile.kotaTandaTangan ?? DEFAULT_PROFILE.kotaTandaTangan,
             logoStyle: mainProfile.logoStyle ?? DEFAULT_PROFILE.logoStyle,
             kopTambahan1: mainProfile.kopTambahan1 ?? DEFAULT_PROFILE.kopTambahan1,

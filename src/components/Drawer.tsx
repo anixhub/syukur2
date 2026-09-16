@@ -33,6 +33,7 @@ interface DrawerProps {
   onLogout?: () => void;
   onOpenHelp?: () => void;
   onOpenChat?: () => void;
+  isChatOpen?: boolean;
   unreadChatCount?: number;
   hasMentionNotification?: boolean;
   onSearchModeChange?: (isSearching: boolean) => void;
@@ -117,6 +118,7 @@ export default function Drawer({
   onLogout,
   onOpenHelp,
   onOpenChat,
+  isChatOpen = false,
   unreadChatCount = 0,
   hasMentionNotification = false,
   onSearchModeChange,
@@ -535,7 +537,8 @@ export default function Drawer({
           <nav className="flex-1 overflow-y-auto px-4 py-2 space-y-1 w-[80%]">
             {searchedItems.map((item) => {
               const Icon = item.icon;
-              const isActive = activeModule === item.id;
+              const isChat = item.id === 'group_chat';
+              const isActive = isChatOpen ? isChat : (!isChat && activeModule === item.id);
               const isExpanded = (openAccordion === item.id) || (searchQuery.trim().length > 0 && item.submenus && item.submenus.length > 0);
               const hasSubmenus = item.submenus && item.submenus.length > 0;
 

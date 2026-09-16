@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { motion } from 'motion/react';
 import { 
+  Menu,
   X, 
   Send, 
   Trash2, 
@@ -96,6 +98,10 @@ export interface PinnedItem {
 interface AdminChatDrawerProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpenDrawer?: () => void;
+  isDrawerOpen?: boolean;
+  onCloseDrawer?: () => void;
+  isDrawerSearchMode?: boolean;
   unreadCount: number;
   onClearUnread: () => void;
   layoutMode?: 'sidebar' | 'floating' | 'full';
@@ -202,6 +208,10 @@ const EMOJI_CATEGORIES = [
 export default function AdminChatDrawer({
   isOpen,
   onClose,
+  onOpenDrawer,
+  isDrawerOpen = false,
+  onCloseDrawer,
+  isDrawerSearchMode = false,
   unreadCount,
   onClearUnread,
   layoutMode: propLayoutMode,
@@ -519,29 +529,39 @@ export default function AdminChatDrawer({
 
   // Floating Width, Position & Drag State (Supports Left & Right Resizers + Header Window Drag)
   const [floatingWidth, setFloatingWidth] = useState<number>(460);
+  const [floatingLeft, setFloatingLeft] = useState<number | null>(null);
   const [isResizing, setIsResizing] = useState<boolean>(false);
-  const [positionX, setPositionX] = useState<number>(0);
   const [isDraggingWindow, setIsDraggingWindow] = useState<boolean>(false);
 
   const isResizingRef = useRef<boolean>(false);
   const isDraggingWindowRef = useRef<boolean>(false);
   const floatingWidthRef = useRef<number>(460);
-  const positionXRef = useRef<number>(0);
+  const floatingLeftRef = useRef<number | null>(null);
 
   useEffect(() => {
     floatingWidthRef.current = floatingWidth;
   }, [floatingWidth]);
 
   useEffect(() => {
-    positionXRef.current = positionX;
-  }, [positionX]);
+    floatingLeftRef.current = floatingLeft;
+  }, [floatingLeft]);
+
+  const getEffectiveLeft = () => {
+    if (typeof window === 'undefined') return 16;
+    const margin = 16;
+    const maxLeft = Math.max(margin, window.innerWidth - floatingWidth - margin);
+    if (floatingLeft === null) {
+      return maxLeft;
+    }
+    return Math.max(margin, Math.min(floatingLeft, maxLeft));
+  };
 
   const dragStateRef = useRef<{
     type: 'resize_left' | 'resize_right' | 'window';
     startX: number;
     startWidth: number;
-    startPosX: number;
-  }>({ type: 'window', startX: 0, startWidth: 460, startPosX: 0 });
+    startLeft: number;
+  }>({ type: 'window', startX: 0, startWidth: 460, startLeft: 0 });
 
   // Fast Exit Animation State
   const [isClosing, setIsClosing] = useState<boolean>(false);
@@ -882,52 +902,42 @@ export default function AdminChatDrawer({
         return;
       }
 
-      const { type, startX, startWidth, startPosX } = dragStateRef.current;
-      const screenMargin = window.innerWidth >= 640 ? 16 : 8;
+      const { type, startX, startWidth, startLeft } = dragStateRef.current;
+      const margin = 16;
 
       if (isResizingRef.current) {
         if (type === 'resize_left') {
-          // Dragging left handle: moving cursor left increases width
+          // Dragging left handle: sisi kanan (rightEdge) tetap terkunci diam secara mutlak
           const deltaX = startX - e.clientX;
-          const newWidth = startWidth + deltaX;
+          const rawNewWidth = startWidth + deltaX;
 
           if (layoutMode === 'sidebar') {
             const minAllowedWidth = 340;
             const maxAllowedWidth = Math.max(440, Math.floor(window.innerWidth * 0.75));
-            const clampedWidth = Math.max(minAllowedWidth, Math.min(newWidth, maxAllowedWidth));
+            const clampedWidth = Math.max(minAllowedWidth, Math.min(rawNewWidth, maxAllowedWidth));
             handleSetSidebarWidth(clampedWidth);
           } else {
-            // Prevent left edge from going past left screen boundary (x = screenMargin)
-            const maxAllowedWidth = Math.max(340, window.innerWidth - (2 * screenMargin) + startPosX);
-            const clampedWidth = Math.max(340, Math.min(newWidth, maxAllowedWidth));
+            const rightEdge = startLeft + startWidth;
+            const maxWidth = Math.max(340, rightEdge - margin);
+            const clampedWidth = Math.max(340, Math.min(rawNewWidth, maxWidth));
+            const newLeft = rightEdge - clampedWidth;
             setFloatingWidth(clampedWidth);
+            setFloatingLeft(newLeft);
           }
         } else if (type === 'resize_right') {
-          // Dragging right handle: moving cursor right increases width
+          // Dragging right handle: sisi kiri (startLeft) tetap 100% diam di koordinatnya, hanya sisi kanan yang melebar/menyempit
           const deltaX = e.clientX - startX;
-          const newWidth = startWidth + deltaX;
-
-          const maxAllowedWidth = Math.max(340, startWidth - startPosX);
-          const clampedWidth = Math.max(340, Math.min(newWidth, maxAllowedWidth));
-          const widthDiff = clampedWidth - startWidth;
-          
+          const maxWidth = Math.max(340, window.innerWidth - startLeft - margin);
+          const clampedWidth = Math.max(340, Math.min(startWidth + deltaX, maxWidth));
           setFloatingWidth(clampedWidth);
-          const newPosX = Math.min(0, startPosX + widthDiff);
-          setPositionX(newPosX);
+          setFloatingLeft(startLeft);
         }
       } else if (isDraggingWindowRef.current) {
+        // Dragging window header: geser posisi kotak obrolan secara horizontal
         const deltaX = e.clientX - startX;
-        const newX = startPosX + deltaX;
-
-        // Base right gap is screenMargin (when positionX = 0).
-        // Current left gap is (window.innerWidth - screenMargin - startWidth + positionX).
-        // For left gap to equal screenMargin: minLeft = -(window.innerWidth - startWidth - 2 * screenMargin).
-        const maxLeftShift = -(window.innerWidth - startWidth - (2 * screenMargin));
-        const safeMinLeft = Math.min(0, maxLeftShift);
-        const maxRight = 0;
-        
-        const clampedX = Math.max(safeMinLeft, Math.min(newX, maxRight));
-        setPositionX(clampedX);
+        const maxLeft = Math.max(margin, window.innerWidth - floatingWidthRef.current - margin);
+        const clampedLeft = Math.max(margin, Math.min(startLeft + deltaX, maxLeft));
+        setFloatingLeft(clampedLeft);
       }
     };
 
@@ -1737,31 +1747,33 @@ export default function AdminChatDrawer({
     );
   };
 
-  if (!isOpen && !isClosing) return null;
+  if (!isOpen && !isClosing && !isMobile) return null;
 
   // Layout mode class selector
   const getLayoutClasses = () => {
     if (isMobile) {
-      return 'w-full h-full h-[100dvh] rounded-none my-0 right-0 top-0 border-none shadow-none';
+      return 'w-full h-full h-[100dvh] my-0 right-0 top-0';
     }
     switch (layoutMode) {
       case 'full':
         return 'w-full h-screen rounded-none my-0 right-0 top-0 border-none shadow-none';
       case 'sidebar':
-        return 'h-screen rounded-none my-0 right-0 top-0 border-l border-slate-200/90 shadow-2xl';
+        return 'h-screen rounded-none my-0 right-0 top-0 border-l border-slate-200/80 shadow-xl';
       case 'floating':
       default:
-        return 'h-[96vh] sm:h-[94vh] my-auto rounded-[28px] border shadow-2xl overflow-hidden';
+        return 'rounded-[28px] border border-slate-200/80 shadow-2xl overflow-hidden';
     }
   };
 
   return (
     <div className={`fixed inset-0 z-[100] flex overflow-hidden pointer-events-none transition-all ${
+      isMobile && !isOpen ? 'opacity-0 pointer-events-none' : ''
+    } ${
       isMobile || layoutMode === 'full' 
         ? 'justify-stretch items-stretch p-0' 
         : layoutMode === 'sidebar'
         ? 'justify-end items-stretch p-0'
-        : 'justify-stretch items-stretch p-0 sm:justify-end sm:items-center sm:p-4'
+        : 'p-0'
     }`}>
       {/* Hidden File Inputs */}
       <input 
@@ -1779,29 +1791,108 @@ export default function AdminChatDrawer({
         className="hidden" 
       />
 
-      {/* Main Chat Box Window with Entrance & Exit Animations */}
-      <div 
+      {/* Main Chat Box Window with Smooth Non-overshooting Entrance & Exit Animations */}
+      <motion.div 
+        initial={false}
+        animate={
+          isMobile
+            ? !isOpen
+              ? {
+                  x: '100%',
+                  scale: 0.88,
+                  opacity: 0,
+                  borderRadius: '40px',
+                  boxShadow: '0px 0px 0px 0px rgba(0, 0, 0, 0)',
+                  borderColor: 'rgba(226, 232, 240, 0)',
+                  borderStyle: 'solid',
+                  borderWidth: '1px',
+                }
+              : isDrawerOpen
+                ? isDrawerSearchMode
+                  ? {
+                      x: '100%',
+                      scale: 0.88,
+                      opacity: 0,
+                      borderRadius: '40px',
+                      boxShadow: '0px 0px 0px 0px rgba(0, 0, 0, 0)',
+                      borderColor: 'rgba(226, 232, 240, 0)',
+                      borderStyle: 'solid',
+                      borderWidth: '1px',
+                    }
+                  : {
+                      x: '80%',
+                      scale: 0.88,
+                      opacity: 1,
+                      borderRadius: '40px',
+                      boxShadow: '0px 20px 50px 0px rgba(0, 0, 0, 0.25)',
+                      borderColor: 'rgba(226, 232, 240, 0.8)',
+                      borderStyle: 'solid',
+                      borderWidth: '1px',
+                    }
+                : {
+                    x: '0%',
+                    scale: 1,
+                    opacity: 1,
+                    borderRadius: '0px',
+                    boxShadow: '0px 0px 0px 0px rgba(0, 0, 0, 0)',
+                    borderColor: 'rgba(226, 232, 240, 0)',
+                    borderStyle: 'none',
+                    borderWidth: '0px',
+                  }
+            : {
+                scale: 1,
+                opacity: 1,
+              }
+        }
+        transition={
+          (isResizing || isDraggingWindow) 
+            ? { duration: 0 } 
+            : { type: 'tween', ease: [0.25, 1, 0.5, 1], duration: 0.32 }
+        }
         style={{
+          position: (!isMobile && layoutMode === 'floating') ? 'fixed' : undefined,
+          left: (!isMobile && layoutMode === 'floating') ? `${getEffectiveLeft()}px` : undefined,
+          top: (!isMobile && layoutMode === 'floating') ? '2vh' : undefined,
+          height: (!isMobile && layoutMode === 'floating') ? '96vh' : undefined,
           width: (!isMobile && (layoutMode === 'floating' || layoutMode === 'sidebar')) 
             ? (layoutMode === 'sidebar' ? `${sidebarWidth}px` : `${floatingWidth}px`) 
             : undefined,
           minWidth: (!isMobile && (layoutMode === 'floating' || layoutMode === 'sidebar')) ? '340px' : undefined,
-          maxWidth: (!isMobile && layoutMode === 'floating') ? '100vw' : (!isMobile && layoutMode === 'sidebar') ? '75vw' : undefined,
-          transform: (!isMobile && layoutMode === 'floating') ? `translateX(${positionX}px)` : undefined,
-          overscrollBehavior: 'contain'
+          maxWidth: (!isMobile && layoutMode === 'floating') ? 'calc(100vw - 32px)' : (!isMobile && layoutMode === 'sidebar') ? '75vw' : undefined,
+          transformOrigin: isMobile ? '0 50vh' : undefined,
+          borderStyle: isMobile ? 'solid' : undefined,
+          borderRadius: !isMobile ? (layoutMode === 'full' || layoutMode === 'sidebar' ? '0px' : undefined) : undefined,
+          overflow: isMobile ? 'hidden' : ((!isMobile && layoutMode === 'floating') ? 'hidden' : undefined),
+          boxShadow: !isMobile ? (layoutMode === 'full' ? 'none' : undefined) : undefined,
+          borderWidth: !isMobile ? (layoutMode === 'full' ? '0px' : undefined) : undefined,
+          overscrollBehavior: 'contain',
         }}
-        className={`relative z-10 pointer-events-auto flex flex-col bg-white border-slate-200/90 shadow-2xl ${
-          (isResizing || isDraggingWindow) ? 'transition-none' : 'transition-all duration-150 ease-out'
+        className={`relative z-10 pointer-events-auto flex flex-col bg-white ${
+          isMobile ? 'overflow-hidden' : ''
+        } ${
+          isMobile && isDrawerOpen ? 'select-none' : ''
         } overscroll-contain ${
-          isClosing 
-            ? (layoutMode === 'sidebar'
-                ? 'animate-out fade-out slide-out-to-right-full duration-200 ease-in'
-                : 'animate-out fade-out slide-out-to-bottom-full duration-150 ease-in')
-            : (layoutMode === 'sidebar'
-                ? 'animate-in fade-in slide-in-from-right-full duration-200 ease-out'
-                : 'animate-in fade-in slide-in-from-bottom-full duration-150 ease-out')
+          !isMobile
+            ? (isClosing 
+                ? (layoutMode === 'sidebar'
+                    ? 'animate-out fade-out slide-out-to-right-full duration-200 [animation-timing-function:cubic-bezier(0.25,1,0.5,1)]'
+                    : 'animate-out fade-out slide-out-to-bottom-full duration-150 [animation-timing-function:cubic-bezier(0.25,1,0.5,1)]')
+                : (layoutMode === 'sidebar'
+                    ? 'animate-in fade-in slide-in-from-right-full duration-200 [animation-timing-function:cubic-bezier(0.25,1,0.5,1)]'
+                    : 'animate-in fade-in slide-in-from-bottom-full duration-150 [animation-timing-function:cubic-bezier(0.25,1,0.5,1)]'))
+            : ''
         } ${getLayoutClasses()}`}
       >
+        {/* Tap-to-close Overlay on top of scaled-down chat screen on mobile when drawer is open */}
+        {isMobile && isDrawerOpen && !isDrawerSearchMode && (
+          <div
+            id="mobile-chat-dim-tap-overlay"
+            onClick={onCloseDrawer}
+            className="absolute inset-0 z-50 cursor-pointer bg-transparent touch-none"
+            title="Ketuk untuk menutup menu"
+          />
+        )}
+
         {/* Drag Handle on Left Edge for Resizing (Floating and Sidebar mode) */}
         {!isMobile && (layoutMode === 'floating' || layoutMode === 'sidebar') && (
           <div 
@@ -1812,21 +1903,22 @@ export default function AdminChatDrawer({
               isResizingRef.current = true;
               setIsResizing(true);
               if (onResizeStateChange) onResizeStateChange(true);
+              const curLeft = getEffectiveLeft();
               dragStateRef.current = {
                 type: 'resize_left',
                 startX: e.clientX,
                 startWidth: layoutMode === 'sidebar' ? sidebarWidthRef.current : floatingWidthRef.current,
-                startPosX: positionXRef.current
+                startLeft: curLeft
               };
             }}
-            className={`absolute left-0 top-0 bottom-0 w-2.5 cursor-col-resize z-30 group hover:bg-emerald-500/20 transition-colors hidden sm:flex items-center justify-center ${isResizing ? 'bg-emerald-500/30' : ''}`}
-            title={layoutMode === 'sidebar' ? "Tarik untuk mengatur lebar sidebar chat" : "Tarik sisi kiri untuk merubah lebar obrolan (Hingga batas layar)"}
+            className={`absolute left-0 top-0 bottom-0 w-3 cursor-ew-resize z-30 group hover:bg-slate-200/60 active:bg-blue-500/20 transition-colors hidden sm:flex items-center justify-center ${isResizing ? 'bg-blue-500/20' : ''}`}
+            title={layoutMode === 'sidebar' ? "Tarik untuk mengatur lebar sidebar chat" : "Tarik sisi kiri untuk merubah lebar obrolan"}
           >
-            <div className="w-1 h-8 rounded-full bg-slate-300 group-hover:bg-emerald-600 transition-colors" />
+            <div className="w-1 h-8 rounded-full bg-slate-300 group-hover:bg-slate-500 group-active:bg-blue-600 transition-colors" />
           </div>
         )}
 
-        {/* Drag Handle on Right Edge for Floating Width Resizing (Hanya di tablet/desktop, tersembunyi di HP) */}
+        {/* Drag Handle on Right Edge for Floating Width Resizing */}
         {!isMobile && layoutMode === 'floating' && (
           <div 
             onMouseDown={(e) => {
@@ -1835,24 +1927,60 @@ export default function AdminChatDrawer({
               document.body.style.userSelect = 'none';
               isResizingRef.current = true;
               setIsResizing(true);
+              if (onResizeStateChange) onResizeStateChange(true);
+              const curLeft = getEffectiveLeft();
               dragStateRef.current = {
                 type: 'resize_right',
                 startX: e.clientX,
                 startWidth: floatingWidthRef.current,
-                startPosX: positionXRef.current
+                startLeft: curLeft
               };
             }}
-            className={`absolute right-0 top-0 bottom-0 w-2.5 cursor-ew-resize z-30 group hover:bg-purple-500/20 transition-colors hidden sm:flex items-center justify-center ${isResizing ? 'bg-purple-500/30' : ''}`}
-            title="Tarik sisi kanan untuk merubah lebar obrolan (Hingga batas layar)"
+            className={`absolute right-0 top-0 bottom-0 w-3 cursor-ew-resize z-30 group hover:bg-slate-200/60 active:bg-blue-500/20 transition-colors hidden sm:flex items-center justify-center ${isResizing ? 'bg-blue-500/20' : ''}`}
+            title="Tarik sisi kanan untuk merubah lebar obrolan"
           >
-            <div className="w-1 h-8 rounded-full bg-slate-300 group-hover:bg-purple-600 transition-colors" />
+            <div className="w-1 h-8 rounded-full bg-slate-300 group-hover:bg-slate-500 group-active:bg-blue-600 transition-colors" />
           </div>
         )}
+
+        {/* Inner Content Area - identical opacity dimming (0.35) and transitions to other modules */}
+        <motion.div
+          initial={isMobile ? { opacity: 0.35 } : false}
+          animate={{
+            opacity: isMobile && isDrawerOpen ? 0.35 : 1
+          }}
+          transition={{ type: 'tween', ease: [0.25, 1, 0.5, 1], duration: 0.32 }}
+          className={`flex-1 flex flex-col w-full h-full min-h-0 overflow-hidden ${
+            isMobile && isDrawerOpen ? 'pointer-events-none' : ''
+          }`}
+        >
 
         {/* TOP HEADER BAR (Switch between Normal Header and Search Screen Header) */}
         {isSearchMode ? (
           /* BEGIN: Search Screen Header (Exact matching user reference) */
-          <header className="flex items-center px-4 py-2 space-x-3 border-b border-gray-100 bg-white h-16 shrink-0 z-30">
+          <header 
+            onMouseDown={(e) => {
+              if (!isMobile && layoutMode === 'floating') {
+                e.preventDefault();
+                document.body.style.userSelect = 'none';
+                isDraggingWindowRef.current = true;
+                setIsDraggingWindow(true);
+                if (onResizeStateChange) onResizeStateChange(true);
+                const curLeft = getEffectiveLeft();
+                dragStateRef.current = {
+                  type: 'window',
+                  startX: e.clientX,
+                  startWidth: floatingWidthRef.current,
+                  startLeft: curLeft
+                };
+              }
+            }}
+            className={`flex items-center px-4 py-2 space-x-3 border-b border-gray-100 bg-white h-16 shrink-0 z-30 ${
+              !isMobile && layoutMode === 'floating' 
+                ? 'cursor-grab active:cursor-grabbing select-none' 
+                : ''
+            }`}
+          >
             {/* Back Button */}
             <button 
               type="button"
@@ -1861,12 +1989,13 @@ export default function AdminChatDrawer({
                 setIsSearchMode(false);
                 setSearchQuery('');
               }}
+              onMouseDown={(e) => e.stopPropagation()}
               className="p-2 -ml-2 text-gray-800 hover:bg-gray-100 rounded-full transition-colors flex-shrink-0 cursor-pointer"
             >
               <ChevronLeft className="w-5 h-5 text-gray-800" />
             </button>
             {/* Search Input Container */}
-            <div className="flex-grow relative flex items-center bg-[#f3f4f6] rounded-full px-3 py-2">
+            <div className="flex-grow relative flex items-center bg-[#f3f4f6] rounded-full px-3 py-2" onMouseDown={(e) => e.stopPropagation()}>
               <Search className="text-gray-400 text-sm absolute left-3 w-4 h-4 pointer-events-none" />
               <input 
                 ref={searchInputRef}
@@ -1906,70 +2035,137 @@ export default function AdminChatDrawer({
                 document.body.style.userSelect = 'none';
                 isDraggingWindowRef.current = true;
                 setIsDraggingWindow(true);
+                if (onResizeStateChange) onResizeStateChange(true);
+                const curLeft = getEffectiveLeft();
                 dragStateRef.current = {
                   type: 'window',
                   startX: e.clientX,
                   startWidth: floatingWidthRef.current,
-                  startPosX: positionXRef.current
+                  startLeft: curLeft
                 };
               }
             }}
-            className={`flex h-16 shrink-0 items-center justify-between border-b border-slate-100 bg-white px-4 sm:px-5 ${
+            className={`relative flex h-16 shrink-0 items-center justify-between border-b border-slate-100 bg-white px-3 sm:px-5 ${
               !isMobile && layoutMode === 'floating' 
                 ? 'cursor-grab active:cursor-grabbing select-none' 
                 : ''
             }`}
             title={!isMobile && layoutMode === 'floating' ? 'Tahan dan geser area header untuk memindahkan kotak obrolan' : undefined}
           >
-            {/* Left: Chat / Media Switcher Pill */}
-            <div className="flex items-center gap-2" onMouseDown={(e) => e.stopPropagation()}>
-              <div className="flex items-center bg-[#f2f3f5] p-1 rounded-full border border-slate-200/50">
+            {/* Left: Hamburger Sidebar Toggle (Mobile only) & Chat / Media Toggle on Desktop */}
+            <div className="flex items-center gap-1.5 sm:gap-2 z-10" onMouseDown={(e) => e.stopPropagation()}>
+              {isMobile && onOpenDrawer && (
                 <button
+                  id="btn-chat-open-drawer"
                   type="button"
-                  onClick={() => setActiveTab('chat')}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none ${
-                    activeTab === 'chat'
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-900 font-medium'
-                  }`}
+                  onClick={onOpenDrawer}
+                  className="flex sm:hidden items-center justify-center w-10 h-10 p-2 text-slate-700 hover:text-emerald-600 transition-colors cursor-pointer focus:outline-none rounded-full hover:bg-slate-100/80 -ml-1"
+                  aria-label="Buka Menu Sidebar"
+                  title="Buka / Tutup Menu Sidebar"
                 >
-                  Chat
+                  <Menu className="h-5 w-5" strokeWidth={2} />
                 </button>
-                <div className="flex items-center gap-1">
+              )}
+
+              {/* Desktop Header Left: Chat / Media Switcher Pill */}
+              {!isMobile && (
+                <div className="flex items-center bg-[#f2f3f5] p-1 rounded-full border border-slate-200/50 shadow-2xs">
                   <button
                     type="button"
-                    onClick={() => setActiveTab('media')}
+                    onClick={() => setActiveTab('chat')}
                     onMouseDown={(e) => e.stopPropagation()}
-                    className={`px-3.5 py-1.5 rounded-full text-xs transition-all cursor-pointer select-none ${
-                      activeTab === 'media'
-                        ? 'bg-white text-slate-900 shadow-xs font-bold'
+                    className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none ${
+                      activeTab === 'chat'
+                        ? 'bg-white text-slate-900 shadow-xs'
                         : 'text-slate-500 hover:text-slate-900 font-medium'
                     }`}
                   >
-                    Media
+                    Chat
                   </button>
-                  {activeTab === 'media' && (
+                  <div className="flex items-center gap-1">
                     <button
                       type="button"
-                      onClick={() => setFilterOnlyStarred(!filterOnlyStarred)}
+                      onClick={() => setActiveTab('media')}
                       onMouseDown={(e) => e.stopPropagation()}
-                      className={`p-1.5 rounded-full transition-all cursor-pointer ${
-                        filterOnlyStarred
-                          ? 'bg-amber-100 text-amber-700 ring-1 ring-amber-400 font-bold'
-                          : 'text-slate-400 hover:text-amber-500 hover:bg-slate-100'
+                      className={`px-3.5 py-1.5 rounded-full text-xs transition-all cursor-pointer select-none ${
+                        activeTab === 'media'
+                          ? 'bg-white text-slate-900 shadow-xs font-bold'
+                          : 'text-slate-500 hover:text-slate-900 font-medium'
                       }`}
-                      title={filterOnlyStarred ? 'Tampilkan semua media' : 'Filter media berbintang ⭐'}
                     >
-                      <Star className={`h-3.5 w-3.5 ${filterOnlyStarred ? 'fill-amber-400 text-amber-500' : ''}`} />
+                      Media
                     </button>
-                  )}
+                    {activeTab === 'media' && (
+                      <button
+                        type="button"
+                        onClick={() => setFilterOnlyStarred(!filterOnlyStarred)}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className={`p-1.5 rounded-full transition-all cursor-pointer ${
+                          filterOnlyStarred
+                            ? 'bg-amber-100 text-amber-700 ring-1 ring-amber-400 font-bold'
+                            : 'text-slate-400 hover:text-amber-500 hover:bg-slate-100'
+                        }`}
+                        title={filterOnlyStarred ? 'Tampilkan semua media' : 'Filter media berbintang ⭐'}
+                      >
+                        <Star className={`h-3.5 w-3.5 ${filterOnlyStarred ? 'fill-amber-400 text-amber-500' : ''}`} />
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
+            {/* Center: Chat / Media Switcher Pill (Hanya di mode Mobile) */}
+            {isMobile && (
+              <div className="absolute left-1/2 -translate-x-1/2 flex items-center z-10" onMouseDown={(e) => e.stopPropagation()}>
+                <div className="flex items-center bg-[#f2f3f5] p-1 rounded-full border border-slate-200/50 shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('chat')}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none ${
+                      activeTab === 'chat'
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-900 font-medium'
+                    }`}
+                  >
+                    Chat
+                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('media')}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className={`px-3.5 py-1.5 rounded-full text-xs transition-all cursor-pointer select-none ${
+                        activeTab === 'media'
+                          ? 'bg-white text-slate-900 shadow-xs font-bold'
+                          : 'text-slate-500 hover:text-slate-900 font-medium'
+                      }`}
+                    >
+                      Media
+                    </button>
+                    {activeTab === 'media' && (
+                      <button
+                        type="button"
+                        onClick={() => setFilterOnlyStarred(!filterOnlyStarred)}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className={`p-1.5 rounded-full transition-all cursor-pointer ${
+                          filterOnlyStarred
+                            ? 'bg-amber-100 text-amber-700 ring-1 ring-amber-400 font-bold'
+                            : 'text-slate-400 hover:text-amber-500 hover:bg-slate-100'
+                        }`}
+                        title={filterOnlyStarred ? 'Tampilkan semua media' : 'Filter media berbintang ⭐'}
+                      >
+                        <Star className={`h-3.5 w-3.5 ${filterOnlyStarred ? 'fill-amber-400 text-amber-500' : ''}`} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Right Action Icons */}
-            <div className="flex items-center gap-1.5" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-1.5 z-10" onMouseDown={(e) => e.stopPropagation()}>
 
               {/* Tombol Pencarian Konten Chat */}
               <button
@@ -2053,8 +2249,8 @@ export default function AdminChatDrawer({
                 )}
               </div>
 
-              {/* Sembunyikan Button ->| */}
-              <div className="relative group/tooltip">
+              {/* Sembunyikan Button ->| - Disembunyikan di mode HP */}
+              <div className="relative group/tooltip hidden sm:block">
                 <button
                   type="button"
                   onClick={handleCloseWithAnimation}
@@ -3424,7 +3620,8 @@ export default function AdminChatDrawer({
             </button>
           </div>
         )}
-      </div>
+        </motion.div>
+      </motion.div>
 
       {/* PIN DURATION SELECTION MODAL POPUP */}
       {pinDurationModalMsgId && (

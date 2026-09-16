@@ -309,3 +309,60 @@ export interface AppCredentials {
   updatedAt?: string;
 }
 
+export interface PesantrenProfile {
+  namaPesantren: string;
+  namaYayasan: string;
+  nspp: string;
+  nomorNotaris: string;
+  alamat: string;
+  rt?: string;
+  rw?: string;
+  desa: string;
+  kecamatan: string;
+  kabupaten: string;
+  provinsi: string;
+  kodePos: string;
+  telepon: string;
+  email: string;
+  website: string;
+  
+  // Pengasuh & Pimpinan Tunggal
+  namaPengasuh: string;
+  namaKetuaYayasan: string;
+  
+  // Struktur Kepengurusan Putra
+  namaPengasuhPutra?: string;
+  namaWakilPengasuhPutra?: string;
+  namaKetuaPondokPutra?: string;
+  namaSekretarisPutra?: string;
+  namaBendaharaPutra?: string;
+  namaKetuaKeamananPutra?: string;
+  namaKetuaPendidikanPutra?: string;
+  namaKetuaHumasyPutra?: string;
+
+  // Struktur Kepengurusan Putri
+  namaPengasuhPutri?: string;
+  namaWakilPengasuhPutri?: string;
+  namaKetuaPondokPutri?: string;
+  namaSekretarisPutri?: string;
+  namaBendaharaPutri?: string;
+  namaKetuaKeamananPutri?: string;
+  namaKetuaPendidikanPutri?: string;
+  namaKetuaHumasyPutri?: string;
+
+  // Kompatibilitas Legacy
+  namaWakilPengasuh: string;
+  namaKetuaPondok: string;
+  namaSekretaris: string;
+  namaBendahara: string;
+  namaKetuaKeamanan: string;
+  namaKetuaPendidikan: string;
+  namaKetuaHumasy?: string;
+
+  kotaTandaTangan: string;
+  logoStyle: 'classic' | 'elegant' | 'modern';
+  kopTambahan1: string;
+  kopTambahan2: string;
+  logoUrl?: string;
+}
+
