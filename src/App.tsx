@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Home, FileText, GraduationCap, Users, Shield } from 'lucide-react';
 import Header from './components/Header';
@@ -43,9 +43,10 @@ import {
   isEmisTerdaftar
 } from './types';
 import { DEFAULT_ROLES, fetchAndSyncPermissionsFromSupabase } from './lib/permissions';
+import { initAutoBackupScheduler } from './lib/backupManager';
 
 export default function App() {
-  // Initialize default roles permissions and fetch latest in real-time from Supabase
+  // Initialize default roles permissions, background sync, and auto-backup scheduler
   React.useEffect(() => {
     if (!localStorage.getItem('smartsantri_roles_permissions')) {
       try {
@@ -59,6 +60,12 @@ export default function App() {
     fetchAndSyncPermissionsFromSupabase().catch(err => {
       console.warn("Gagal sinkronisasi hak akses background dari Database:", err);
     });
+
+    // Inisialisasi pengecekan pencadangan otomatis (Auto Backup Scheduler)
+    const cleanupAutoBackup = initAutoBackupScheduler();
+    return () => {
+      cleanupAutoBackup();
+    };
   }, []);
 
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
@@ -72,6 +79,9 @@ export default function App() {
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
   const [isDrawerClosing, setIsDrawerClosing] = useState<boolean>(false);
   const [isDrawerSearchMode, setIsDrawerSearchMode] = useState<boolean>(false);
+  const [windowWidth, setWindowWidth] = useState<number>(() => {
+    return typeof window !== 'undefined' ? window.innerWidth : 1280;
+  });
   const [isMobile, setIsMobile] = useState<boolean>(() => {
     return typeof window !== 'undefined' ? window.innerWidth < 768 : false;
   });
@@ -84,7 +94,9 @@ export default function App() {
 
   React.useEffect(() => {
     const handleResize = () => {
-      const mobile = window.innerWidth < 768;
+      const w = window.innerWidth;
+      setWindowWidth(w);
+      const mobile = w < 768;
       setIsMobile(mobile);
       if (!mobile && isDrawerOpen) {
         setIsDrawerOpen(false);
@@ -92,6 +104,7 @@ export default function App() {
         setIsDrawerSearchMode(false);
       }
     };
+    handleResize();
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, [isDrawerOpen]);
@@ -141,6 +154,86 @@ export default function App() {
   const [headerSelectedSantri, setHeaderSelectedSantri] = useState<Santri | null>(null);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState<boolean>(false);
   const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState<boolean>(true);
+
+  // Measure physical rendered width of #main-app-container to handle responsive adaptations
+  const mainAppContainerRef = useRef<HTMLDivElement>(null);
+  const [mainContainerWidth, setMainContainerWidth] = useState<number>(0);
+
+  useEffect(() => {
+    if (!mainAppContainerRef.current) return;
+    const el = mainAppContainerRef.current;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect) {
+          setMainContainerWidth(entry.contentRect.width);
+        }
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // Determine whether sidebar chat pushes the main layout (only on screens >= 1024px)
+  const isPushingSidebar = !isMobile && isChatOpen && chatLayoutMode === 'sidebar' && windowWidth >= 1024;
+
+  // Auto-collapse left desktop sidebar when space is tight (< 760px), and restore when chat closes
+  const wasDesktopSidebarOpenBeforeChatRef = useRef<boolean | null>(null);
+
+  useEffect(() => {
+    if (isMobile) return;
+
+    if (isChatOpen && chatLayoutMode === 'sidebar') {
+      const estimatedAvailable = windowWidth - 288 - chatSidebarWidth;
+      if (estimatedAvailable < 760 && isDesktopSidebarOpen) {
+        wasDesktopSidebarOpenBeforeChatRef.current = true;
+        setIsDesktopSidebarOpen(false);
+      }
+    } else {
+      if (wasDesktopSidebarOpenBeforeChatRef.current === true) {
+        setIsDesktopSidebarOpen(true);
+        wasDesktopSidebarOpenBeforeChatRef.current = null;
+      }
+    }
+  }, [isChatOpen, chatLayoutMode, isMobile, chatSidebarWidth, windowWidth]);
+
+  // Maximum expansion for sidebar chat: strictly 40% of main page size without sidebar chat
+  const maxChatSidebarWidth = React.useMemo(() => {
+    if (typeof window === 'undefined') return 520;
+    const currentLeft = isDesktopSidebarOpen ? 288 : 72;
+    const mainPageWidthWithoutChat = Math.max(320, windowWidth - currentLeft);
+    return Math.max(320, Math.floor(mainPageWidthWithoutChat * 0.40));
+  }, [windowWidth, isDesktopSidebarOpen]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || isMobile) return;
+    if (chatSidebarWidth > maxChatSidebarWidth) {
+      setChatSidebarWidth(maxChatSidebarWidth);
+      try {
+        localStorage.setItem('attarokey_chat_sidebar_width', maxChatSidebarWidth.toString());
+      } catch (e) {}
+    }
+  }, [maxChatSidebarWidth, isMobile]);
+
+  // Calculate if main layout is pushed narrow by sidebar chat or container constraint
+  const isMainNarrow = React.useMemo(() => {
+    if (isMobile) return false;
+    if (isPushingSidebar) {
+      if (mainContainerWidth > 0) return mainContainerWidth < 920;
+      const curLeft = isDesktopSidebarOpen ? 288 : 72;
+      return (windowWidth - curLeft - chatSidebarWidth) < 920;
+    }
+    return mainContainerWidth > 0 && mainContainerWidth < 820;
+  }, [isMobile, isPushingSidebar, mainContainerWidth, windowWidth, isDesktopSidebarOpen, chatSidebarWidth]);
+
+  const isMainUltraNarrow = React.useMemo(() => {
+    if (isMobile) return false;
+    if (mainContainerWidth > 0) return mainContainerWidth < 640;
+    if (isPushingSidebar) {
+      const curLeft = isDesktopSidebarOpen ? 288 : 72;
+      return (windowWidth - curLeft - chatSidebarWidth) < 640;
+    }
+    return false;
+  }, [isMobile, mainContainerWidth, isPushingSidebar, isDesktopSidebarOpen, windowWidth, chatSidebarWidth]);
 
   const handleToggleChat = React.useCallback(() => {
     setIsChatOpen(prev => {
@@ -1085,6 +1178,7 @@ export default function App() {
 
       {/* Main Container - Pushed to right with rounded-2.5rem and scaled relatively to screen size when drawer open on mobile */}
       <motion.div
+        ref={mainAppContainerRef}
         id="main-app-container"
         initial={false}
         animate={
@@ -1111,7 +1205,7 @@ export default function App() {
             : !isMobile && isChatOpen && chatLayoutMode === 'sidebar'
               ? {
                   x: '0%',
-                  marginRight: `${chatSidebarWidth}px`,
+                  marginRight: `${isPushingSidebar ? chatSidebarWidth : 0}px`,
                   scale: 1,
                   opacity: 1,
                   borderRadius: '0px',
@@ -1156,6 +1250,8 @@ export default function App() {
           borderWidth: isMobile ? '1px' : '0px',
         }}
         className={`w-full flex-1 flex flex-col min-w-0 bg-white relative z-20 ${
+          isMainNarrow ? 'is-narrow-main' : ''
+        } ${isMainUltraNarrow ? 'is-ultra-narrow-main' : ''} ${
           isMobile && (isDrawerOpen || isDrawerClosing)
             ? 'h-screen max-h-screen overflow-hidden select-none' + (isDrawerSearchMode ? ' pointer-events-none' : '')
             : 'min-h-screen'
@@ -1244,7 +1340,11 @@ export default function App() {
             />
 
           {/* Main Responsive Content Zone */}
-          <main className="flex-1 w-full px-4 py-6 pb-6 sm:px-6 lg:px-8 focus:outline-none">
+          <main className={`flex-1 w-full focus:outline-none transition-all duration-200 ${
+            isMainNarrow 
+              ? 'px-3.5 py-4 sm:px-4 pb-6' 
+              : 'px-4 py-6 pb-6 sm:px-6 lg:px-8'
+          }`}>
             {/* Animated clean transitions for active module view */}
             <AnimatePresence mode="wait">
               <motion.div
@@ -1315,6 +1415,8 @@ export default function App() {
         sidebarWidth={chatSidebarWidth}
         onSidebarWidthChange={(width) => setChatSidebarWidth(width)}
         onResizeStateChange={(resizing) => setIsResizingChat(resizing)}
+        isDesktopSidebarOpen={isDesktopSidebarOpen}
+        maxSidebarWidth={maxChatSidebarWidth}
       />
 
       {/* Offline & Sync Status Banner */}

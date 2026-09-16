@@ -78,7 +78,6 @@ export type SettingsTab =
   | 'akses' 
   | 'kelola_akun' 
   | 'tahun_ajaran' 
-  | 'data' 
   | 'feedback' 
   | 'about';
 
@@ -116,7 +115,7 @@ export const SETTINGS_CATEGORIES: SettingsCategoryItem[] = [
   },
   {
     id: 'kelola_akun',
-    label: 'Kelola Akun',
+    label: 'Kelola Akun Pengguna',
     desc: 'Manajemen pengguna aktif, ganti role & reset akun',
     icon: Users
   },
@@ -125,12 +124,6 @@ export const SETTINGS_CATEGORIES: SettingsCategoryItem[] = [
     label: 'Tahun Ajaran',
     desc: 'Kalender pendidikan & penetapan semester aktif',
     icon: Calendar
-  },
-  {
-    id: 'data',
-    label: 'Data & Cloud',
-    desc: 'Status database Supabase, sinkronisasi & ekspor JSON',
-    icon: Database
   },
   {
     id: 'feedback',
@@ -393,12 +386,6 @@ export default function SettingsModal({
   const [taNameInput, setTaNameInput] = useState('');
   const [editingTa, setEditingTa] = useState<{ id: string; name: string; isActive: boolean } | null>(null);
 
-  // Data & Database State
-  const [dbStatus, setDbStatus] = useState<'online' | 'offline' | 'checking'>('checking');
-  const [cacheSize, setCacheSize] = useState<string>('0 KB');
-  const [dataMessage, setDataMessage] = useState<string | null>(null);
-  const [isSyncingAll, setIsSyncingAll] = useState(false);
-
   // Feedback State
   const [feedbacks, setFeedbacks] = useState<any[]>([]);
   const [loadingFeedbacks, setLoadingFeedbacks] = useState(false);
@@ -427,7 +414,6 @@ export default function SettingsModal({
       // On mobile view: start with category list unless specifically opened to a non-general tab
       setMobileView('list');
       loadProfileData();
-      checkDbAndCache();
       loadCredentials();
       loadFeedbacks();
     }
@@ -450,13 +436,35 @@ export default function SettingsModal({
     setProfileErrorMsg(null);
   };
 
+  const isSuperadminAccount = (c?: { id?: string; username?: string; role?: string } | null) => {
+    if (!c) return false;
+    const u = (c.username || '').toLowerCase();
+    const r = (c.role || '').toLowerCase();
+    return c.id === 'superadmin' || r === 'superadmin' || u === 'superadmin@attaroqqy.com' || u === 'superadmin';
+  };
+
   const loadCredentials = async () => {
     setLoadingCreds(true);
     try {
-      const data = await fetchTableData<AppCredentials>('app_credentials', 'smartsantri_app_credentials');
-      if (data && Array.isArray(data)) {
-        setCredentials(data);
+      let data = await fetchTableData<AppCredentials>('app_credentials', 'smartsantri_app_credentials');
+      if (!data || !Array.isArray(data)) {
+        data = [];
       }
+      const hasSuper = data.some(c => isSuperadminAccount(c));
+      if (!hasSuper) {
+        data = [
+          {
+            id: 'superadmin',
+            username: 'superadmin@attaroqqy.com',
+            displayName: 'Super Admin',
+            role: 'superadmin',
+            status: 'approved',
+            createdAt: '2026-01-01T00:00:00.000Z'
+          },
+          ...data
+        ];
+      }
+      setCredentials(data);
     } catch (e) {
       console.warn('Could not load credentials:', e);
     } finally {
@@ -522,24 +530,6 @@ export default function SettingsModal({
         setSelectedFeedback(null);
       }
     }
-  };
-
-  const checkDbAndCache = async () => {
-    try {
-      const isOnline = await getSupabaseStatus();
-      setDbStatus(isOnline ? 'online' : 'offline');
-    } catch {
-      setDbStatus('offline');
-    }
-
-    let total = 0;
-    for (let x in localStorage) {
-      if (localStorage.hasOwnProperty(x)) {
-        total += ((localStorage[x].length + x.length) * 2);
-      }
-    }
-    const kb = (total / 1024).toFixed(1);
-    setCacheSize(`${kb} KB`);
   };
 
   // General theme handler
@@ -915,6 +905,7 @@ export default function SettingsModal({
 
   // Approve / Reject / Block Credential
   const handleUpdateCredStatus = async (user: AppCredentials, newStatus: 'approved' | 'rejected' | 'pending') => {
+    if (isSuperadminAccount(user)) return;
     try {
       const updated = { ...user, status: newStatus };
       await updateTableRow('app_credentials', 'smartsantri_app_credentials', user.id || user.username, updated);
@@ -926,6 +917,7 @@ export default function SettingsModal({
   };
 
   const handleDeleteCred = async (user: AppCredentials) => {
+    if (isSuperadminAccount(user)) return;
     try {
       await deleteTableRow('app_credentials', 'smartsantri_app_credentials', user.id || user.username);
       setCredentials(prev => prev.filter(c => (c.id ? c.id !== user.id : c.username !== user.username)));
@@ -938,6 +930,7 @@ export default function SettingsModal({
   };
 
   const handleGrantResetAccess = async (user: AppCredentials, customTempPass?: string) => {
+    if (isSuperadminAccount(user)) return;
     const finalPassword = (customTempPass !== undefined ? customTempPass.trim() : credResetConfirm.tempPassword.trim()) || '1234';
     try {
       const updated: AppCredentials = {
@@ -1015,42 +1008,6 @@ export default function SettingsModal({
     }
   };
 
-  // Export JSON Backup
-  const handleExportBackup = () => {
-    try {
-      const backupData: Record<string, any> = {};
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('smartsantri_')) {
-          backupData[key] = localStorage.getItem(key);
-        }
-      }
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
-      const downloadAnchor = document.createElement('a');
-      downloadAnchor.setAttribute("href", dataStr);
-      downloadAnchor.setAttribute("download", `smartsantri_backup_${new Date().toISOString().slice(0,10)}.json`);
-      document.body.appendChild(downloadAnchor);
-      downloadAnchor.click();
-      downloadAnchor.remove();
-      setDataMessage('Cadangan data berhasil diunduh ke format JSON.');
-    } catch (e: any) {
-      setDataMessage('Gagal mengekspor: ' + e.message);
-    }
-  };
-
-  // Clear Local Cache
-  const handleClearCache = () => {
-    if (window.confirm('Bersihkan seluruh cache lokal? Data akun aktif dan pengaturan inti akan tetap terjaga.')) {
-      Object.keys(localStorage).forEach(k => {
-        if (k.startsWith('smartsantri_cache_') || k.startsWith('smartsantri_temp_')) {
-          localStorage.removeItem(k);
-        }
-      });
-      checkDbAndCache();
-      setDataMessage('Cache lokal berhasil dibersihkan.');
-    }
-  };
-
   if (!isOpen) return null;
 
   const mobileGroups = [
@@ -1062,12 +1019,6 @@ export default function SettingsModal({
           label: 'Pengaturan Akun',
           value: displayName || 'Akun Aktif',
           icon: User,
-        },
-        {
-          id: 'data' as SettingsTab,
-          label: 'Kontrol Data',
-          value: dbStatus === 'online' ? 'Supabase Cloud' : 'Lokal Aktif',
-          icon: Database,
         },
       ],
     },
@@ -1088,7 +1039,7 @@ export default function SettingsModal({
         },
         {
           id: 'kelola_akun' as SettingsTab,
-          label: 'Kelola Akun',
+          label: 'Kelola Akun Pengguna',
           value: `${credentials.length || 1} Pengguna`,
           icon: Users,
         },
@@ -1186,11 +1137,8 @@ export default function SettingsModal({
             </div>
             <div>
               <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight leading-tight">
-                Settings &amp; Preferences
+                Pengaturan
               </h2>
-              <p className="text-[11px] text-slate-500 font-medium">
-                Pusat Pengaturan Terpadu SmartSantri 4.0
-              </p>
             </div>
           </div>
           
@@ -2217,31 +2165,56 @@ export default function SettingsModal({
             )}
 
             {/* 5. KELOLA AKUN TAB */}
-            {activeTab === 'kelola_akun' && (
-              <div className="space-y-4 animate-in fade-in duration-150">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-100">
-                  <div>
-                    <h3 className="text-base font-bold text-slate-900">Kelola Akun Pengurus</h3>
-                    <p className="text-xs text-slate-500 font-medium">Verifikasi dan kelola status akun terdaftar domain @attaroqqy.com</p>
-                  </div>
-                  <div className="relative w-full sm:w-56">
-                    <input
-                      type="text"
-                      placeholder="Cari pengurus..."
-                      value={credSearch}
-                      onChange={(e) => setCredSearch(e.target.value)}
-                      className="w-full pl-8 pr-3 py-2 sm:py-1.5 rounded-xl border border-slate-200 text-xs font-medium focus:outline-none focus:border-emerald-600 bg-slate-50/50 sm:bg-white"
-                    />
-                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                  </div>
-                </div>
+            {activeTab === 'kelola_akun' && (() => {
+              const hasSuper = credentials.some(c => isSuperadminAccount(c));
+              const allList = hasSuper 
+                ? credentials 
+                : [
+                    {
+                      id: 'superadmin',
+                      username: 'superadmin@attaroqqy.com',
+                      displayName: 'Super Admin',
+                      role: 'superadmin' as const,
+                      status: 'approved' as const,
+                      createdAt: '2026-01-01T00:00:00.000Z'
+                    } as AppCredentials,
+                    ...credentials
+                  ];
 
-                {/* Mobile View: Card List (khusus layar HP) */}
-                <div className="block sm:hidden space-y-3">
-                  {credentials
-                    .filter(c => !credSearch || (c.displayName || c.username).toLowerCase().includes(credSearch.toLowerCase()))
-                    .map((c) => {
-                      const displayName = c.displayName || 'Pengurus';
+              const sortedList = [...allList].sort((a, b) => {
+                const isSuperA = isSuperadminAccount(a);
+                const isSuperB = isSuperadminAccount(b);
+                if (isSuperA) return -1;
+                if (isSuperB) return 1;
+                return 0;
+              });
+
+              const displayList = sortedList.filter(c => !credSearch || (c.displayName || c.username).toLowerCase().includes(credSearch.toLowerCase()));
+
+              return (
+                <div className="space-y-4 animate-in fade-in duration-150">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-100">
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">Kelola Akun Pengguna</h3>
+                      <p className="text-xs text-slate-500 font-medium">Verifikasi dan kelola status akun terdaftar domain @attaroqqy.com</p>
+                    </div>
+                    <div className="relative w-full sm:w-56">
+                      <input
+                        type="text"
+                        placeholder="Cari pengguna..."
+                        value={credSearch}
+                        onChange={(e) => setCredSearch(e.target.value)}
+                        className="w-full pl-8 pr-3 py-2 sm:py-1.5 rounded-xl border border-slate-200 text-xs font-medium focus:outline-none focus:border-emerald-600 bg-slate-50/50 sm:bg-white"
+                      />
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                    </div>
+                  </div>
+
+                  {/* Mobile View: Card List (khusus layar HP) */}
+                  <div className="block sm:hidden space-y-3">
+                    {displayList.map((c) => {
+                      const isSuper = isSuperadminAccount(c);
+                      const displayName = isSuper ? (c.displayName || 'Super Admin') : (c.displayName || 'Pengguna');
                       const initial = displayName.charAt(0).toUpperCase() || 'P';
                       return (
                         <div 
@@ -2266,30 +2239,38 @@ export default function SettingsModal({
 
                             {/* Status Badge */}
                             <div className="flex flex-col items-end gap-1 shrink-0">
-                              {c.status === 'approved' && (
+                              {isSuper ? (
                                 <span className="inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
                                   Aktif
                                 </span>
-                              )}
-                              {c.status === 'minta_reset' && (
+                              ) : (
                                 <>
-                                  <span className="inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                                    Aktif
-                                  </span>
-                                  <span className="inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                                    Lupa Sandi
-                                  </span>
+                                  {c.status === 'approved' && (
+                                    <span className="inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                      Aktif
+                                    </span>
+                                  )}
+                                  {c.status === 'minta_reset' && (
+                                    <>
+                                      <span className="inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                        Aktif
+                                      </span>
+                                      <span className="inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                        Lupa Sandi
+                                      </span>
+                                    </>
+                                  )}
+                                  {c.status === 'rejected' && (
+                                    <span className="inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">
+                                      Diblokir
+                                    </span>
+                                  )}
+                                  {c.status === 'pending' && (
+                                    <span className="inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800">
+                                      Menunggu
+                                    </span>
+                                  )}
                                 </>
-                              )}
-                              {c.status === 'rejected' && (
-                                <span className="inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">
-                                  Diblokir
-                                </span>
-                              )}
-                              {c.status === 'pending' && (
-                                <span className="inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800">
-                                  Menunggu
-                                </span>
                               )}
                             </div>
                           </div>
@@ -2299,304 +2280,333 @@ export default function SettingsModal({
                             <span className="text-slate-400 font-medium">Hak Akses:</span>
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-700 font-bold capitalize">
                               <Shield className="w-3 h-3 text-slate-500" />
-                              {c.role}
+                              {isSuper ? 'Superadmin' : c.role}
                             </span>
                           </div>
 
                           {/* Action Buttons for Mobile (Touch-Friendly) */}
-                          <div className="pt-2 flex items-center gap-2 flex-wrap">
-                            {/* Status Approved: Blokir & Hapus */}
-                            {c.status === 'approved' && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateCredStatus(c, 'rejected')}
-                                  className="flex-1 py-2.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 active:bg-amber-200 text-amber-800 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-amber-200/80 transition-colors"
-                                >
-                                  <Ban className="w-3.5 h-3.5 text-amber-700" />
-                                  <span>Blokir</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
-                                  className="py-2.5 px-3.5 rounded-xl bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-rose-200/80 transition-colors"
-                                  title="Hapus Akun"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                  <span>Hapus</span>
-                                </button>
-                              </>
-                            )}
+                          {isSuper ? (
+                            <div className="pt-2 flex items-center justify-end">
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold select-none cursor-default">
+                                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>Akun Utama (Permanen)</span>
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="pt-2 flex items-center gap-2 flex-wrap">
+                              {/* Status Approved: Blokir & Hapus */}
+                              {c.status === 'approved' && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateCredStatus(c, 'rejected')}
+                                    className="flex-1 py-2.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 active:bg-amber-200 text-amber-800 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-amber-200/80 transition-colors"
+                                  >
+                                    <Ban className="w-3.5 h-3.5 text-amber-700" />
+                                    <span>Blokir Akun</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
+                                    className="py-2.5 px-3.5 rounded-xl bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-rose-200/80 transition-colors"
+                                    title="Hapus Akun"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <span>Hapus</span>
+                                  </button>
+                                </>
+                              )}
 
-                            {/* Status Minta Reset: Beri Akses, Blokir, Hapus */}
-                            {c.status === 'minta_reset' && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => setCredResetConfirm({ isOpen: true, user: c, tempPassword: '1234', showTempPassword: false })}
-                                  className="flex-1 py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
-                                >
-                                  <KeyRound className="w-3.5 h-3.5" />
-                                  <span>Beri Akses</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateCredStatus(c, 'rejected')}
-                                  className="py-2.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 active:bg-amber-200 text-amber-800 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-amber-200/80 transition-colors"
-                                >
-                                  <Ban className="w-3.5 h-3.5 text-amber-700" />
-                                  <span>Blokir</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
-                                  className="py-2.5 px-3.5 rounded-xl bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-rose-200/80 transition-colors"
-                                  title="Hapus Akun"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                  <span>Hapus</span>
-                                </button>
-                              </>
-                            )}
+                              {/* Status Minta Reset: Beri Akses, Blokir, Hapus */}
+                              {c.status === 'minta_reset' && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => setCredResetConfirm({ isOpen: true, user: c, tempPassword: '1234', showTempPassword: false })}
+                                    className="flex-1 py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+                                  >
+                                    <KeyRound className="w-3.5 h-3.5" />
+                                    <span>Beri Akses</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateCredStatus(c, 'rejected')}
+                                    className="py-2.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 active:bg-amber-200 text-amber-800 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-amber-200/80 transition-colors"
+                                  >
+                                    <Ban className="w-3.5 h-3.5 text-amber-700" />
+                                    <span>Blokir</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
+                                    className="py-2.5 px-3.5 rounded-xl bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-rose-200/80 transition-colors"
+                                    title="Hapus Akun"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <span>Hapus</span>
+                                  </button>
+                                </>
+                              )}
 
-                            {/* Status Diblokir: Unblock & Hapus */}
-                            {c.status === 'rejected' && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateCredStatus(c, 'approved')}
-                                  className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
-                                >
-                                  <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                                  <span>Unblock</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
-                                  className="py-2.5 px-3.5 rounded-xl bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-rose-200/80 transition-colors"
-                                  title="Hapus Akun"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                  <span>Hapus</span>
-                                </button>
-                              </>
-                            )}
+                              {/* Status Diblokir: Unblock & Hapus */}
+                              {c.status === 'rejected' && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateCredStatus(c, 'approved')}
+                                    className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+                                  >
+                                    <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                                    <span>Unblock</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
+                                    className="py-2.5 px-3.5 rounded-xl bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-rose-200/80 transition-colors"
+                                    title="Hapus Akun"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <span>Hapus</span>
+                                  </button>
+                                </>
+                              )}
 
-                            {/* Status Pending: Setujui, Blokir, Hapus */}
-                            {c.status === 'pending' && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateCredStatus(c, 'approved')}
-                                  className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
-                                >
-                                  <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                                  <span>Setujui</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateCredStatus(c, 'rejected')}
-                                  className="py-2.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 active:bg-amber-200 text-amber-800 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-amber-200/80 transition-colors"
-                                >
-                                  <Ban className="w-3.5 h-3.5 text-amber-700" />
-                                  <span>Blokir</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
-                                  className="py-2.5 px-3.5 rounded-xl bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-rose-200/80 transition-colors"
-                                  title="Hapus Akun"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                  <span>Hapus</span>
-                                </button>
-                              </>
-                            )}
-                          </div>
+                              {/* Status Pending: Setujui, Blokir, Hapus */}
+                              {c.status === 'pending' && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateCredStatus(c, 'approved')}
+                                    className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+                                  >
+                                    <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                                    <span>Setujui</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateCredStatus(c, 'rejected')}
+                                    className="py-2.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 active:bg-amber-200 text-amber-800 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-amber-200/80 transition-colors"
+                                  >
+                                    <Ban className="w-3.5 h-3.5 text-amber-700" />
+                                    <span>Blokir</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
+                                    className="py-2.5 px-3.5 rounded-xl bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-rose-200/80 transition-colors"
+                                    title="Hapus Akun"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <span>Hapus</span>
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
 
-                  {credentials.filter(c => !credSearch || (c.displayName || c.username).toLowerCase().includes(credSearch.toLowerCase())).length === 0 && (
-                    <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                      <Users className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-                      <p className="text-xs font-bold text-slate-600">Tidak ada data pengurus ditemukan</p>
-                    </div>
-                  )}
-                </div>
+                    {displayList.length === 0 && (
+                      <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                        <Users className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                        <p className="text-xs font-bold text-slate-600">Tidak ada data pengguna ditemukan</p>
+                      </div>
+                    )}
+                  </div>
 
-                {/* Desktop View: Table Layout */}
-                <div className="hidden sm:block bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                        <tr>
-                          <th className="py-3 px-4">Nama &amp; Email</th>
-                          <th className="py-3 px-4">Hak Akses / Role</th>
-                          <th className="py-3 px-4 text-center">Status</th>
-                          <th className="py-3 px-4 text-right">Aksi</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {credentials
-                          .filter(c => !credSearch || (c.displayName || c.username).toLowerCase().includes(credSearch.toLowerCase()))
-                          .map((c) => (
-                            <tr key={c.id || c.username} className="hover:bg-slate-50/50">
-                              <td className="py-3 px-4">
-                                <span className="font-bold text-slate-900 block">{c.displayName || 'Pengurus'}</span>
-                                <span className="text-[11px] text-slate-500">{c.username}</span>
-                              </td>
-                              <td className="py-3 px-4 capitalize font-semibold text-slate-700">
-                                {c.role}
-                              </td>
-                              <td className="py-3 px-4 text-center">
-                                <div className="flex flex-col items-center justify-center gap-1">
-                                  {c.status === 'approved' && (
-                                    <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                                      Aktif
-                                    </span>
-                                  )}
-                                  {c.status === 'minta_reset' && (
-                                    <>
+                  {/* Desktop View: Table Layout */}
+                  <div className="hidden sm:block bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          <tr>
+                            <th className="py-3 px-4">Nama &amp; Email</th>
+                            <th className="py-3 px-4">Hak Akses / Role</th>
+                            <th className="py-3 px-4 text-center">Status</th>
+                            <th className="py-3 px-4 text-right">Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {displayList.map((c) => {
+                            const isSuper = isSuperadminAccount(c);
+                            const displayName = isSuper ? (c.displayName || 'Super Admin') : (c.displayName || 'Pengguna');
+                            return (
+                              <tr key={c.id || c.username} className="hover:bg-slate-50/50">
+                                <td className="py-3 px-4">
+                                  <span className="font-bold text-slate-900 block">{displayName}</span>
+                                  <span className="text-[11px] text-slate-500">{c.username}</span>
+                                </td>
+                                <td className="py-3 px-4 capitalize font-semibold text-slate-700">
+                                  {isSuper ? 'Superadmin' : c.role}
+                                </td>
+                                <td className="py-3 px-4 text-center">
+                                  <div className="flex flex-col items-center justify-center gap-1">
+                                    {isSuper ? (
                                       <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
                                         Aktif
                                       </span>
-                                      <span className="inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                                        Lupa Sandi
+                                    ) : (
+                                      <>
+                                        {c.status === 'approved' && (
+                                          <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                            Aktif
+                                          </span>
+                                        )}
+                                        {c.status === 'minta_reset' && (
+                                          <>
+                                            <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                              Aktif
+                                            </span>
+                                            <span className="inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                              Lupa Sandi
+                                            </span>
+                                          </>
+                                        )}
+                                        {c.status === 'rejected' && (
+                                          <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">
+                                            Diblokir
+                                          </span>
+                                        )}
+                                        {c.status === 'pending' && (
+                                          <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800">
+                                            Menunggu
+                                          </span>
+                                        )}
+                                      </>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4 text-right">
+                                  {isSuper ? (
+                                    <div className="inline-flex items-center justify-end">
+                                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold select-none cursor-default">
+                                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                        <span>Akun Utama (Permanen)</span>
                                       </span>
-                                    </>
-                                  )}
-                                  {c.status === 'rejected' && (
-                                    <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">
-                                      Diblokir
-                                    </span>
-                                  )}
-                                  {c.status === 'pending' && (
-                                    <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800">
-                                      Menunggu
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="py-3 px-4 text-right">
-                                <div className="inline-flex items-center justify-end gap-1.5">
-                                  {/* Status Approved: Blokir & Hapus */}
-                                  {c.status === 'approved' && (
-                                    <>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleUpdateCredStatus(c, 'rejected')}
-                                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-bold border border-amber-200/70 transition-colors cursor-pointer active:scale-95"
-                                        title="Blokir Akun"
-                                      >
-                                        <Ban className="w-3.5 h-3.5 text-amber-700" />
-                                        <span>Blokir</span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
-                                        className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-150 transition-colors cursor-pointer active:scale-95"
-                                        title="Hapus Akun"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </>
-                                  )}
+                                    </div>
+                                  ) : (
+                                    <div className="inline-flex items-center justify-end gap-1.5">
+                                      {/* Status Approved: Blokir & Hapus */}
+                                      {c.status === 'approved' && (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleUpdateCredStatus(c, 'rejected')}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-bold border border-amber-200/70 transition-colors cursor-pointer active:scale-95"
+                                            title="Blokir Akun"
+                                          >
+                                            <Ban className="w-3.5 h-3.5 text-amber-700" />
+                                            <span>Blokir</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
+                                            className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-150 transition-colors cursor-pointer active:scale-95"
+                                            title="Hapus Akun"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </>
+                                      )}
 
-                                  {/* Status Minta Reset: Beri Akses, Blokir, Hapus */}
-                                  {c.status === 'minta_reset' && (
-                                    <>
-                                      <button
-                                        type="button"
-                                        onClick={() => setCredResetConfirm({ isOpen: true, user: c, tempPassword: '1234', showTempPassword: false })}
-                                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold shadow-xs transition-colors cursor-pointer active:scale-95"
-                                        title="Beri Akses / Setel Kata Sandi Sementara"
-                                      >
-                                        <KeyRound className="w-3.5 h-3.5" />
-                                        <span>Beri Akses</span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleUpdateCredStatus(c, 'rejected')}
-                                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-bold border border-amber-200/70 transition-colors cursor-pointer active:scale-95"
-                                        title="Blokir Akun"
-                                      >
-                                        <Ban className="w-3.5 h-3.5 text-amber-700" />
-                                        <span>Blokir</span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
-                                        className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-150 transition-colors cursor-pointer active:scale-95"
-                                        title="Hapus Akun"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </>
-                                  )}
+                                      {/* Status Minta Reset: Beri Akses, Blokir, Hapus */}
+                                      {c.status === 'minta_reset' && (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => setCredResetConfirm({ isOpen: true, user: c, tempPassword: '1234', showTempPassword: false })}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold shadow-xs transition-colors cursor-pointer active:scale-95"
+                                            title="Beri Akses / Setel Kata Sandi Sementara"
+                                          >
+                                            <KeyRound className="w-3.5 h-3.5" />
+                                            <span>Beri Akses</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleUpdateCredStatus(c, 'rejected')}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-bold border border-amber-200/70 transition-colors cursor-pointer active:scale-95"
+                                            title="Blokir Akun"
+                                          >
+                                            <Ban className="w-3.5 h-3.5 text-amber-700" />
+                                            <span>Blokir</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
+                                            className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-150 transition-colors cursor-pointer active:scale-95"
+                                            title="Hapus Akun"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </>
+                                      )}
 
-                                  {/* Status Diblokir: Unblock & Hapus */}
-                                  {c.status === 'rejected' && (
-                                    <>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleUpdateCredStatus(c, 'approved')}
-                                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold shadow-xs transition-colors cursor-pointer active:scale-95"
-                                        title="Buka Blokir Akun"
-                                      >
-                                        <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                                        <span>Unblock</span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
-                                        className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-150 transition-colors cursor-pointer active:scale-95"
-                                        title="Hapus Akun"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </>
-                                  )}
+                                      {/* Status Diblokir: Unblock & Hapus */}
+                                      {c.status === 'rejected' && (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleUpdateCredStatus(c, 'approved')}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold shadow-xs transition-colors cursor-pointer active:scale-95"
+                                            title="Buka Blokir Akun"
+                                          >
+                                            <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                                            <span>Unblock</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
+                                            className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-150 transition-colors cursor-pointer active:scale-95"
+                                            title="Hapus Akun"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </>
+                                      )}
 
-                                  {/* Status Pending: Setujui, Blokir, Hapus */}
-                                  {c.status === 'pending' && (
-                                    <>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleUpdateCredStatus(c, 'approved')}
-                                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold shadow-xs transition-colors cursor-pointer active:scale-95"
-                                      >
-                                        <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                                        <span>Setujui</span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleUpdateCredStatus(c, 'rejected')}
-                                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-bold border border-amber-200/70 transition-colors cursor-pointer active:scale-95"
-                                      >
-                                        <Ban className="w-3.5 h-3.5 text-amber-700" />
-                                        <span>Blokir</span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
-                                        className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-150 transition-colors cursor-pointer active:scale-95"
-                                        title="Hapus Akun"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </>
+                                      {/* Status Pending: Setujui, Blokir, Hapus */}
+                                      {c.status === 'pending' && (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleUpdateCredStatus(c, 'approved')}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold shadow-xs transition-colors cursor-pointer active:scale-95"
+                                          >
+                                            <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                                            <span>Setujui</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleUpdateCredStatus(c, 'rejected')}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-bold border border-amber-200/70 transition-colors cursor-pointer active:scale-95"
+                                          >
+                                            <Ban className="w-3.5 h-3.5 text-amber-700" />
+                                            <span>Blokir</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
+                                            className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-150 transition-colors cursor-pointer active:scale-95"
+                                            title="Hapus Akun"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </>
+                                      )}
+                                    </div>
                                   )}
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* 6. TAHUN AJARAN TAB */}
             {activeTab === 'tahun_ajaran' && (
@@ -2684,72 +2694,7 @@ export default function SettingsModal({
               </div>
             )}
 
-            {/* 7. DATA & DATABASE TAB */}
-            {activeTab === 'data' && (
-              <div className="space-y-5 animate-in fade-in duration-150">
-                {dataMessage && (
-                  <div className="p-3.5 rounded-2xl bg-blue-50 border border-blue-100 text-blue-800 text-xs font-semibold flex items-center gap-2.5">
-                    <Info className="w-4.5 h-4.5 text-blue-600 shrink-0" />
-                    <span>{dataMessage}</span>
-                  </div>
-                )}
-
-                <div className="p-4 rounded-2xl border border-slate-200 flex items-center justify-between">
-                  <div className="flex items-center gap-3.5">
-                    <div className={`w-3.5 h-3.5 rounded-full ${dbStatus === 'online' ? 'bg-emerald-500 ring-4 ring-emerald-100' : 'bg-amber-500 ring-4 ring-amber-100'}`} />
-                    <div>
-                      <h4 className="text-xs sm:text-sm font-bold text-slate-900">Database Cloud &amp; Realtime</h4>
-                      <p className="text-[11px] text-slate-500 font-medium">
-                        {dbStatus === 'online' ? 'Terhubung sinkron otomatis dengan Supabase Backend' : 'Mode Offline / Penyimpanan Lokal Aktif'}
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={checkDbAndCache}
-                    className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
-                    title="Cek Koneksi Ulang"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <div className="space-y-2.5">
-                  <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Cadangan Data &amp; Pemeliharaan</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                    <button
-                      type="button"
-                      onClick={handleExportBackup}
-                      className="p-4 rounded-2xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/30 text-left transition-all flex items-center gap-3.5 cursor-pointer group"
-                    >
-                      <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
-                        <Download className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <p className="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-blue-600">Ekspor Cadangan JSON</p>
-                        <p className="text-[11px] text-slate-500">Unduh data sistem ke perangkat lokal</p>
-                      </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleClearCache}
-                      className="p-4 rounded-2xl border border-slate-200 hover:border-rose-400 hover:bg-rose-50/30 text-left transition-all flex items-center gap-3.5 cursor-pointer group"
-                    >
-                      <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
-                        <Trash2 className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <p className="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-rose-600">Bersihkan Cache Lokal</p>
-                        <p className="text-[11px] text-slate-500">Kapasitas terpakai: {cacheSize}</p>
-                      </div>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* 8. FEEDBACK TAB */}
+            {/* 7. FEEDBACK TAB */}
             {activeTab === 'feedback' && (
               <div className="space-y-4 animate-in fade-in duration-150">
                 {/* Sticky Header Container */}

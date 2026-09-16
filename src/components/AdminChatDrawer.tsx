@@ -36,7 +36,8 @@ import {
   Camera,
   RotateCcw,
   RefreshCw,
-  Smile
+  Smile,
+  Calendar
 } from 'lucide-react';
 import { 
   fetchTableData, 
@@ -109,6 +110,8 @@ interface AdminChatDrawerProps {
   sidebarWidth?: number;
   onSidebarWidthChange?: (width: number) => void;
   onResizeStateChange?: (isResizing: boolean) => void;
+  isDesktopSidebarOpen?: boolean;
+  maxSidebarWidth?: number;
 }
 
 const LOCAL_STORAGE_KEY = 'smartsantri_admin_chat_messages';
@@ -218,7 +221,9 @@ export default function AdminChatDrawer({
   onLayoutModeChange,
   sidebarWidth: propSidebarWidth,
   onSidebarWidthChange,
-  onResizeStateChange
+  onResizeStateChange,
+  isDesktopSidebarOpen = true,
+  maxSidebarWidth: propMaxSidebarWidth
 }: AdminChatDrawerProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
@@ -234,6 +239,30 @@ export default function AdminChatDrawer({
   });
 
   const layoutMode = propLayoutMode ?? internalLayoutMode;
+  const layoutModeRef = useRef(layoutMode);
+  useEffect(() => {
+    layoutModeRef.current = layoutMode;
+  }, [layoutMode]);
+
+  const onSidebarWidthChangeRef = useRef(onSidebarWidthChange);
+  useEffect(() => {
+    onSidebarWidthChangeRef.current = onSidebarWidthChange;
+  }, [onSidebarWidthChange]);
+
+  const onResizeStateChangeRef = useRef(onResizeStateChange);
+  useEffect(() => {
+    onResizeStateChangeRef.current = onResizeStateChange;
+  }, [onResizeStateChange]);
+
+  const isDesktopSidebarOpenRef = useRef(isDesktopSidebarOpen);
+  useEffect(() => {
+    isDesktopSidebarOpenRef.current = isDesktopSidebarOpen;
+  }, [isDesktopSidebarOpen]);
+
+  const propMaxSidebarWidthRef = useRef(propMaxSidebarWidth);
+  useEffect(() => {
+    propMaxSidebarWidthRef.current = propMaxSidebarWidth;
+  }, [propMaxSidebarWidth]);
 
   const handleSetLayoutMode = (mode: 'sidebar' | 'floating' | 'full') => {
     setInternalLayoutMode(mode);
@@ -268,7 +297,9 @@ export default function AdminChatDrawer({
     try {
       localStorage.setItem('attarokey_chat_sidebar_width', width.toString());
     } catch (e) {}
-    if (onSidebarWidthChange) {
+    if (onSidebarWidthChangeRef.current) {
+      onSidebarWidthChangeRef.current(width);
+    } else if (onSidebarWidthChange) {
       onSidebarWidthChange(width);
     }
   };
@@ -499,6 +530,174 @@ export default function AdminChatDrawer({
     }, 3500);
   };
 
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const datePickerInputRef = useRef<HTMLInputElement>(null);
+
+  // Scroll Position & Visible Message Tracking (Preserves exact message viewed before Search / Media)
+  const savedChatScrollTopRef = useRef<number | null>(null);
+  const savedVisibleMsgIdRef = useRef<string | null>(null);
+  const isNavigatingToTargetMsgRef = useRef<boolean>(false);
+
+  const captureChatPosition = () => {
+    if (scrollContainerRef.current && activeTab === 'chat' && !isSearchMode) {
+      savedChatScrollTopRef.current = scrollContainerRef.current.scrollTop;
+      const containerRect = scrollContainerRef.current.getBoundingClientRect();
+      const messageElements = scrollContainerRef.current.querySelectorAll('[id^="msg-"]');
+      for (let i = 0; i < messageElements.length; i++) {
+        const el = messageElements[i];
+        const rect = el.getBoundingClientRect();
+        if (rect.bottom >= containerRect.top + 10 && rect.top <= containerRect.bottom - 10) {
+          savedVisibleMsgIdRef.current = el.id.replace('msg-', '');
+          break;
+        }
+      }
+    }
+  };
+
+  const restorePreviousChatScroll = () => {
+    if (isNavigatingToTargetMsgRef.current) return;
+
+    const doRestore = () => {
+      if (!scrollContainerRef.current) return;
+      const savedTop = savedChatScrollTopRef.current;
+      const savedMsgId = savedVisibleMsgIdRef.current;
+
+      if (savedTop !== null && savedTop !== undefined) {
+        scrollContainerRef.current.scrollTop = savedTop;
+      } else if (savedMsgId) {
+        const el = document.getElementById(`msg-${savedMsgId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'auto', block: 'start' });
+        }
+      }
+    };
+
+    setTimeout(doRestore, 25);
+    setTimeout(doRestore, 90);
+  };
+
+  // Scroll to original / target message with smooth animation & visual highlight
+  const scrollToMsg = (targetId: string) => {
+    const attemptScroll = (attemptsLeft: number) => {
+      const el = document.getElementById(`msg-${targetId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('ring-2', 'ring-purple-400', 'bg-purple-50/70', 'transition-all');
+        setTimeout(() => {
+          el.classList.remove('ring-2', 'ring-purple-400', 'bg-purple-50/70');
+        }, 2000);
+      } else if (attemptsLeft > 0) {
+        setTimeout(() => attemptScroll(attemptsLeft - 1), 60);
+      }
+    };
+    attemptScroll(5);
+  };
+
+  const getTodayDateStr = () => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  };
+
+  const handleSelectDateFromPicker = (selectedDateStr: string) => {
+    if (!selectedDateStr) return;
+
+    const todayStr = getTodayDateStr();
+    let targetDateKey = selectedDateStr;
+    // Apabila yang dipilih tanggal melebihi hari ini maka buat yang ditampilkan adalah hari ini
+    if (targetDateKey > todayStr) {
+      targetDateKey = todayStr;
+    }
+
+    const parseTime = (val?: string) => {
+      if (!val) return 0;
+      let str = String(val).trim();
+      if (str.includes(' ') && !str.includes('T')) {
+        str = str.replace(' ', 'T');
+      }
+      const t = new Date(str).getTime();
+      return isNaN(t) ? 0 : t;
+    };
+
+    const sortedMsgs = [...messages].sort((a, b) => {
+      return parseTime(a.created_at || a.timestamp) - parseTime(b.created_at || b.timestamp);
+    });
+
+    if (sortedMsgs.length === 0) {
+      showToast('Belum ada pesan dalam obrolan.');
+      return;
+    }
+
+    const getMsgDateKey = (m: ChatMessage) => {
+      let str = String(m.created_at || m.timestamp || '').trim();
+      if (str.includes(' ') && !str.includes('T')) {
+        str = str.replace(' ', 'T');
+      }
+      const d = new Date(str);
+      if (isNaN(d.getTime())) return 'unknown';
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+
+    // 1. Cari pesan tepat di tanggal yang dipilih
+    let targetMsg = sortedMsgs.find(m => getMsgDateKey(m) === targetDateKey);
+    let isExact = true;
+
+    // 2. Jika tidak ada di tanggal tersebut, cari pesan setelahnya yang terdekat
+    if (!targetMsg) {
+      isExact = false;
+      targetMsg = sortedMsgs.find(m => {
+        const k = getMsgDateKey(m);
+        return k !== 'unknown' && k > targetDateKey;
+      });
+    }
+
+    // 3. Jika setelahnya juga tidak ada, pilih pesan terakhir yang ada
+    if (!targetMsg) {
+      targetMsg = sortedMsgs[sortedMsgs.length - 1];
+    }
+
+    if (targetMsg) {
+      isNavigatingToTargetMsgRef.current = true;
+      setIsSearchMode(false);
+      setSearchQuery('');
+      setActiveTab('chat');
+
+      const parts = targetDateKey.split('-');
+      const formattedDate = parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : targetDateKey;
+
+      if (isExact) {
+        showToast(`Menuju pesan tanggal ${formattedDate}`);
+      } else {
+        showToast(`Tidak ada pesan di tanggal ${formattedDate}, menuju pesan terdekat`);
+      }
+
+      setTimeout(() => {
+        scrollToMsg(targetMsg!.id);
+        setTimeout(() => {
+          isNavigatingToTargetMsgRef.current = false;
+        }, 600);
+      }, 100);
+    }
+  };
+
+  // Restore scroll position when returning to Chat tab or exiting Search mode
+  const previousTabRef = useRef(activeTab);
+  const previousSearchModeRef = useRef(isSearchMode);
+
+  useEffect(() => {
+    const wasInMedia = previousTabRef.current === 'media' && activeTab === 'chat';
+    const wasInSearch = previousSearchModeRef.current && !isSearchMode;
+
+    previousTabRef.current = activeTab;
+    previousSearchModeRef.current = isSearchMode;
+
+    if ((wasInMedia || wasInSearch) && !isSearchMode && activeTab === 'chat' && isOpen) {
+      if (!isNavigatingToTargetMsgRef.current) {
+        restorePreviousChatScroll();
+      }
+    }
+  }, [activeTab, isSearchMode, isOpen]);
+
   const handlePreviewMedia = (m: ChatMessage) => {
     const att = m.attachment;
     if (!att) return;
@@ -585,7 +784,6 @@ export default function AdminChatDrawer({
   const [activeEmojiCategory, setActiveEmojiCategory] = useState<string>('recents');
   const emojiPickerRef = useRef<HTMLDivElement>(null);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const layoutMenuRef = useRef<HTMLDivElement>(null);
   const mentionMenuRef = useRef<HTMLDivElement>(null);
@@ -665,7 +863,6 @@ export default function AdminChatDrawer({
   // Scroll to Bottom Floating Button State & Unread Below Count
   const [showScrollBottomBtn, setShowScrollBottomBtn] = useState<boolean>(false);
   const [unreadBelowCount, setUnreadBelowCount] = useState<number>(0);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const handleChatScroll = () => {
     if (scrollContainerRef.current) {
@@ -676,6 +873,20 @@ export default function AdminChatDrawer({
 
       if (!isFarFromBottom) {
         setUnreadBelowCount(0);
+      }
+
+      if (activeTab === 'chat' && !isSearchMode) {
+        savedChatScrollTopRef.current = scrollTop;
+        const containerRect = scrollContainerRef.current.getBoundingClientRect();
+        const messageElements = scrollContainerRef.current.querySelectorAll('[id^="msg-"]');
+        for (let i = 0; i < messageElements.length; i++) {
+          const el = messageElements[i];
+          const rect = el.getBoundingClientRect();
+          if (rect.bottom >= containerRect.top + 10 && rect.top <= containerRect.bottom - 10) {
+            savedVisibleMsgIdRef.current = el.id.replace('msg-', '');
+            break;
+          }
+        }
       }
     }
   };
@@ -906,29 +1117,35 @@ export default function AdminChatDrawer({
       const margin = 16;
 
       if (isResizingRef.current) {
+        const currentMode = layoutModeRef.current;
         if (type === 'resize_left') {
           // Dragging left handle: sisi kanan (rightEdge) tetap terkunci diam secara mutlak
           const deltaX = startX - e.clientX;
           const rawNewWidth = startWidth + deltaX;
 
-          if (layoutMode === 'sidebar') {
-            const minAllowedWidth = 340;
-            const maxAllowedWidth = Math.max(440, Math.floor(window.innerWidth * 0.75));
+          if (currentMode === 'sidebar') {
+            const minAllowedWidth = 320;
+            // Maksimal perluasan khusus mode sidebar adalah 40% dari ukuran halaman utama tanpa sidebar chat
+            const leftNavWidth = isDesktopSidebarOpenRef.current ? 288 : 72;
+            const mainPageWidthWithoutChat = Math.max(320, window.innerWidth - leftNavWidth);
+            const calculatedMax = Math.floor(mainPageWidthWithoutChat * 0.40);
+            const maxAllowedWidth = Math.max(minAllowedWidth, propMaxSidebarWidthRef.current || calculatedMax);
             const clampedWidth = Math.max(minAllowedWidth, Math.min(rawNewWidth, maxAllowedWidth));
             handleSetSidebarWidth(clampedWidth);
           } else {
+            // Floating mode: anchor right edge, expand/contract left edge
             const rightEdge = startLeft + startWidth;
-            const maxWidth = Math.max(340, rightEdge - margin);
-            const clampedWidth = Math.max(340, Math.min(rawNewWidth, maxWidth));
+            const maxWidth = Math.max(320, rightEdge - margin);
+            const clampedWidth = Math.max(320, Math.min(rawNewWidth, maxWidth));
             const newLeft = rightEdge - clampedWidth;
             setFloatingWidth(clampedWidth);
             setFloatingLeft(newLeft);
           }
         } else if (type === 'resize_right') {
-          // Dragging right handle: sisi kiri (startLeft) tetap 100% diam di koordinatnya, hanya sisi kanan yang melebar/menyempit
+          // Dragging right handle: sisi kiri (startLeft) tetap 100% diam di koordinatnya
           const deltaX = e.clientX - startX;
-          const maxWidth = Math.max(340, window.innerWidth - startLeft - margin);
-          const clampedWidth = Math.max(340, Math.min(startWidth + deltaX, maxWidth));
+          const maxWidth = Math.max(320, window.innerWidth - startLeft - margin);
+          const clampedWidth = Math.max(320, Math.min(startWidth + deltaX, maxWidth));
           setFloatingWidth(clampedWidth);
           setFloatingLeft(startLeft);
         }
@@ -947,7 +1164,8 @@ export default function AdminChatDrawer({
         isDraggingWindowRef.current = false;
         setIsResizing(false);
         setIsDraggingWindow(false);
-        if (onResizeStateChange) onResizeStateChange(false);
+        if (onResizeStateChangeRef.current) onResizeStateChangeRef.current(false);
+        else if (onResizeStateChange) onResizeStateChange(false);
         document.body.style.userSelect = '';
       }
     };
@@ -955,14 +1173,12 @@ export default function AdminChatDrawer({
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
     window.addEventListener('pointerup', handleMouseUp);
-    window.addEventListener('mouseleave', handleMouseUp);
     window.addEventListener('blur', handleMouseUp);
 
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('pointerup', handleMouseUp);
-      window.removeEventListener('mouseleave', handleMouseUp);
       window.removeEventListener('blur', handleMouseUp);
     };
   }, []);
@@ -1522,18 +1738,6 @@ export default function AdminChatDrawer({
     }, 50);
   };
 
-  // Scroll to original message
-  const scrollToMsg = (targetId: string) => {
-    const el = document.getElementById(`msg-${targetId}`);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el.classList.add('ring-2', 'ring-purple-400');
-      setTimeout(() => {
-        el.classList.remove('ring-2', 'ring-purple-400');
-      }, 1500);
-    }
-  };
-
   // Start Editing Message
   const handleStartEdit = (msg: ChatMessage) => {
     setEditingMsgId(msg.id);
@@ -1857,8 +2061,12 @@ export default function AdminChatDrawer({
           width: (!isMobile && (layoutMode === 'floating' || layoutMode === 'sidebar')) 
             ? (layoutMode === 'sidebar' ? `${sidebarWidth}px` : `${floatingWidth}px`) 
             : undefined,
-          minWidth: (!isMobile && (layoutMode === 'floating' || layoutMode === 'sidebar')) ? '340px' : undefined,
-          maxWidth: (!isMobile && layoutMode === 'floating') ? 'calc(100vw - 32px)' : (!isMobile && layoutMode === 'sidebar') ? '75vw' : undefined,
+          minWidth: (!isMobile && (layoutMode === 'floating' || layoutMode === 'sidebar')) ? '320px' : undefined,
+          maxWidth: (!isMobile && layoutMode === 'floating') 
+            ? 'calc(100vw - 32px)' 
+            : (!isMobile && layoutMode === 'sidebar') 
+            ? `${propMaxSidebarWidth || Math.max(320, Math.floor((window.innerWidth - (isDesktopSidebarOpen ? 288 : 72)) * 0.40))}px` 
+            : undefined,
           transformOrigin: isMobile ? '0 50vh' : undefined,
           borderStyle: isMobile ? 'solid' : undefined,
           borderRadius: !isMobile ? (layoutMode === 'full' || layoutMode === 'sidebar' ? '0px' : undefined) : undefined,
@@ -1902,7 +2110,8 @@ export default function AdminChatDrawer({
               document.body.style.userSelect = 'none';
               isResizingRef.current = true;
               setIsResizing(true);
-              if (onResizeStateChange) onResizeStateChange(true);
+              if (onResizeStateChangeRef.current) onResizeStateChangeRef.current(true);
+              else if (onResizeStateChange) onResizeStateChange(true);
               const curLeft = getEffectiveLeft();
               dragStateRef.current = {
                 type: 'resize_left',
@@ -1911,10 +2120,18 @@ export default function AdminChatDrawer({
                 startLeft: curLeft
               };
             }}
-            className={`absolute left-0 top-0 bottom-0 w-3 cursor-ew-resize z-30 group hover:bg-slate-200/60 active:bg-blue-500/20 transition-colors hidden sm:flex items-center justify-center ${isResizing ? 'bg-blue-500/20' : ''}`}
-            title={layoutMode === 'sidebar' ? "Tarik untuk mengatur lebar sidebar chat" : "Tarik sisi kiri untuk merubah lebar obrolan"}
+            className={`absolute ${
+              layoutMode === 'sidebar' ? '-left-3 w-6' : '-left-2 w-4 sm:-left-2.5 sm:w-5'
+            } top-0 bottom-0 cursor-ew-resize z-40 group hover:bg-emerald-500/15 active:bg-emerald-500/25 transition-colors hidden sm:flex items-center justify-center ${
+              isResizing ? 'bg-emerald-500/20' : ''
+            }`}
+            title={layoutMode === 'sidebar' ? "Tarik untuk mengatur lebar sidebar chat (maks 40% halaman)" : "Tarik sisi kiri untuk merubah lebar obrolan"}
           >
-            <div className="w-1 h-8 rounded-full bg-slate-300 group-hover:bg-slate-500 group-active:bg-blue-600 transition-colors" />
+            <div className={`w-1 h-12 rounded-full transition-colors ${
+              isResizing 
+                ? 'bg-emerald-600' 
+                : 'bg-slate-300 group-hover:bg-emerald-500'
+            }`} />
           </div>
         )}
 
@@ -1927,7 +2144,8 @@ export default function AdminChatDrawer({
               document.body.style.userSelect = 'none';
               isResizingRef.current = true;
               setIsResizing(true);
-              if (onResizeStateChange) onResizeStateChange(true);
+              if (onResizeStateChangeRef.current) onResizeStateChangeRef.current(true);
+              else if (onResizeStateChange) onResizeStateChange(true);
               const curLeft = getEffectiveLeft();
               dragStateRef.current = {
                 type: 'resize_right',
@@ -1936,10 +2154,16 @@ export default function AdminChatDrawer({
                 startLeft: curLeft
               };
             }}
-            className={`absolute right-0 top-0 bottom-0 w-3 cursor-ew-resize z-30 group hover:bg-slate-200/60 active:bg-blue-500/20 transition-colors hidden sm:flex items-center justify-center ${isResizing ? 'bg-blue-500/20' : ''}`}
+            className={`absolute right-0 top-0 bottom-0 w-3 cursor-ew-resize z-30 group hover:bg-emerald-500/15 active:bg-emerald-500/25 transition-colors hidden sm:flex items-center justify-center ${
+              isResizing ? 'bg-emerald-500/20' : ''
+            }`}
             title="Tarik sisi kanan untuk merubah lebar obrolan"
           >
-            <div className="w-1 h-8 rounded-full bg-slate-300 group-hover:bg-slate-500 group-active:bg-blue-600 transition-colors" />
+            <div className={`w-1 h-12 rounded-full transition-colors ${
+              isResizing 
+                ? 'bg-emerald-600' 
+                : 'bg-slate-300 group-hover:bg-emerald-500'
+            }`} />
           </div>
         )}
 
@@ -1975,7 +2199,7 @@ export default function AdminChatDrawer({
                 };
               }
             }}
-            className={`flex items-center px-4 py-2 space-x-3 border-b border-gray-100 bg-white h-16 shrink-0 z-30 ${
+            className={`relative z-40 flex items-center px-4 py-2 space-x-3 border-b border-gray-100 bg-white h-16 shrink-0 ${
               !isMobile && layoutMode === 'floating' 
                 ? 'cursor-grab active:cursor-grabbing select-none' 
                 : ''
@@ -1987,7 +2211,8 @@ export default function AdminChatDrawer({
               aria-label="Go back" 
               onClick={() => {
                 setIsSearchMode(false);
-                setSearchQuery('');
+                setActiveTab('chat');
+                restorePreviousChatScroll();
               }}
               onMouseDown={(e) => e.stopPropagation()}
               className="p-2 -ml-2 text-gray-800 hover:bg-gray-100 rounded-full transition-colors flex-shrink-0 cursor-pointer"
@@ -2000,7 +2225,7 @@ export default function AdminChatDrawer({
               <input 
                 ref={searchInputRef}
                 autoFocus
-                className="w-full bg-transparent border-none focus:ring-0 focus:outline-none text-sm text-gray-800 placeholder-gray-400 pl-7 pr-7 py-0 h-auto" 
+                className="w-full bg-transparent border-none focus:ring-0 focus:outline-none text-sm text-gray-800 placeholder-gray-400 pl-7 pr-8 py-0 h-auto" 
                 placeholder="Cari konten chat..." 
                 type="text"
                 value={searchQuery}
@@ -2008,22 +2233,58 @@ export default function AdminChatDrawer({
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') {
                     setIsSearchMode(false);
-                    setSearchQuery('');
+                    setActiveTab('chat');
+                    restorePreviousChatScroll();
                   }
                 }}
               />
-              {searchQuery && (
+              {searchQuery ? (
                 <button
                   type="button"
                   onClick={() => {
                     setSearchQuery('');
                     searchInputRef.current?.focus();
                   }}
-                  className="absolute right-2.5 p-1 text-gray-400 hover:text-gray-600 rounded-full cursor-pointer"
+                  className="absolute right-2.5 p-1 text-gray-400 hover:text-gray-600 rounded-full cursor-pointer transition-colors"
                   title="Hapus pencarian"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
+              ) : (
+                <div className="absolute right-2 flex items-center">
+                  <input
+                    ref={datePickerInputRef}
+                    type="date"
+                    max={getTodayDateStr()}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        handleSelectDateFromPicker(e.target.value);
+                        e.target.value = '';
+                      }
+                    }}
+                    className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10"
+                    title="Pilih tanggal pesan obrolan"
+                    aria-label="Pilih tanggal pesan obrolan"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (datePickerInputRef.current) {
+                        if ('showPicker' in HTMLInputElement.prototype && typeof datePickerInputRef.current.showPicker === 'function') {
+                          try {
+                            datePickerInputRef.current.showPicker();
+                            return;
+                          } catch (err) {}
+                        }
+                        datePickerInputRef.current.click();
+                      }
+                    }}
+                    className="p-1.5 text-slate-400 hover:text-emerald-600 active:scale-95 rounded-full cursor-pointer transition-colors"
+                    title="Lompat ke pesan berdasarkan tanggal"
+                  >
+                    <Calendar className="w-4 h-4 text-emerald-600" />
+                  </button>
+                </div>
               )}
             </div>
           </header>
@@ -2045,7 +2306,7 @@ export default function AdminChatDrawer({
                 };
               }
             }}
-            className={`relative flex h-16 shrink-0 items-center justify-between border-b border-slate-100 bg-white px-3 sm:px-5 ${
+            className={`relative z-40 flex h-16 shrink-0 items-center justify-between border-b border-slate-100 bg-white px-3 sm:px-5 ${
               !isMobile && layoutMode === 'floating' 
                 ? 'cursor-grab active:cursor-grabbing select-none' 
                 : ''
@@ -2072,7 +2333,10 @@ export default function AdminChatDrawer({
                 <div className="flex items-center bg-[#f2f3f5] p-1 rounded-full border border-slate-200/50 shadow-2xs">
                   <button
                     type="button"
-                    onClick={() => setActiveTab('chat')}
+                    onClick={() => {
+                      setActiveTab('chat');
+                      restorePreviousChatScroll();
+                    }}
                     onMouseDown={(e) => e.stopPropagation()}
                     className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none ${
                       activeTab === 'chat'
@@ -2085,7 +2349,10 @@ export default function AdminChatDrawer({
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
-                      onClick={() => setActiveTab('media')}
+                      onClick={() => {
+                        captureChatPosition();
+                        setActiveTab('media');
+                      }}
                       onMouseDown={(e) => e.stopPropagation()}
                       className={`px-3.5 py-1.5 rounded-full text-xs transition-all cursor-pointer select-none ${
                         activeTab === 'media'
@@ -2121,7 +2388,10 @@ export default function AdminChatDrawer({
                 <div className="flex items-center bg-[#f2f3f5] p-1 rounded-full border border-slate-200/50 shadow-2xs">
                   <button
                     type="button"
-                    onClick={() => setActiveTab('chat')}
+                    onClick={() => {
+                      setActiveTab('chat');
+                      restorePreviousChatScroll();
+                    }}
                     onMouseDown={(e) => e.stopPropagation()}
                     className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer select-none ${
                       activeTab === 'chat'
@@ -2134,7 +2404,10 @@ export default function AdminChatDrawer({
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
-                      onClick={() => setActiveTab('media')}
+                      onClick={() => {
+                        captureChatPosition();
+                        setActiveTab('media');
+                      }}
                       onMouseDown={(e) => e.stopPropagation()}
                       className={`px-3.5 py-1.5 rounded-full text-xs transition-all cursor-pointer select-none ${
                         activeTab === 'media'
@@ -2165,12 +2438,13 @@ export default function AdminChatDrawer({
             )}
 
             {/* Right Action Icons */}
-            <div className="flex items-center gap-1.5 z-10" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-1.5 z-20" onMouseDown={(e) => e.stopPropagation()}>
 
               {/* Tombol Pencarian Konten Chat */}
               <button
                 type="button"
                 onClick={() => {
+                  captureChatPosition();
                   setIsSearchMode(true);
                   setTimeout(() => searchInputRef.current?.focus(), 50);
                 }}
@@ -2182,7 +2456,7 @@ export default function AdminChatDrawer({
               </button>
 
               {/* Layout Mode Switcher [|] - Disembunyikan di mode HP */}
-              <div className="relative hidden sm:block" ref={layoutMenuRef}>
+              <div className="relative z-50 hidden sm:block" ref={layoutMenuRef}>
                 <button
                   type="button"
                   onClick={() => setShowLayoutMenu(!showLayoutMenu)}
@@ -2200,7 +2474,7 @@ export default function AdminChatDrawer({
 
                 {/* Layout Dropdown Menu */}
                 {showLayoutMenu && (
-                  <div className="absolute right-0 top-11 z-50 w-48 rounded-2xl bg-white p-2 shadow-xl border border-slate-100 animate-in fade-in zoom-in-95 duration-100">
+                  <div className="absolute right-0 top-11 z-50 w-48 rounded-2xl bg-white p-2 shadow-2xl border border-slate-200/90 animate-in fade-in zoom-in-95 duration-100">
                     <button
                       type="button"
                       onClick={() => {
@@ -2277,7 +2551,9 @@ export default function AdminChatDrawer({
         {/* SEARCH MODE CONTENT or NORMAL CHAT / MEDIA CONTENT */}
         {isSearchMode ? (
           /* BEGIN: MainContent (Exact matching user reference: empty or search results list) */
-          <main className="flex-grow bg-white flex flex-col overflow-y-auto min-h-0">
+          <main className={`flex-grow bg-white flex flex-col overflow-y-auto min-h-0 chat-scrollbar ${
+            layoutMode === 'floating' ? 'mr-3 sm:mr-3.5' : ''
+          }`}>
             {searchQuery.trim() === '' ? (
               /* Empty main content area as per reference image */
               <div className="flex-grow bg-white" />
@@ -2297,10 +2573,15 @@ export default function AdminChatDrawer({
                     <div
                       key={m.id}
                       onClick={() => {
+                        isNavigatingToTargetMsgRef.current = true;
                         setIsSearchMode(false);
-                        setSearchQuery('');
                         setActiveTab('chat');
-                        setTimeout(() => scrollToMsg(m.id), 120);
+                        setTimeout(() => {
+                          scrollToMsg(m.id);
+                          setTimeout(() => {
+                            isNavigatingToTargetMsgRef.current = false;
+                          }, 600);
+                        }, 100);
                       }}
                       className="p-3.5 rounded-2xl hover:bg-slate-50 active:bg-slate-100 cursor-pointer transition-colors"
                     >
@@ -2438,7 +2719,9 @@ export default function AdminChatDrawer({
 
         {/* TAB 2: MEDIA CONTENT BODY (COMPACT DESKTOP ICON VIEW) */}
         {activeTab === 'media' ? (
-          <div className="flex-1 p-3 sm:p-4 overflow-y-auto overscroll-contain bg-slate-50/60">
+          <div className={`flex-1 p-3 sm:p-4 overflow-y-auto overscroll-contain bg-slate-50/60 chat-scrollbar ${
+            layoutMode === 'floating' ? 'mr-3 sm:mr-3.5' : ''
+          }`}>
             <div className={`w-full ${layoutMode === 'full' ? 'max-w-4xl sm:max-w-[60%] mx-auto' : ''}`}>
               {mediaMessages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-64 text-center">
@@ -2580,7 +2863,9 @@ export default function AdminChatDrawer({
           <div 
             ref={scrollContainerRef}
             onScroll={handleChatScroll}
-            className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5 scrollbar-thin relative"
+            className={`flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5 chat-scrollbar relative ${
+              layoutMode === 'floating' ? 'mr-3 sm:mr-3.5' : ''
+            }`}
           >
             <div className={`w-full space-y-4 ${layoutMode === 'full' ? 'max-w-4xl sm:max-w-[60%] mx-auto' : ''}`}>
               {loading ? (
@@ -2637,7 +2922,7 @@ export default function AdminChatDrawer({
                   <div key={group.dateKey} className="relative space-y-4">
                     {/* Sticky Floating Date Badge (WhatsApp Style - rounded-full circle sempurna floating at top on scroll) */}
                     {group.label && (
-                      <div className="sticky top-1 z-20 flex justify-center my-2 pointer-events-none">
+                      <div className="sticky top-1 z-10 flex justify-center my-2 pointer-events-none">
                         <span className="px-3.5 py-1 rounded-full text-[10.5px] font-bold bg-white/95 text-slate-700 shadow-xs border border-slate-200/90 backdrop-blur-md select-none pointer-events-auto flex items-center gap-1">
                           {group.label}
                         </span>
@@ -3623,6 +3908,14 @@ export default function AdminChatDrawer({
         </motion.div>
       </motion.div>
 
+      {/* Fullscreen transparent interaction blocker while resizing to prevent jitter and lost mouse moves */}
+      {isResizing && (
+        <div 
+          className="fixed inset-0 z-[99999] cursor-ew-resize select-none"
+          style={{ userSelect: 'none' }}
+        />
+      )}
+
       {/* PIN DURATION SELECTION MODAL POPUP */}
       {pinDurationModalMsgId && (
         <div
@@ -3932,7 +4225,16 @@ export default function AdminChatDrawer({
       {previewImageModal && (
         <div 
           className="fixed inset-0 z-[300] flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-in fade-in duration-200 pointer-events-auto"
-          onClick={() => setPreviewImageModal(null)}
+          onClick={() => {
+            setPreviewImageModal(null);
+            if (activeTab === 'chat' && !isSearchMode) {
+              setTimeout(() => {
+                if (scrollContainerRef.current) {
+                  scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+                }
+              }, 40);
+            }
+          }}
         >
           <div 
             className="relative max-w-4xl max-h-[90vh] w-full flex flex-col items-center justify-center p-2"
@@ -3954,7 +4256,16 @@ export default function AdminChatDrawer({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setPreviewImageModal(null)}
+                  onClick={() => {
+                    setPreviewImageModal(null);
+                    if (activeTab === 'chat' && !isSearchMode) {
+                      setTimeout(() => {
+                        if (scrollContainerRef.current) {
+                          scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+                        }
+                      }, 40);
+                    }
+                  }}
                   className="p-1.5 bg-white/10 hover:bg-white/20 active:scale-95 text-white rounded-xl transition-all cursor-pointer"
                   title="Tutup"
                 >

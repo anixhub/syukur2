@@ -1567,37 +1567,9 @@ export default function SekretarisView({
 
           {/* Top Segmented Layout Tabs & Action Buttons */}
           {subTab !== 'overview' && (
-            <div className="flex items-center justify-between w-full sm:w-auto gap-2">
-              {/* Tombol Mode Tampilan (RATA KIRI - Sudut Lengkung Sempurna) */}
-              <div className="inline-flex rounded-full bg-slate-100 p-1 gap-1 shrink-0">
-                <button
-                  id="tab-view-table"
-                  onClick={() => setViewMode('table')}
-                  className={`flex h-9 w-9 items-center justify-center rounded-full font-display text-xs font-bold tracking-tight transition-all cursor-pointer ${
-                    viewMode === 'table'
-                      ? 'bg-white text-emerald-800 shadow-sm'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                  title="Mode Tabel"
-                >
-                  <Table className="h-4 w-4" />
-                </button>
-                <button
-                  id="tab-view-card"
-                  onClick={() => setViewMode('card')}
-                  className={`flex h-9 w-9 items-center justify-center rounded-full font-display text-xs font-bold tracking-tight transition-all cursor-pointer ${
-                    viewMode === 'card'
-                      ? 'bg-white text-emerald-800 shadow-sm'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                  title="Mode Kartu"
-                >
-                  <LayoutGrid className="h-4 w-4" />
-                </button>
-              </div>
-
-              {/* Tombol Lain (RATA KANAN SEMUA - Sudut Lengkung Sempurna) */}
-              <div className="flex items-center gap-2 justify-end">
+            <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-2">
+              {/* Tombol Lain (Monitoring, Ekspor, Tambah Santri Mobile) - Di kiri pada desktop, di kanan pada mobile */}
+              <div className="order-2 sm:order-1 flex items-center gap-2 justify-end">
                 {/* Tombol Monitoring (jika mode tabel - rounded-full) */}
                 {viewMode === 'table' && (
                   <button
@@ -1632,12 +1604,40 @@ export default function SekretarisView({
                       setEditingSantri(null);
                       setIsAddSantriOpen(true);
                     }}
-                    className="flex md:hidden h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all shadow-xs bg-emerald-700 text-white hover:bg-emerald-800 hover:scale-105 active:scale-95 cursor-pointer"
+                    className="flex sm:hidden h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all shadow-xs bg-emerald-700 text-white hover:bg-emerald-800 hover:scale-105 active:scale-95 cursor-pointer"
                     title="Tambah Santri"
                   >
                     <Plus className="h-5 w-5" />
                   </button>
                 )}
+              </div>
+
+              {/* Tombol Mode Tampilan (Tabel / Kartu) - Di kiri pada mobile, PALING KANAN pada desktop */}
+              <div className="order-1 sm:order-2 sm:order-last inline-flex rounded-full bg-slate-100 p-1 gap-1 shrink-0">
+                <button
+                  id="tab-view-table"
+                  onClick={() => setViewMode('table')}
+                  className={`flex h-9 w-9 items-center justify-center rounded-full font-display text-xs font-bold tracking-tight transition-all cursor-pointer ${
+                    viewMode === 'table'
+                      ? 'bg-white text-emerald-800 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                  title="Mode Tabel"
+                >
+                  <Table className="h-4 w-4" />
+                </button>
+                <button
+                  id="tab-view-card"
+                  onClick={() => setViewMode('card')}
+                  className={`flex h-9 w-9 items-center justify-center rounded-full font-display text-xs font-bold tracking-tight transition-all cursor-pointer ${
+                    viewMode === 'card'
+                      ? 'bg-white text-emerald-800 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                  title="Mode Kartu"
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </button>
               </div>
             </div>
           )}
@@ -1984,17 +1984,17 @@ export default function SekretarisView({
                 </button>
               )}
 
-              {/* Mobile Sort Button (Card mode & Santri subtab) */}
-              {viewMode === 'card' && subTab === 'santri' && (
-                <div className={`relative shrink-0 md:hidden ${isSelectionMode ? 'hidden' : 'block'}`}>
+              {/* Mobile Sort Button (Santri subtab - Hanya Tampil di Mode Tampilan Kartu) */}
+              {subTab === 'santri' && viewMode === 'card' && (
+                <div className={`relative shrink-0 sm:hidden ${isSelectionMode ? 'hidden' : 'block'}`}>
                   <button
                     id="btn-sort-card-toggle-mobile"
                     type="button"
                     onClick={() => setShowSortDropdown(!showSortDropdown)}
-                    className={`h-11 w-11 flex items-center justify-center rounded-full border font-display text-xs font-bold transition-all hover:bg-slate-50 shadow-2xs ${
+                    className={`h-11 w-11 flex items-center justify-center rounded-full border font-display text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95 ${
                       showSortDropdown
-                        ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                        : 'border-slate-200 bg-white text-slate-600'
+                        ? 'border-emerald-300 bg-emerald-50 text-emerald-800 ring-2 ring-emerald-500/20'
+                        : 'border-slate-200 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                     }`}
                     title="Urutkan"
                   >
@@ -2066,24 +2066,23 @@ export default function SekretarisView({
             </div>
           </div>
 
-          <div className={`${isSelectionMode ? 'flex' : 'hidden md:flex'} items-center justify-between sm:justify-end gap-1.5 sm:gap-2.5 md:gap-3 w-full md:w-auto flex-nowrap overflow-visible py-0.5`}>
+          <div className={`${isSelectionMode ? 'flex' : 'hidden sm:flex'} items-center justify-between sm:justify-end gap-1.5 sm:gap-2.5 md:gap-3 w-full sm:w-auto flex-nowrap overflow-visible py-0.5`}>
 
-            {/* Sort Button (Only for Card mode & Santri subtab) */}
-            {viewMode === 'card' && subTab === 'santri' && (
-              <div className={`relative flex-1 sm:flex-none shrink-0 ${isSelectionMode ? 'hidden sm:block' : 'block'}`}>
+            {/* Sort Button (Hanya Tampil di Mode Tampilan Kartu) */}
+            {subTab === 'santri' && viewMode === 'card' && (
+              <div className={`relative shrink-0 ${isSelectionMode ? 'hidden sm:block' : 'block'}`}>
                 <button
                   id="btn-sort-card-toggle"
                   type="button"
                   onClick={() => setShowSortDropdown(!showSortDropdown)}
-                  className={`w-full flex flex-row h-11 items-center justify-center gap-1 sm:gap-1.5 rounded-xl border px-1.5 sm:px-3.5 font-display text-[10px] xs:text-[11px] sm:text-xs font-bold transition-all hover:bg-slate-50 whitespace-nowrap ${
+                  className={`h-11 w-11 shrink-0 flex items-center justify-center rounded-full border font-display text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95 ${
                     showSortDropdown
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                      : 'border-slate-200 bg-white text-slate-600'
+                      ? 'border-emerald-300 bg-emerald-50 text-emerald-800 ring-2 ring-emerald-500/20'
+                      : 'border-slate-200 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                   }`}
                   title="Urutkan"
                 >
-                  <ArrowUpDown className="h-4 w-4 text-current" />
-                  <span className="inline">Urutkan</span>
+                  <ArrowUpDown className="h-5 w-5 text-current" />
                 </button>
                 
                 {/* Sort Options Dropdown */}
@@ -2098,7 +2097,7 @@ export default function SekretarisView({
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: 10 }}
-                        className="absolute left-1/2 -translate-x-1/2 sm:left-auto sm:right-0 sm:translate-x-0 mt-2 w-52 sm:w-56 rounded-2xl border border-slate-100 bg-white p-3 shadow-xl z-50 text-slate-700 font-sans"
+                        className="absolute right-0 mt-2 w-52 sm:w-56 rounded-2xl border border-slate-100 bg-white p-3 shadow-xl z-50 text-slate-700 font-sans"
                       >
                         <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2.5 mb-2 pb-1 border-b border-slate-50">
                           Urutkan Berdasarkan
@@ -2139,20 +2138,18 @@ export default function SekretarisView({
                                     <ArrowDown className="h-3.5 w-3.5 text-emerald-700 shrink-0" />
                                   )
                                 )}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </motion.div>
-                    </>
-                  )}
-                </AnimatePresence>
-              </div>
-            )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </motion.div>
+                      </>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
 
-
-
-            {/* Add Record Button */}
+            {/* Add Record Button - Lengkungan sudut lengkung sempurna */}
             {subTab === 'santri' && !isMonitoringMode && canWriteCurrentFilter && !isSelectionMode && (
               <button
                 id="btn-add-santri"
@@ -2160,12 +2157,11 @@ export default function SekretarisView({
                   setEditingSantri(null);
                   setIsAddSantriOpen(true);
                 }}
-                className="hidden md:flex flex-row flex-[2] sm:flex-none h-11 items-center justify-center gap-1 sm:gap-1.5 rounded-xl px-1.5 sm:px-4 font-display text-[10px] xs:text-[11px] sm:text-xs font-bold transition-all shrink-0 whitespace-nowrap bg-emerald-700 text-white shadow-sm hover:bg-emerald-800 active:scale-95 cursor-pointer"
-                title="Tambah data"
+                className="hidden sm:flex flex-row h-11 items-center justify-center gap-2 rounded-full px-5 font-display text-xs font-bold transition-all shrink-0 whitespace-nowrap bg-emerald-700 text-white shadow-sm hover:bg-emerald-800 active:scale-95 cursor-pointer"
+                title="Tambah Data Santri"
               >
                 <Plus className="h-4 w-4 shrink-0" />
-                <span className="hidden sm:inline">Tambah Data Santri</span>
-                <span className="sm:hidden">Data Santri</span>
+                <span>Tambah Data Santri</span>
               </button>
             )}
           </div>

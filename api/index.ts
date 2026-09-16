@@ -3,6 +3,7 @@ import mysql from "mysql2/promise";
 import dotenv from "dotenv";
 import path from "path";
 import fs from "fs";
+import AdmZip from "adm-zip";
 import { WebSocketServer, WebSocket } from "ws";
 import { fileURLToPath } from "url";
 
@@ -2003,6 +2004,508 @@ app.post("/api/db-truncate-all", async (req, res) => {
   });
 
   return res.json({ success: true, message: "Seluruh data telah berhasil dikosongkan." });
+});
+
+// -------------------------------------------------------------
+// 6. Safe System Backup & Restore (Isolated from Git/Repo Updates)
+// -------------------------------------------------------------
+
+// Direktori penyimpanan aman di luar repositori pembaruan (persistent storage)
+export const getBackupStorageDir = (): string => {
+  if (process.env.BACKUP_DIR && process.env.BACKUP_DIR.trim() !== "") {
+    const customDir = process.env.BACKUP_DIR.trim();
+    if (!fs.existsSync(customDir)) {
+      try { fs.mkdirSync(customDir, { recursive: true }); } catch (e) {}
+    }
+    return customDir;
+  }
+
+  // Prioritaskan direktori aman Hostinger yang terpisah dari git public_html / hbuilds
+  const hostingerBackupPath = "/home/u648273511/domains/attaroqqy.com/storage/backups";
+  try {
+    if (!fs.existsSync(hostingerBackupPath)) {
+      fs.mkdirSync(hostingerBackupPath, { recursive: true });
+    }
+    return hostingerBackupPath;
+  } catch (e) {
+    // Fallback lingkungan lokal / kontainer: folder backups di atas direktori app
+    try {
+      const upPath = path.resolve(process.cwd(), "..", "backups");
+      if (!fs.existsSync(upPath)) {
+        fs.mkdirSync(upPath, { recursive: true });
+      }
+      return upPath;
+    } catch (err) {
+      const fallbackLocal = path.join(process.cwd(), "storage_backups");
+      if (!fs.existsSync(fallbackLocal)) {
+        try { fs.mkdirSync(fallbackLocal, { recursive: true }); } catch (err2) {}
+      }
+      return fallbackLocal;
+    }
+  }
+};
+
+// Salin direktori secara rekursif (menimpa berkas jika sudah ada)
+function copyFolderRecursiveSync(source: string, target: string) {
+  if (!fs.existsSync(source)) return;
+  if (!fs.existsSync(target)) {
+    fs.mkdirSync(target, { recursive: true });
+  }
+
+  const entries = fs.readdirSync(source, { withFileTypes: true });
+  for (const entry of entries) {
+    const curSource = path.join(source, entry.name);
+    const curTarget = path.join(target, entry.name);
+
+    if (entry.isDirectory()) {
+      copyFolderRecursiveSync(curSource, curTarget);
+    } else {
+      fs.copyFileSync(curSource, curTarget);
+    }
+  }
+}
+
+// Hitung ukuran direktori (bytes)
+function getDirectorySizeBytes(dir: string): number {
+  if (!fs.existsSync(dir)) return 0;
+  let total = 0;
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        total += getDirectorySizeBytes(fullPath);
+      } else {
+        const stat = fs.statSync(fullPath);
+        total += stat.size;
+      }
+    }
+  } catch (e) {}
+  return total;
+}
+
+// Hitung jumlah berkas dalam direktori
+function countFilesInDir(dir: string): number {
+  if (!fs.existsSync(dir)) return 0;
+  let count = 0;
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        count += countFilesInDir(fullPath);
+      } else {
+        count += 1;
+      }
+    }
+  } catch (e) {}
+  return count;
+}
+
+// Format bytes
+function formatFileSize(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+}
+
+function generateSqlDump(allData: Record<string, any[]>): string {
+  let sql = `-- ========================================================\n`;
+  sql += `-- AttarOkey Database Backup SQL Dump\n`;
+  sql += `-- Waktu Cadangan: ${new Date().toISOString()}\n`;
+  sql += `-- ========================================================\n\n`;
+  sql += `SET FOREIGN_KEY_CHECKS = 0;\n\n`;
+
+  for (const [table, rows] of Object.entries(allData)) {
+    if (!Array.isArray(rows) || rows.length === 0) continue;
+    sql += `-- --------------------------------------------------------\n`;
+    sql += `-- Tabel: \`${table}\` (${rows.length} data record)\n`;
+    sql += `-- --------------------------------------------------------\n`;
+    sql += `DROP TABLE IF EXISTS \`${table}\`;\n`;
+
+    const cols = Object.keys(rows[0]);
+    sql += `CREATE TABLE IF NOT EXISTS \`${table}\` (\n`;
+    const colDefs = cols.map((c) => `  \`${c}\` LONGTEXT NULL`).join(",\n");
+    sql += `${colDefs}\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;\n\n`;
+
+    const chunkSize = 50;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+      sql += `INSERT INTO \`${table}\` (${cols.map((c) => `\`${c}\``).join(", ")}) VALUES\n`;
+      const valLines = chunk.map((row) => {
+        const vals = cols.map((c) => {
+          const v = row[c];
+          if (v === null || v === undefined) return "NULL";
+          const str = typeof v === "object" ? JSON.stringify(v) : String(v);
+          return `'${str.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
+        });
+        return `(${vals.join(", ")})`;
+      });
+      sql += valLines.join(",\n") + ";\n\n";
+    }
+  }
+  sql += `SET FOREIGN_KEY_CHECKS = 1;\n`;
+  return sql;
+}
+
+// 1. GET /api/backup-system/list - Ambil daftar cadangan dari direktori aman
+app.get("/api/backup-system/list", async (req, res) => {
+  try {
+    const backupDir = getBackupStorageDir();
+    if (!fs.existsSync(backupDir)) {
+      return res.json({ success: true, backups: [], storageDir: backupDir });
+    }
+
+    const items = fs.readdirSync(backupDir, { withFileTypes: true });
+    const backups: any[] = [];
+
+    for (const item of items) {
+      if (item.isDirectory() && item.name.startsWith("backup_")) {
+        const itemPath = path.join(backupDir, item.name);
+        const metaPath = path.join(itemPath, "meta.json");
+        let meta: any = null;
+        if (fs.existsSync(metaPath)) {
+          try {
+            meta = JSON.parse(fs.readFileSync(metaPath, "utf-8"));
+          } catch (e) {}
+        }
+
+        const hasSql = fs.existsSync(path.join(itemPath, "database.sql"));
+        const hasJson = fs.existsSync(path.join(itemPath, "data.json"));
+        const uploadsPath = path.join(itemPath, "uploads");
+        const photosCount = fs.existsSync(uploadsPath) ? countFilesInDir(uploadsPath) : 0;
+        const sizeBytes = getDirectorySizeBytes(itemPath);
+
+        if (!meta) {
+          const stat = fs.statSync(itemPath);
+          const timestamp = stat.mtimeMs;
+          const formattedDate = new Intl.DateTimeFormat("id-ID", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit"
+          }).format(new Date(timestamp));
+
+          meta = {
+            id: item.name,
+            name: `Backup ${formattedDate}`,
+            timestamp,
+            createdAt: new Date(timestamp).toISOString(),
+            formattedDate,
+            totalSantri: 0,
+            totalPhotos: photosCount,
+            sizeBytes,
+            formattedSize: formatFileSize(sizeBytes),
+            storagePath: itemPath
+          };
+        }
+
+        meta.hasSql = hasSql;
+        meta.hasJson = hasJson;
+        meta.totalPhotos = photosCount;
+        meta.sizeBytes = sizeBytes;
+        meta.formattedSize = formatFileSize(sizeBytes);
+        meta.storagePath = itemPath;
+        meta.downloadUrl = `/api/backup-system/download/${item.name}`;
+
+        backups.push(meta);
+      }
+    }
+
+    // Urutkan dari yang terbaru
+    backups.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+    return res.json({ success: true, backups, storageDir: backupDir });
+  } catch (err: any) {
+    console.error("Error listing backups:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 2. GET /api/backup-system/download/:id - Unduh arsip ZIP lengkap
+app.get("/api/backup-system/download/:id", (req, res) => {
+  try {
+    const { id } = req.params;
+    const safeId = id.replace(/[^a-zA-Z0-9_-]/g, "");
+    const backupStorageDir = getBackupStorageDir();
+    const targetBackupPath = path.join(backupStorageDir, safeId);
+
+    if (!fs.existsSync(targetBackupPath)) {
+      return res.status(404).json({ success: false, error: "Berkas cadangan tidak ditemukan di server." });
+    }
+
+    const zip = new AdmZip();
+    zip.addLocalFolder(targetBackupPath);
+    const zipBuffer = zip.toBuffer();
+
+    res.set({
+      "Content-Type": "application/zip",
+      "Content-Disposition": `attachment; filename="${safeId}.zip"`,
+      "Content-Length": String(zipBuffer.length)
+    });
+    return res.send(zipBuffer);
+  } catch (err: any) {
+    console.error("Error downloading backup zip:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3. POST /api/backup-system/create - Salin data santri & seluruh foto ke direktori aman
+app.post("/api/backup-system/create", async (req, res) => {
+  try {
+    const backupStorageDir = getBackupStorageDir();
+    const timestamp = Date.now();
+    const backupId = `backup_${timestamp}`;
+    const targetBackupPath = path.join(backupStorageDir, backupId);
+
+    // Buat folder backup utama
+    fs.mkdirSync(targetBackupPath, { recursive: true });
+
+    // A. Kumpulkan semua data database
+    const pool = getMySQLPool();
+    const allDbData: Record<string, any[]> = {};
+    for (const table of Array.from(VALID_TABLES)) {
+      let rows: any[] = [];
+      if (pool) {
+        const qRes = await tryMySQLQuery(`SELECT * FROM \`${table}\``);
+        if (qRes.success && Array.isArray(qRes.rows)) {
+          rows = qRes.rows;
+        }
+      }
+      if (rows.length === 0) {
+        rows = memoryStore.get(table) || [];
+      }
+      allDbData[table] = rows;
+    }
+
+    // Tulis data database ke data.json
+    fs.writeFileSync(
+      path.join(targetBackupPath, "data.json"),
+      JSON.stringify(allDbData, null, 2),
+      "utf-8"
+    );
+
+    // Tulis database.sql (Dump SQL Standar)
+    const sqlDump = generateSqlDump(allDbData);
+    fs.writeFileSync(
+      path.join(targetBackupPath, "database.sql"),
+      sqlDump,
+      "utf-8"
+    );
+
+    // B. Salin semua file foto & berkas upload ke subfolder 'uploads'
+    const backupUploadsPath = path.join(targetBackupPath, "uploads");
+    fs.mkdirSync(backupUploadsPath, { recursive: true });
+
+    const sourceUploadDir = getUploadDir();
+    if (fs.existsSync(sourceUploadDir)) {
+      copyFolderRecursiveSync(sourceUploadDir, backupUploadsPath);
+    }
+
+    // Salin juga jika ada uploads di dist/uploads
+    const distUploadsPath = path.join(process.cwd(), "dist", "uploads");
+    if (fs.existsSync(distUploadsPath)) {
+      copyFolderRecursiveSync(distUploadsPath, backupUploadsPath);
+    }
+
+    // Salin juga jika ada public/uploads
+    const publicUploadsPath = path.join(process.cwd(), "public", "uploads");
+    if (fs.existsSync(publicUploadsPath)) {
+      copyFolderRecursiveSync(publicUploadsPath, backupUploadsPath);
+    }
+
+    // Hitung statistik
+    const totalSantri = Array.isArray(allDbData.santri) ? allDbData.santri.length : 0;
+    const totalPhotos = countFilesInDir(backupUploadsPath);
+    const sizeBytes = getDirectorySizeBytes(targetBackupPath);
+
+    const now = new Date(timestamp);
+    const formattedDate = new Intl.DateTimeFormat("id-ID", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    }).format(now);
+
+    const meta = {
+      id: backupId,
+      name: `Backup ${formattedDate}`,
+      timestamp,
+      createdAt: now.toISOString(),
+      formattedDate,
+      totalSantri,
+      totalPhotos,
+      tablesCount: Object.keys(allDbData).length,
+      hasSql: true,
+      hasJson: true,
+      sizeBytes,
+      formattedSize: formatFileSize(sizeBytes),
+      storagePath: targetBackupPath,
+      downloadUrl: `/api/backup-system/download/${backupId}`
+    };
+
+    // Tulis meta.json
+    fs.writeFileSync(
+      path.join(targetBackupPath, "meta.json"),
+      JSON.stringify(meta, null, 2),
+      "utf-8"
+    );
+
+    console.log(`>>> Berhasil membuat backup aman di ${targetBackupPath} (${totalSantri} santri, ${totalPhotos} foto, ${meta.formattedSize})`);
+
+    return res.json({
+      success: true,
+      message: "Cadangan data santri, tabel database.sql, dan foto berhasil dibuat di direktori aman.",
+      backup: meta
+    });
+  } catch (err: any) {
+    console.error("Error creating backup:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3. POST /api/backup-system/restore/:id - Kembalikan data dan foto ke foldernya masing-masing dengan menimpa berkas
+app.post("/api/backup-system/restore/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const safeId = id.replace(/[^a-zA-Z0-9_-]/g, "");
+    const backupStorageDir = getBackupStorageDir();
+    const targetBackupPath = path.join(backupStorageDir, safeId);
+
+    if (!fs.existsSync(targetBackupPath)) {
+      return res.status(404).json({ success: false, error: "Berkas cadangan tidak ditemukan di direktori penyimpanan aman." });
+    }
+
+    const dataJsonPath = path.join(targetBackupPath, "data.json");
+    if (!fs.existsSync(dataJsonPath)) {
+      return res.status(400).json({ success: false, error: "Data database (data.json) tidak ditemukan di dalam cadangan." });
+    }
+
+    // A. Pulihkan Database (Menimpa tabel & memoryStore)
+    const rawData = fs.readFileSync(dataJsonPath, "utf-8");
+    const restoredDbData: Record<string, any[]> = JSON.parse(rawData);
+
+    const pool = getMySQLPool();
+    for (const [table, rows] of Object.entries(restoredDbData)) {
+      if (!VALID_TABLES.has(table)) continue;
+      // 1. Timpa memoryStore
+      memoryStore.set(table, Array.isArray(rows) ? rows : []);
+
+      // 2. Timpa tabel MySQL jika aktif
+      if (pool && Array.isArray(rows)) {
+        try {
+          await ensureTableExists(table, pool).catch(() => {});
+          await withTimeout(pool.query(`TRUNCATE TABLE \`${table}\``), 4000).catch(async () => {
+            await withTimeout(pool.query(`DELETE FROM \`${table}\``), 4000).catch(() => {});
+          });
+
+          if (rows.length > 0) {
+            const existingColumns = await getTableColumns(table, pool);
+            const chunkSize = 100;
+            for (let i = 0; i < rows.length; i += chunkSize) {
+              const chunk = rows.slice(i, i + chunkSize);
+              const firstRow = chunk[0];
+              let keys = Object.keys(firstRow);
+              if (existingColumns) {
+                keys = keys.filter(k => existingColumns.has(k));
+              }
+              if (keys.length === 0) continue;
+
+              const cols = keys.map(k => `\`${k}\``).join(", ");
+              const rowPlaceholders = `(${keys.map(() => "?").join(", ")})`;
+              const allPlaceholders = chunk.map(() => rowPlaceholders).join(", ");
+
+              const values: any[] = [];
+              for (const row of chunk) {
+                for (const k of keys) {
+                  const val = row[k];
+                  values.push(typeof val === "object" && val !== null ? JSON.stringify(val) : val);
+                }
+              }
+
+              const sql = `INSERT INTO \`${table}\` (${cols}) VALUES ${allPlaceholders}`;
+              await withTimeout(pool.query(sql, values), 10000).catch((e: any) => {
+                console.warn(`Bulk insert error in ${table} (chunk ${i}):`, e.message);
+              });
+            }
+          }
+        } catch (dbErr: any) {
+          console.warn(`Gagal menimpa tabel MySQL '${table}':`, dbErr.message);
+        }
+      }
+    }
+
+    // Simpan ke database_backup.json dan bersihkan query cache
+    saveMemoryStoreToDisk();
+    invalidateTableCache();
+
+    // B. Pulihkan Foto & Berkas Upload ke foldernya masing-masing (Menimpa file di folder itu)
+    const backupUploadsPath = path.join(targetBackupPath, "uploads");
+    let restoredPhotosCount = 0;
+
+    if (fs.existsSync(backupUploadsPath)) {
+      restoredPhotosCount = countFilesInDir(backupUploadsPath);
+      const targetUploadDir = getUploadDir();
+      if (!fs.existsSync(targetUploadDir)) {
+        fs.mkdirSync(targetUploadDir, { recursive: true });
+      }
+      // Salin kembali menimpa file yang ada
+      copyFolderRecursiveSync(backupUploadsPath, targetUploadDir);
+
+      // Salin juga ke dist/uploads agar preview statis instan
+      const distUploadsPath = path.join(process.cwd(), "dist", "uploads");
+      if (!fs.existsSync(distUploadsPath)) {
+        fs.mkdirSync(distUploadsPath, { recursive: true });
+      }
+      copyFolderRecursiveSync(backupUploadsPath, distUploadsPath);
+    }
+
+    // Broadcast WebSocket event agar semua klien memuat ulang
+    broadcastWebSocketMessage({
+      event: "db_change",
+      action: "restore",
+      timestamp: Date.now()
+    });
+
+    const totalSantri = Array.isArray(restoredDbData.santri) ? restoredDbData.santri.length : 0;
+    console.log(`>>> Pemulihan sukses: ${totalSantri} data santri dan ${restoredPhotosCount} foto dikembalikan menimpa file aktif.`);
+
+    return res.json({
+      success: true,
+      message: `Data santri (${totalSantri}) dan ${restoredPhotosCount} foto berhasil dikembalikan ke foldernya masing-masing dengan menimpa file lama.`,
+      data: restoredDbData
+    });
+  } catch (err: any) {
+    console.error("Error restoring backup:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 4. DELETE /api/backup-system/:id - Hapus arsip cadangan dari direktori aman
+app.delete("/api/backup-system/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const safeId = id.replace(/[^a-zA-Z0-9_-]/g, "");
+    const backupStorageDir = getBackupStorageDir();
+    const targetBackupPath = path.join(backupStorageDir, safeId);
+
+    if (fs.existsSync(targetBackupPath)) {
+      fs.rmSync(targetBackupPath, { recursive: true, force: true });
+      console.log(`>>> Berhasil menghapus cadangan: ${targetBackupPath}`);
+      return res.json({ success: true, message: "Cadangan berhasil dihapus." });
+    }
+
+    return res.status(404).json({ success: false, error: "Cadangan tidak ditemukan." });
+  } catch (err: any) {
+    console.error("Error deleting backup:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 export default app;

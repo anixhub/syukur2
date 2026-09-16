@@ -255,5 +255,111 @@ body::-webkit-scrollbar,
   background: #00693E;
 }
 
+/* Dedicated visible & easily grabbable scrollbar for Chat Drawer positioned immediately to the left of the resize border */
+.chat-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.4) rgba(241, 245, 249, 0.7);
+}
+.chat-scrollbar::-webkit-scrollbar {
+  width: 7px !important;
+  display: block !important;
+}
+.chat-scrollbar::-webkit-scrollbar-track {
+  background: rgba(241, 245, 249, 0.7) !important;
+  border-radius: 9999px;
+}
+.chat-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.4) !important;
+  border-radius: 9999px;
+}
+.chat-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #059669 !important;
+}
+
+/* ==========================================================================
+   ADAPTIVE LAYOUT FOR NARROW MAIN CONTAINER (WHEN PUSHED BY CHAT SIDEBAR)
+   ========================================================================== */
+
+#main-app-container {
+  container-type: inline-size;
+  container-name: main-app;
+}
+
+/* 1. Transform rigid 12-column desktop splits into clean stacked flows */
+.is-narrow-main .grid-cols-1.lg\:grid-cols-12,
+.is-narrow-main .grid-cols-1.md\:grid-cols-12 {
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100% !important;
+  gap: 1rem !important;
+}
+
+.is-narrow-main .lg\:col-span-12,
+.is-narrow-main .lg\:col-span-9,
+.is-narrow-main .lg\:col-span-8,
+.is-narrow-main .lg\:col-span-7,
+.is-narrow-main .lg\:col-span-6,
+.is-narrow-main .lg\:col-span-5,
+.is-narrow-main .lg\:col-span-4,
+.is-narrow-main .lg\:col-span-3,
+.is-narrow-main .md\:col-span-12,
+.is-narrow-main .md\:col-span-8,
+.is-narrow-main .md\:col-span-7,
+.is-narrow-main .md\:col-span-6,
+.is-narrow-main .md\:col-span-5,
+.is-narrow-main .md\:col-span-4 {
+  width: 100% !important;
+  max-width: 100% !important;
+  flex: 1 1 100% !important;
+}
+
+/* 2. Overview submodules 5-column split to clean stacked cards */
+.is-narrow-main .grid-cols-1.lg\:grid-cols-5 {
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100% !important;
+  gap: 1rem !important;
+}
+
+.is-narrow-main .lg\:col-span-3,
+.is-narrow-main .lg\:col-span-2 {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+/* 3. Multi-column cards and stat grids adapt to auto-fit with minimum widths */
+.is-narrow-main .xl\:grid-cols-3,
+.is-narrow-main .lg\:grid-cols-3,
+.is-narrow-main .md\:grid-cols-3 {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)) !important;
+}
+
+.is-narrow-main .sm\:grid-cols-4,
+.is-narrow-main .lg\:grid-cols-5 {
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)) !important;
+}
+
+/* 4. Donut cards, charts and gauges remain proportionate and unclipped */
+.is-narrow-main .donut-stat-container {
+  max-width: 100% !important;
+  justify-content: center !important;
+}
+
+/* 5. Toolbars, filters, and action headers wrap smoothly */
+.is-narrow-main .filter-toolbar,
+.is-narrow-main .action-bar-wrap {
+  flex-wrap: wrap !important;
+  gap: 0.5rem !important;
+}
+
+/* 6. Ultra-narrow safety (< 640px available main space) */
+.is-ultra-narrow-main .grid-cols-2:not(.preserve-grid) {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+.is-ultra-narrow-main .hero-welcome-banner {
+  padding: 1rem !important;
+}
+
 
 

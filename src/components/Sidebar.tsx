@@ -832,7 +832,7 @@ export default function Sidebar({
 
                     <div className="h-px bg-gray-150 my-1.5 mx-1" />
 
-                    {/* Options Group: Settings, Help & Keluar */}
+                    {/* Options Group: Pengaturan, Masukan & Keluar */}
                     <div className="space-y-0.5">
                       <button
                         type="button"
@@ -845,7 +845,7 @@ export default function Sidebar({
                         className="w-full flex items-center gap-3.5 px-3 py-2 rounded-xl text-[13.5px] font-normal text-gray-800 hover:bg-gray-100 transition-colors cursor-pointer text-left"
                       >
                         <Settings className="w-4.5 h-4.5 text-gray-700 shrink-0 stroke-[1.75]" />
-                        <span>Settings</span>
+                        <span>Pengaturan</span>
                       </button>
 
                       <button
@@ -859,13 +859,10 @@ export default function Sidebar({
                             onChangeModule('pengaturan', 'bantuan');
                           }
                         }}
-                        className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13.5px] font-normal text-gray-800 hover:bg-gray-100 transition-colors cursor-pointer group/help"
+                        className="w-full flex items-center gap-3.5 px-3 py-2 rounded-xl text-[13.5px] font-normal text-gray-800 hover:bg-gray-100 transition-colors cursor-pointer group/help text-left"
                       >
-                        <div className="flex items-center gap-3.5">
-                          <LifeBuoy className="w-4.5 h-4.5 text-gray-700 shrink-0 stroke-[1.75]" />
-                          <span>Help</span>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-gray-400 group-hover/help:translate-x-0.5 transition-transform shrink-0" />
+                        <LifeBuoy className="w-4.5 h-4.5 text-gray-700 shrink-0 stroke-[1.75]" />
+                        <span>Masukan</span>
                       </button>
 
                       <button
