@@ -78,7 +78,10 @@ const MENU_ITEMS: MenuItemDef[] = [
     id: 'bendahara', 
     label: 'Bendahara', 
     icon: Wallet,
-    submenus: []
+    submenus: [
+      { id: 'wallet', label: 'Wallet' },
+      { id: 'syahriah', label: 'Syahriah' }
+    ]
   },
   { 
     id: 'pendidikan', 

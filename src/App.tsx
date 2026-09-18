@@ -1022,6 +1022,8 @@ export default function App() {
           <BendaharaView
             bendaharaList={bendaharaList}
             onToggleStatus={handleToggleBendahara}
+            activeSubTab={activeSubTab}
+            onChangeSubTab={setActiveSubTab}
           />
         );
         break;
@@ -1212,16 +1214,6 @@ export default function App() {
                   boxShadow: '0px 0px 0px 0px rgba(0, 0, 0, 0)',
                   borderColor: 'rgba(229, 231, 235, 0)',
                 }
-            : !isMobile && isNotificationsOpen
-              ? {
-                  x: '0%',
-                  marginRight: '380px',
-                  scale: 1,
-                  opacity: 1,
-                  borderRadius: '0px',
-                  boxShadow: '0px 0px 0px 0px rgba(0, 0, 0, 0)',
-                  borderColor: 'rgba(229, 231, 235, 0)',
-                }
               : {
                   x: '0%',
                   marginRight: '0px',
@@ -1250,6 +1242,8 @@ export default function App() {
           borderWidth: isMobile ? '1px' : '0px',
         }}
         className={`w-full flex-1 flex flex-col min-w-0 bg-white relative z-20 ${
+          isMobile && isChatOpen ? 'hidden' : ''
+        } ${
           isMainNarrow ? 'is-narrow-main' : ''
         } ${isMainUltraNarrow ? 'is-ultra-narrow-main' : ''} ${
           isMobile && (isDrawerOpen || isDrawerClosing)

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   Menu,
   X, 
@@ -81,6 +81,7 @@ export interface ChatMessage {
   attachment?: ChatAttachment;
   reply_to?: ChatReplyTo;
   replyTo?: any;
+  reactions?: { [emoji: string]: string[] };
   is_edited?: boolean;
   edited_at?: string;
   is_system_notice?: boolean;
@@ -573,8 +574,9 @@ export default function AdminChatDrawer({
       }
     };
 
-    setTimeout(doRestore, 25);
-    setTimeout(doRestore, 90);
+    setTimeout(doRestore, 10);
+    setTimeout(doRestore, 40);
+    setTimeout(doRestore, 120);
   };
 
   // Scroll to original / target message with smooth animation & visual highlight
@@ -704,6 +706,7 @@ export default function AdminChatDrawer({
     const fileName = att.name || 'File';
     const isImage = att.type === 'image' || att.fileType === 'image' || /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(fileName);
     if (isImage) {
+      captureChatPosition();
       setPreviewImageModal({ url: att.url, name: fileName });
     } else {
       showToast('Tidak bisa preview file ini, hanya preview gambar yang didukung');
@@ -724,6 +727,54 @@ export default function AdminChatDrawer({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  // Resend media item into chat conversation
+  const handleResendMedia = async (msg: ChatMessage) => {
+    if (!msg || !msg.attachment) return;
+    const nowIso = new Date().toISOString();
+    const avatarUrl = localStorage.getItem('smartsantri_active_avatar') || undefined;
+
+    const newMsg: ChatMessage = {
+      id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+      sender_username: currentUsername,
+      sender_name: currentDisplayName,
+      sender_role: currentRole,
+      sender_avatar: avatarUrl,
+      sender: currentUsername,
+      senderRole: currentRole,
+      senderAvatar: avatarUrl,
+      recipient_role: activeChannel,
+      message: '',
+      text: '',
+      attachment: msg.attachment,
+      created_at: nowIso,
+      timestamp: nowIso,
+      reactions: {},
+      is_edited: false
+    };
+
+    const updatedList = [...messages, newMsg];
+    setMessages(updatedList);
+    safeLocalStorageSetItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedList));
+
+    sendRealtimeWSMessage({
+      type: 'admin_chat_message',
+      message: newMsg
+    });
+
+    try {
+      await insertTableRow('admin_chat', LOCAL_STORAGE_KEY, newMsg);
+    } catch (err) {
+      console.warn("Gagal menyimpan pengiriman ulang media ke database:", err);
+    }
+
+    showToast(`File ${msg.attachment.name || 'media'} berhasil dikirim ulang`);
+    setSelectedMediaId(null);
+    setActiveTab('chat');
+    setTimeout(() => {
+      scrollToBottom(true);
+    }, 100);
   };
 
   // Floating Width, Position & Drag State (Supports Left & Right Resizers + Header Window Drag)
@@ -782,12 +833,54 @@ export default function AdminChatDrawer({
   const [showEmojiPicker, setShowEmojiPicker] = useState<boolean>(false);
   const [emojiSearch, setEmojiSearch] = useState<string>('');
   const [activeEmojiCategory, setActiveEmojiCategory] = useState<string>('recents');
+  const [isMobileEmojiSearchOpen, setIsMobileEmojiSearchOpen] = useState<boolean>(false);
+  const mobileEmojiSearchInputRef = useRef<HTMLInputElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isMobileEmojiSearchOpen) {
+      setTimeout(() => {
+        mobileEmojiSearchInputRef.current?.focus();
+      }, 50);
+    }
+  }, [isMobileEmojiSearchOpen]);
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const layoutMenuRef = useRef<HTMLDivElement>(null);
   const mentionMenuRef = useRef<HTMLDivElement>(null);
   const attachMenuRef = useRef<HTMLDivElement>(null);
+
+  // Mobile bottom drawer & search scroll position refs
+  const mobileBottomDrawerRef = useRef<HTMLDivElement>(null);
+  const searchResultsContainerRef = useRef<HTMLElement>(null);
+  const searchResultsScrollPosRef = useRef<number>(0);
+  const mediaActionPanelRef = useRef<HTMLDivElement>(null);
+  const [isWideActionPanel, setIsWideActionPanel] = useState<boolean>(false);
+
+  // Responsive tracker for single highlighted media action panel
+  useEffect(() => {
+    const el = mediaActionPanelRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setIsWideActionPanel(entry.contentRect.width >= 480);
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [selectedMediaId]);
+
+  // Maintain search scroll position when navigating back to search
+  useEffect(() => {
+    if (isSearchMode && searchResultsScrollPosRef.current > 0) {
+      const timer = setTimeout(() => {
+        if (searchResultsContainerRef.current) {
+          searchResultsContainerRef.current.scrollTop = searchResultsScrollPosRef.current;
+        }
+      }, 40);
+      return () => clearTimeout(timer);
+    }
+  }, [isSearchMode]);
 
   // Dynamic Auto Resize Textarea (Up to max 7 lines ~160px height, then scrollable)
   const autoResizeTextarea = () => {
@@ -1088,10 +1181,18 @@ export default function AdminChatDrawer({
       if (mentionMenuRef.current && !mentionMenuRef.current.contains(e.target as Node)) {
         setShowMentionMenu(false);
       }
-      if (attachMenuRef.current && !attachMenuRef.current.contains(e.target as Node)) {
+      if (
+        attachMenuRef.current && 
+        !attachMenuRef.current.contains(e.target as Node) &&
+        (!mobileBottomDrawerRef.current || !mobileBottomDrawerRef.current.contains(e.target as Node))
+      ) {
         setShowAttachMenu(false);
       }
-      if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target as Node)) {
+      if (
+        emojiPickerRef.current && 
+        !emojiPickerRef.current.contains(e.target as Node) &&
+        (!mobileBottomDrawerRef.current || !mobileBottomDrawerRef.current.contains(e.target as Node))
+      ) {
         setShowEmojiPicker(false);
       }
       if (msgMenuRef.current && !msgMenuRef.current.contains(e.target as Node)) {
@@ -1311,15 +1412,16 @@ export default function AdminChatDrawer({
     }
   };
 
-  const scrollToBottom = () => {
+  const scrollToBottom = (smoothOrEvent?: boolean | React.MouseEvent) => {
+    const smooth = typeof smoothOrEvent === 'boolean' ? smoothOrEvent : true;
     setUnreadBelowCount(0);
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTo({
         top: scrollContainerRef.current.scrollHeight,
-        behavior: 'smooth'
+        behavior: smooth ? 'smooth' : 'auto'
       });
     } else {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
     }
   };
 
@@ -2279,10 +2381,10 @@ export default function AdminChatDrawer({
                         datePickerInputRef.current.click();
                       }
                     }}
-                    className="p-1.5 text-slate-400 hover:text-emerald-600 active:scale-95 rounded-full cursor-pointer transition-colors"
+                    className="p-1.5 text-gray-400 hover:text-gray-600 active:scale-95 rounded-full cursor-pointer transition-colors"
                     title="Lompat ke pesan berdasarkan tanggal"
                   >
-                    <Calendar className="w-4 h-4 text-emerald-600" />
+                    <Calendar className="w-4 h-4 text-gray-400" />
                   </button>
                 </div>
               )}
@@ -2446,7 +2548,12 @@ export default function AdminChatDrawer({
                 onClick={() => {
                   captureChatPosition();
                   setIsSearchMode(true);
-                  setTimeout(() => searchInputRef.current?.focus(), 50);
+                  setTimeout(() => {
+                    if (searchResultsContainerRef.current && searchResultsScrollPosRef.current > 0) {
+                      searchResultsContainerRef.current.scrollTop = searchResultsScrollPosRef.current;
+                    }
+                    searchInputRef.current?.focus();
+                  }, 50);
                 }}
                 onMouseDown={(e) => e.stopPropagation()}
                 className="p-2 rounded-xl text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
@@ -2551,9 +2658,15 @@ export default function AdminChatDrawer({
         {/* SEARCH MODE CONTENT or NORMAL CHAT / MEDIA CONTENT */}
         {isSearchMode ? (
           /* BEGIN: MainContent (Exact matching user reference: empty or search results list) */
-          <main className={`flex-grow bg-white flex flex-col overflow-y-auto min-h-0 chat-scrollbar ${
-            layoutMode === 'floating' ? 'mr-3 sm:mr-3.5' : ''
-          }`}>
+          <main 
+            ref={searchResultsContainerRef}
+            onScroll={(e) => {
+              searchResultsScrollPosRef.current = e.currentTarget.scrollTop;
+            }}
+            className={`flex-grow bg-white flex flex-col overflow-y-auto min-h-0 chat-scrollbar ${
+              layoutMode === 'floating' ? 'mr-3 sm:mr-3.5' : ''
+            }`}
+          >
             {searchQuery.trim() === '' ? (
               /* Empty main content area as per reference image */
               <div className="flex-grow bg-white" />
@@ -2563,7 +2676,7 @@ export default function AdminChatDrawer({
                 <p className="text-xs text-gray-400 mt-1">Tidak ada pesan yang cocok dengan "{searchQuery}"</p>
               </div>
             ) : (
-              <div className="divide-y divide-gray-100 p-2 overflow-y-auto">
+              <div className="divide-y divide-gray-100 p-2">
                 <div className="px-3 py-2 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                   Ditemukan {filteredMessages.length} Pesan
                 </div>
@@ -2573,6 +2686,9 @@ export default function AdminChatDrawer({
                     <div
                       key={m.id}
                       onClick={() => {
+                        if (searchResultsContainerRef.current) {
+                          searchResultsScrollPosRef.current = searchResultsContainerRef.current.scrollTop;
+                        }
                         isNavigatingToTargetMsgRef.current = true;
                         setIsSearchMode(false);
                         setActiveTab('chat');
@@ -2719,9 +2835,19 @@ export default function AdminChatDrawer({
 
         {/* TAB 2: MEDIA CONTENT BODY (COMPACT DESKTOP ICON VIEW) */}
         {activeTab === 'media' ? (
-          <div className={`flex-1 p-3 sm:p-4 overflow-y-auto overscroll-contain bg-slate-50/60 chat-scrollbar ${
-            layoutMode === 'floating' ? 'mr-3 sm:mr-3.5' : ''
-          }`}>
+          <div 
+            onClick={(e) => {
+              const target = e.target as HTMLElement;
+              if (target.closest('[data-media-item="true"]') || target.closest('button')) {
+                return;
+              }
+              setSelectedMediaId(null);
+              setSelectedMediaIds([]);
+            }}
+            className={`flex-1 p-3 sm:p-4 overflow-y-auto overscroll-contain bg-slate-50/60 chat-scrollbar ${
+              layoutMode === 'floating' ? 'mr-3 sm:mr-3.5' : ''
+            }`}
+          >
             <div className={`w-full ${layoutMode === 'full' ? 'max-w-4xl sm:max-w-[60%] mx-auto' : ''}`}>
               {mediaMessages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-64 text-center">
@@ -2749,7 +2875,9 @@ export default function AdminChatDrawer({
                   return (
                     <div 
                       key={m.id}
-                      onClick={() => {
+                      data-media-item="true"
+                      onClick={(e) => {
+                        e.stopPropagation();
                         if (selectedMediaIds.length > 0) {
                           setSelectedMediaIds(prev => 
                             prev.includes(m.id) ? prev.filter(id => id !== m.id) : [...prev, m.id]
@@ -3064,7 +3192,10 @@ export default function AdminChatDrawer({
                                       <img 
                                         src={msg.attachment.url} 
                                         alt={msg.attachment.name} 
-                                        onClick={() => setPreviewImageModal({ url: msg.attachment!.url, name: msg.attachment!.name })}
+                                        onClick={() => {
+                                          captureChatPosition();
+                                          setPreviewImageModal({ url: msg.attachment!.url, name: msg.attachment!.name });
+                                        }}
                                         className="max-h-64 w-full object-cover rounded-lg cursor-pointer hover:opacity-90 transition-opacity shadow-xs" 
                                       />
                                       <div className="flex items-center justify-between text-[10px] text-purple-800 font-bold px-1 mt-1">
@@ -3091,6 +3222,7 @@ export default function AdminChatDrawer({
                                           download={msg.attachment.name} 
                                           target="_blank" 
                                           rel="noreferrer"
+                                          onClick={() => captureChatPosition()}
                                           className="flex items-center gap-2 p-1.5 hover:bg-purple-100 rounded-lg transition-colors text-purple-900"
                                         >
                                           <FileText className="h-5 w-5 text-purple-700 shrink-0" />
@@ -3238,7 +3370,10 @@ export default function AdminChatDrawer({
                                           <img 
                                             src={msg.attachment.url} 
                                             alt={msg.attachment.name} 
-                                            onClick={() => setPreviewImageModal({ url: msg.attachment!.url, name: msg.attachment!.name })}
+                                            onClick={() => {
+                                              captureChatPosition();
+                                              setPreviewImageModal({ url: msg.attachment!.url, name: msg.attachment!.name });
+                                            }}
                                             className="max-h-64 w-full object-cover rounded-lg cursor-pointer hover:opacity-90 transition-opacity shadow-xs" 
                                           />
                                           <div className="flex items-center justify-between text-[10px] text-slate-600 font-bold px-1 mt-1">
@@ -3265,6 +3400,7 @@ export default function AdminChatDrawer({
                                               download={msg.attachment.name} 
                                               target="_blank" 
                                               rel="noreferrer"
+                                              onClick={() => captureChatPosition()}
                                               className="flex items-center gap-2 p-1.5 hover:bg-slate-100 rounded-lg transition-colors text-slate-800"
                                             >
                                               <FileText className="h-5 w-5 text-purple-600 shrink-0" />
@@ -3460,18 +3596,26 @@ export default function AdminChatDrawer({
                 <button
                   type="button"
                   onClick={() => {
-                    setShowAttachMenu(!showAttachMenu);
-                    setShowEmojiPicker(false);
+                    if (showAttachMenu) {
+                      setShowAttachMenu(false);
+                    } else {
+                      setShowAttachMenu(true);
+                      setShowEmojiPicker(false);
+                      setIsMobileEmojiSearchOpen(false);
+                      setEmojiSearch('');
+                    }
                   }}
                   disabled={isCompressing}
-                  className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:text-slate-800 hover:bg-slate-200/60 transition-colors cursor-pointer disabled:opacity-50"
+                  className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors cursor-pointer disabled:opacity-50 ${
+                    showAttachMenu ? 'bg-purple-100 text-purple-700 font-bold' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/60'
+                  }`}
                   title="Tambah Lampiran File atau Gambar"
                 >
                   <Plus className="h-5 w-5" />
                 </button>
 
-                {/* Attachment Options Popover */}
-                {showAttachMenu && (
+                {/* Attachment Options Popover (Desktop Mode) */}
+                {!isMobile && showAttachMenu && (
                   <div className="absolute bottom-12 left-0 z-50 w-64 rounded-2xl bg-white p-2 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-100">
                     {/* Option 1: File */}
                     <button
@@ -3535,8 +3679,14 @@ export default function AdminChatDrawer({
                 <button
                   type="button"
                   onClick={() => {
-                    setShowEmojiPicker(!showEmojiPicker);
-                    setShowAttachMenu(false);
+                    if (showEmojiPicker) {
+                      setShowEmojiPicker(false);
+                      setIsMobileEmojiSearchOpen(false);
+                      setEmojiSearch('');
+                    } else {
+                      setShowEmojiPicker(true);
+                      setShowAttachMenu(false);
+                    }
                   }}
                   className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors cursor-pointer ${
                     showEmojiPicker ? 'bg-emerald-100 text-emerald-700 font-bold' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/60'
@@ -3546,8 +3696,8 @@ export default function AdminChatDrawer({
                   <Smile className="h-5 w-5" />
                 </button>
 
-                {/* WhatsApp Style Emoji Picker Popover */}
-                {showEmojiPicker && (
+                {/* WhatsApp Style Emoji Picker Popover (Desktop Mode) */}
+                {!isMobile && showEmojiPicker && (
                   <div className="absolute bottom-12 left-0 z-50 w-72 sm:w-80 rounded-2xl bg-white p-3 shadow-2xl border border-slate-200/90 animate-in fade-in zoom-in-95 duration-100 space-y-2">
                     {/* Search Bar */}
                     <div className="relative flex items-center">
@@ -3709,6 +3859,224 @@ export default function AdminChatDrawer({
               </div>
             </form>
 
+            {/* WhatsApp-Style Push-Up Drawer in Mobile Mode (Tampil di bawah input chat & mendorong dari bawah) */}
+            {isMobile && (
+              <AnimatePresence>
+                {(showAttachMenu || showEmojiPicker) && (
+                  <motion.div
+                    ref={mobileBottomDrawerRef}
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2, ease: 'easeOut' }}
+                    className="overflow-hidden pt-2.5 border-t border-slate-100/90 mt-2"
+                  >
+                    {showAttachMenu && (
+                      <div className="animate-in fade-in duration-150">
+                        {/* Header: Label + Close X */}
+                        <div className="flex items-center justify-between px-1 pb-1 mb-1 h-7">
+                          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                            Pilih Lampiran
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setShowAttachMenu(false)}
+                            className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer shrink-0"
+                            title="Tutup"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+
+                        {/* Content: 3 Attach Buttons with exact height matching emoji drawer */}
+                        <div className="grid grid-cols-3 gap-2 bg-slate-50/90 p-2.5 rounded-2xl border border-slate-200/80 h-[126px]">
+                          {/* Option 1: File */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowAttachMenu(false);
+                              rawFileInputRef.current?.click();
+                            }}
+                            className="flex flex-col items-center justify-center p-2 rounded-xl bg-white hover:bg-blue-50 active:scale-95 transition-all cursor-pointer shadow-xs border border-slate-100"
+                          >
+                            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 mb-1 shadow-xs">
+                              <FileText className="h-5 w-5" />
+                            </div>
+                            <span className="text-xs font-bold text-slate-800">Dokumen</span>
+                            <span className="text-[10px] text-slate-400 mt-0.5">PDF, Word, File</span>
+                          </button>
+
+                          {/* Option 2: Gambar */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowAttachMenu(false);
+                              imageFileInputRef.current?.click();
+                            }}
+                            className="flex flex-col items-center justify-center p-2 rounded-xl bg-white hover:bg-purple-50 active:scale-95 transition-all cursor-pointer shadow-xs border border-slate-100"
+                          >
+                            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-purple-50 text-purple-600 mb-1 shadow-xs">
+                              <ImageIcon className="h-5 w-5" />
+                            </div>
+                            <span className="text-xs font-bold text-slate-800">Galeri</span>
+                            <span className="text-[10px] text-slate-400 mt-0.5">Foto & Gambar</span>
+                          </button>
+
+                          {/* Option 3: Kamera */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowAttachMenu(false);
+                              handleOpenCamera();
+                            }}
+                            className="flex flex-col items-center justify-center p-2 rounded-xl bg-white hover:bg-emerald-50 active:scale-95 transition-all cursor-pointer shadow-xs border border-slate-100"
+                          >
+                            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 mb-1 shadow-xs">
+                              <Camera className="h-5 w-5" />
+                            </div>
+                            <span className="text-xs font-bold text-slate-800">Kamera</span>
+                            <span className="text-[10px] text-slate-400 mt-0.5">Ambil Foto</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {showEmojiPicker && (
+                      <div className="animate-in fade-in duration-150">
+                        {/* Header: Category Icons (or expanded search input) + Search Icon (left of X) + Close X button */}
+                        <div className="flex items-center justify-between px-1 pb-1 mb-1 h-7 gap-1.5">
+                          {isMobileEmojiSearchOpen ? (
+                            /* Expanded Search Input replacing category icons */
+                            <div className="relative flex-1 flex items-center min-w-0 animate-in fade-in duration-150">
+                              <Search className="absolute left-2.5 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+                              <input
+                                ref={mobileEmojiSearchInputRef}
+                                type="text"
+                                value={emojiSearch}
+                                onChange={(e) => setEmojiSearch(e.target.value)}
+                                placeholder="Cari emoji..."
+                                className="w-full rounded-xl bg-white py-1 pl-8 pr-7 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500/60 border border-slate-200/80"
+                              />
+                              {emojiSearch && (
+                                <button
+                                  type="button"
+                                  onClick={() => setEmojiSearch('')}
+                                  className="absolute right-2 p-0.5 text-slate-400 hover:text-slate-600 rounded-full cursor-pointer"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            /* Horizontal scroll of category emoji icons */
+                            <div className="flex items-center gap-1 overflow-x-auto scrollbar-none py-0.5 min-w-0 flex-1 animate-in fade-in duration-150">
+                              {EMOJI_CATEGORIES.map((cat) => {
+                                const isActive = activeEmojiCategory === cat.id && !emojiSearch;
+                                const icon = cat.id === 'recents' ? '🕒' : cat.emojis[0];
+                                return (
+                                  <button
+                                    key={cat.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setActiveEmojiCategory(cat.id);
+                                      setEmojiSearch('');
+                                    }}
+                                    className={`p-1 rounded-lg transition-all cursor-pointer text-sm shrink-0 leading-none ${
+                                      isActive
+                                        ? 'bg-emerald-100 text-emerald-900 ring-1 ring-emerald-500/80 scale-105 font-bold'
+                                        : 'hover:bg-slate-100 opacity-70 hover:opacity-100'
+                                    }`}
+                                    title={cat.name}
+                                  >
+                                    {icon}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* Action Buttons: Search Icon (left of X) + Close X Button */}
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsMobileEmojiSearchOpen((prev) => {
+                                  if (prev) {
+                                    setEmojiSearch('');
+                                  }
+                                  return !prev;
+                                });
+                              }}
+                              className={`p-1 rounded-lg cursor-pointer transition-colors ${
+                                isMobileEmojiSearchOpen
+                                  ? 'bg-emerald-100 text-emerald-700 font-bold ring-1 ring-emerald-500/50'
+                                  : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
+                              }`}
+                              title={isMobileEmojiSearchOpen ? 'Tutup Cari' : 'Cari Emoji'}
+                            >
+                              <Search className="h-3.5 w-3.5" />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowEmojiPicker(false);
+                                setIsMobileEmojiSearchOpen(false);
+                                setEmojiSearch('');
+                              }}
+                              className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer shrink-0"
+                              title="Tutup"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Content: Emoji Grid with exact same height (h-[126px]) as attach drawer */}
+                        <div className="bg-slate-50/90 p-2.5 rounded-2xl border border-slate-200/80 h-[126px] overflow-y-auto overscroll-contain scrollbar-thin">
+                          {isMobileEmojiSearchOpen && emojiSearch ? (
+                            <div>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 px-0.5">
+                                Hasil Pencarian &quot;{emojiSearch}&quot;
+                              </p>
+                              <div className="grid grid-cols-7 sm:grid-cols-8 gap-1">
+                                {EMOJI_CATEGORIES.flatMap((c) => c.emojis)
+                                  .filter((e, idx, self) => self.indexOf(e) === idx)
+                                  .slice(0, 70)
+                                  .map((emoji, i) => (
+                                    <button
+                                      key={`mob_search_${i}_${emoji}`}
+                                      type="button"
+                                      onClick={() => handleInsertEmoji(emoji)}
+                                      className="text-xl p-1 rounded-lg hover:bg-emerald-50 active:scale-90 transition-all cursor-pointer flex items-center justify-center select-none"
+                                    >
+                                      {emoji}
+                                    </button>
+                                  ))}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-7 sm:grid-cols-8 gap-1">
+                              {(activeEmojiCategory === 'recents' ? getRecentEmojis() : (EMOJI_CATEGORIES.find((c) => c.id === activeEmojiCategory)?.emojis || [])).map((emoji, i) => (
+                                <button
+                                  key={`mob_${activeEmojiCategory}_${i}_${emoji}`}
+                                  type="button"
+                                  onClick={() => handleInsertEmoji(emoji)}
+                                  className="text-xl p-1 rounded-lg hover:bg-emerald-50 active:scale-90 transition-all cursor-pointer flex items-center justify-center select-none"
+                                >
+                                  {emoji}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            )}
+
             {layoutMode === 'full' && (
               <p className="text-[11px] text-slate-400 text-center mt-2.5 font-medium select-none">
                 Informasi dari AI mungkin tidak akurat
@@ -3775,7 +4143,10 @@ export default function AdminChatDrawer({
           </div>
         ) : selectedMediaId && selectedMediaMsg && selectedMediaMsg.attachment ? (
           /* Mode Sorot 1 File (Single Item Highlighted Panel) */
-          <div className="p-3 bg-white border-t border-purple-200/80 shadow-2xl animate-in slide-in-from-bottom duration-200 shrink-0 relative z-30">
+          <div 
+            ref={mediaActionPanelRef}
+            className="p-3 bg-white border-t border-purple-200/80 shadow-2xl animate-in slide-in-from-bottom duration-200 shrink-0 relative z-30"
+          >
             <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
               <div className="flex items-center gap-2 min-w-0">
                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-purple-100 text-purple-700 font-bold">
@@ -3801,91 +4172,210 @@ export default function AdminChatDrawer({
               </button>
             </div>
 
-            {/* 5 Action Buttons Row */}
-            <div className="grid grid-cols-5 gap-1.5 pt-0.5">
-              {/* 1. Download */}
-              <button
-                type="button"
-                onClick={() => {
-                  if (selectedMediaMsg.attachment) {
-                    handleDownloadImage(selectedMediaMsg.attachment.url, selectedMediaMsg.attachment.name);
-                    showToast(`Mengunduh ${selectedMediaMsg.attachment.name}...`);
-                  }
-                }}
-                className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-700 transition-all cursor-pointer group border border-slate-100 hover:border-blue-200"
-                title="Download File"
-              >
-                <Download className="h-4 w-4 mb-1 group-hover:scale-110 transition-transform text-blue-600" />
-                <span className="text-[10px] font-bold">Download</span>
-              </button>
+            {/* Action Buttons: 2 baris (4 item baris 1, 2 item baris 2), dan 1 baris jika chat box lebar */}
+            {isWideActionPanel ? (
+              <div className="grid grid-cols-6 gap-1.5 pt-0.5">
+                {/* 1. Download */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedMediaMsg.attachment) {
+                      handleDownloadImage(selectedMediaMsg.attachment.url, selectedMediaMsg.attachment.name);
+                      showToast(`Mengunduh ${selectedMediaMsg.attachment.name}...`);
+                    }
+                  }}
+                  className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-700 transition-all cursor-pointer group border border-slate-100 hover:border-blue-200"
+                  title="Download File"
+                >
+                  <Download className="h-4 w-4 mb-1 group-hover:scale-110 transition-transform text-blue-600" />
+                  <span className="text-[10px] font-bold">Download</span>
+                </button>
 
-              {/* 2. Tandai */}
-              <button
-                type="button"
-                onClick={() => {
-                  const isStarred = starredMediaIds.includes(selectedMediaMsg.id);
-                  if (isStarred) {
-                    setStarredMediaIds(prev => prev.filter(id => id !== selectedMediaMsg.id));
-                    showToast("Tanda file dihapus");
-                  } else {
-                    setStarredMediaIds(prev => [...prev, selectedMediaMsg.id]);
-                    showToast("File berhasil ditandai ⭐");
-                  }
-                }}
-                className={`flex flex-col items-center justify-center p-2 rounded-xl transition-all cursor-pointer group border ${
-                  starredMediaIds.includes(selectedMediaMsg.id)
-                    ? 'bg-amber-100/90 text-amber-900 font-bold border-amber-300'
-                    : 'bg-slate-50 hover:bg-amber-50 text-slate-700 hover:text-amber-700 border-slate-100'
-                }`}
-                title="Tandai / Favoritkan"
-              >
-                <Star className={`h-4 w-4 mb-1 group-hover:scale-110 transition-transform ${starredMediaIds.includes(selectedMediaMsg.id) ? 'fill-amber-500 text-amber-500' : 'text-amber-600'}`} />
-                <span className="text-[10px] font-bold">
-                  {starredMediaIds.includes(selectedMediaMsg.id) ? 'Ditandai' : 'Tandai'}
-                </span>
-              </button>
+                {/* 2. Tandai */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const isStarred = starredMediaIds.includes(selectedMediaMsg.id);
+                    if (isStarred) {
+                      setStarredMediaIds(prev => prev.filter(id => id !== selectedMediaMsg.id));
+                      showToast("Tanda file dihapus");
+                    } else {
+                      setStarredMediaIds(prev => [...prev, selectedMediaMsg.id]);
+                      showToast("File berhasil ditandai ⭐");
+                    }
+                  }}
+                  className={`flex flex-col items-center justify-center p-2 rounded-xl transition-all cursor-pointer group border ${
+                    starredMediaIds.includes(selectedMediaMsg.id)
+                      ? 'bg-amber-100/90 text-amber-900 font-bold border-amber-300'
+                      : 'bg-slate-50 hover:bg-amber-50 text-slate-700 hover:text-amber-700 border-slate-100'
+                  }`}
+                  title="Tandai / Favoritkan"
+                >
+                  <Star className={`h-4 w-4 mb-1 group-hover:scale-110 transition-transform ${starredMediaIds.includes(selectedMediaMsg.id) ? 'fill-amber-500 text-amber-500' : 'text-amber-600'}`} />
+                  <span className="text-[10px] font-bold">
+                    {starredMediaIds.includes(selectedMediaMsg.id) ? 'Ditandai' : 'Tandai'}
+                  </span>
+                </button>
 
-              {/* 3. Pilih Ini (Masuk Mode Multi-Select) */}
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedMediaIds([selectedMediaMsg.id]);
-                  setSelectedMediaId(null);
-                }}
-                className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 hover:bg-purple-50 text-slate-700 hover:text-purple-700 transition-all cursor-pointer group border border-slate-100 hover:border-purple-200"
-                title="Pilih File Ini untuk Mode Multi-Select"
-              >
-                <Check className="h-4 w-4 mb-1 group-hover:scale-110 transition-transform text-purple-600" />
-                <span className="text-[10px] font-bold">Pilih Ini</span>
-              </button>
+                {/* 3. Pilih Ini (Masuk Mode Multi-Select) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedMediaIds([selectedMediaMsg.id]);
+                    setSelectedMediaId(null);
+                  }}
+                  className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 hover:bg-purple-50 text-slate-700 hover:text-purple-700 transition-all cursor-pointer group border border-slate-100 hover:border-purple-200"
+                  title="Pilih File Ini untuk Mode Multi-Select"
+                >
+                  <Check className="h-4 w-4 mb-1 group-hover:scale-110 transition-transform text-purple-600" />
+                  <span className="text-[10px] font-bold">Pilih Ini</span>
+                </button>
 
-              {/* 4. Tampilkan di chat */}
-              <button
-                type="button"
-                onClick={() => {
-                  handleShowInChat(selectedMediaMsg.id);
-                }}
-                className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 transition-all cursor-pointer group border border-slate-100 hover:border-emerald-200"
-                title="Buka lokasi pesan file ini di percakapan chat"
-              >
-                <MessageSquare className="h-4 w-4 mb-1 group-hover:scale-110 transition-transform text-emerald-600" />
-                <span className="text-[10px] font-bold text-center leading-none">Ke Chat</span>
-              </button>
+                {/* 4. Tampilkan di chat */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleShowInChat(selectedMediaMsg.id);
+                  }}
+                  className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 transition-all cursor-pointer group border border-slate-100 hover:border-emerald-200"
+                  title="Buka lokasi pesan file ini di percakapan chat"
+                >
+                  <MessageSquare className="h-4 w-4 mb-1 group-hover:scale-110 transition-transform text-emerald-600" />
+                  <span className="text-[10px] font-bold text-center leading-none">Ke Chat</span>
+                </button>
 
-              {/* 5. Hapus (Paling Kanan) */}
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedMediaIds([selectedMediaMsg.id]);
-                  setShowDeleteMediaModal(true);
-                }}
-                className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 hover:bg-rose-50 text-slate-700 hover:text-rose-700 transition-all cursor-pointer group border border-slate-100 hover:border-rose-200"
-                title="Hapus File Ini"
-              >
-                <Trash2 className="h-4 w-4 mb-1 group-hover:scale-110 transition-transform text-rose-600" />
-                <span className="text-[10px] font-bold text-center leading-none">Hapus</span>
-              </button>
-            </div>
+                {/* 5. Kirim Ulang */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleResendMedia(selectedMediaMsg);
+                  }}
+                  className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 hover:bg-teal-50 text-slate-700 hover:text-teal-700 transition-all cursor-pointer group border border-slate-100 hover:border-teal-200"
+                  title="Kirim ulang file ini ke percakapan chat"
+                >
+                  <RotateCcw className="h-4 w-4 mb-1 group-hover:-rotate-45 transition-transform text-teal-600" />
+                  <span className="text-[10px] font-bold text-center leading-none">Kirim Ulang</span>
+                </button>
+
+                {/* 6. Hapus */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedMediaIds([selectedMediaMsg.id]);
+                    setShowDeleteMediaModal(true);
+                  }}
+                  className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 hover:bg-rose-50 text-slate-700 hover:text-rose-700 transition-all cursor-pointer group border border-slate-100 hover:border-rose-200"
+                  title="Hapus File Ini"
+                >
+                  <Trash2 className="h-4 w-4 mb-1 group-hover:scale-110 transition-transform text-rose-600" />
+                  <span className="text-[10px] font-bold text-center leading-none">Hapus</span>
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1.5 pt-0.5">
+                {/* Baris 1: 4 Item */}
+                <div className="grid grid-cols-4 gap-1.5">
+                  {/* 1. Download */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectedMediaMsg.attachment) {
+                        handleDownloadImage(selectedMediaMsg.attachment.url, selectedMediaMsg.attachment.name);
+                        showToast(`Mengunduh ${selectedMediaMsg.attachment.name}...`);
+                      }
+                    }}
+                    className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-700 transition-all cursor-pointer group border border-slate-100 hover:border-blue-200"
+                    title="Download File"
+                  >
+                    <Download className="h-4 w-4 mb-1 group-hover:scale-110 transition-transform text-blue-600" />
+                    <span className="text-[10px] font-bold">Download</span>
+                  </button>
+
+                  {/* 2. Tandai */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const isStarred = starredMediaIds.includes(selectedMediaMsg.id);
+                      if (isStarred) {
+                        setStarredMediaIds(prev => prev.filter(id => id !== selectedMediaMsg.id));
+                        showToast("Tanda file dihapus");
+                      } else {
+                        setStarredMediaIds(prev => [...prev, selectedMediaMsg.id]);
+                        showToast("File berhasil ditandai ⭐");
+                      }
+                    }}
+                    className={`flex flex-col items-center justify-center p-2 rounded-xl transition-all cursor-pointer group border ${
+                      starredMediaIds.includes(selectedMediaMsg.id)
+                        ? 'bg-amber-100/90 text-amber-900 font-bold border-amber-300'
+                        : 'bg-slate-50 hover:bg-amber-50 text-slate-700 hover:text-amber-700 border-slate-100'
+                    }`}
+                    title="Tandai / Favoritkan"
+                  >
+                    <Star className={`h-4 w-4 mb-1 group-hover:scale-110 transition-transform ${starredMediaIds.includes(selectedMediaMsg.id) ? 'fill-amber-500 text-amber-500' : 'text-amber-600'}`} />
+                    <span className="text-[10px] font-bold">
+                      {starredMediaIds.includes(selectedMediaMsg.id) ? 'Ditandai' : 'Tandai'}
+                    </span>
+                  </button>
+
+                  {/* 3. Pilih Ini (Masuk Mode Multi-Select) */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedMediaIds([selectedMediaMsg.id]);
+                      setSelectedMediaId(null);
+                    }}
+                    className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 hover:bg-purple-50 text-slate-700 hover:text-purple-700 transition-all cursor-pointer group border border-slate-100 hover:border-purple-200"
+                    title="Pilih File Ini untuk Mode Multi-Select"
+                  >
+                    <Check className="h-4 w-4 mb-1 group-hover:scale-110 transition-transform text-purple-600" />
+                    <span className="text-[10px] font-bold">Pilih Ini</span>
+                  </button>
+
+                  {/* 4. Tampilkan di chat */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleShowInChat(selectedMediaMsg.id);
+                    }}
+                    className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 transition-all cursor-pointer group border border-slate-100 hover:border-emerald-200"
+                    title="Buka lokasi pesan file ini di percakapan chat"
+                  >
+                    <MessageSquare className="h-4 w-4 mb-1 group-hover:scale-110 transition-transform text-emerald-600" />
+                    <span className="text-[10px] font-bold text-center leading-none">Ke Chat</span>
+                  </button>
+                </div>
+
+                {/* Baris 2: 2 Item */}
+                <div className="grid grid-cols-2 gap-1.5">
+                  {/* 5. Kirim Ulang */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleResendMedia(selectedMediaMsg);
+                    }}
+                    className="flex items-center justify-center gap-1.5 p-2 rounded-xl bg-slate-50 hover:bg-teal-50 text-slate-700 hover:text-teal-700 transition-all cursor-pointer group border border-slate-100 hover:border-teal-200"
+                    title="Kirim ulang file ini ke percakapan chat"
+                  >
+                    <RotateCcw className="h-4 w-4 shrink-0 group-hover:-rotate-45 transition-transform text-teal-600" />
+                    <span className="text-[10px] font-bold text-center leading-none">Kirim Ulang</span>
+                  </button>
+
+                  {/* 6. Hapus */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedMediaIds([selectedMediaMsg.id]);
+                      setShowDeleteMediaModal(true);
+                    }}
+                    className="flex items-center justify-center gap-1.5 p-2 rounded-xl bg-slate-50 hover:bg-rose-50 text-slate-700 hover:text-rose-700 transition-all cursor-pointer group border border-slate-100 hover:border-rose-200"
+                    title="Hapus File Ini"
+                  >
+                    <Trash2 className="h-4 w-4 shrink-0 group-hover:scale-110 transition-transform text-rose-600" />
+                    <span className="text-[10px] font-bold text-center leading-none">Hapus</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         ) : null}
         </>
@@ -4228,11 +4718,7 @@ export default function AdminChatDrawer({
           onClick={() => {
             setPreviewImageModal(null);
             if (activeTab === 'chat' && !isSearchMode) {
-              setTimeout(() => {
-                if (scrollContainerRef.current) {
-                  scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
-                }
-              }, 40);
+              restorePreviousChatScroll();
             }
           }}
         >
@@ -4259,11 +4745,7 @@ export default function AdminChatDrawer({
                   onClick={() => {
                     setPreviewImageModal(null);
                     if (activeTab === 'chat' && !isSearchMode) {
-                      setTimeout(() => {
-                        if (scrollContainerRef.current) {
-                          scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
-                        }
-                      }, 40);
+                      restorePreviousChatScroll();
                     }
                   }}
                   className="p-1.5 bg-white/10 hover:bg-white/20 active:scale-95 text-white rounded-xl transition-all cursor-pointer"

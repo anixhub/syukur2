@@ -109,6 +109,42 @@ export interface BendaharaRecord {
   tanggalBayar?: string;
 }
 
+export type WalletType = 'cash' | 'bank' | 'ewallet' | 'saving' | 'other';
+export type WalletTransactionType = 'bayar' | 'transfer' | 'terima';
+
+export interface Wallet {
+  id: string;
+  nama: string;
+  tipe: WalletType;
+  nomorRekening?: string;
+  atasNama?: string;
+  saldo: number;
+  warna: string;
+  icon?: string;
+  keterangan?: string;
+  isDefault?: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface WalletTransaction {
+  id: string;
+  walletId: string;
+  walletName?: string;
+  targetWalletId?: string;
+  targetWalletName?: string;
+  tipe: WalletTransactionType;
+  nominal: number;
+  biayaAdmin?: number;
+  kategori: string;
+  pihakTerkait?: string;
+  tanggal: string;
+  catatan?: string;
+  nomorReferensi?: string;
+  lampiran?: string;
+  createdAt: string;
+}
+
 export interface KelasPendidikan {
   id: string;
   namaKelas: string;

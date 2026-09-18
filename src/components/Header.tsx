@@ -1,4 +1,5 @@
 import React from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   Menu, 
   Bell
@@ -62,26 +63,30 @@ export default function Header({
           </div>
 
           {/* Right Action Buttons: Bell Notifications */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 z-10">
-            {/* Tombol Notifikasi */}
-            <button 
-              id="btn-notifications-desktop"
-              onClick={onOpenNotifications}
-              className={`relative flex items-center justify-center w-10 h-10 p-2 transition-colors cursor-pointer focus:outline-none rounded-full ${
-                isNotificationsOpen 
-                  ? 'text-emerald-600 bg-emerald-50/90 ring-1 ring-emerald-300' 
-                  : 'text-slate-700 hover:text-emerald-600 hover:bg-slate-100/60'
-              }`}
-              title={isNotificationsOpen ? "Tutup Notifikasi" : "Notifikasi Sistem"}
-              aria-label={isNotificationsOpen ? "Tutup Notifikasi" : "Buka Notifikasi"}
-            >
-              <Bell className="h-5 w-5 sm:h-5.5 sm:w-5.5" strokeWidth={2} />
-              {pendingRegistrationsCount > 0 ? (
-                <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-rose-600 text-white font-extrabold text-[10px] shadow-xs animate-pulse">
-                  {pendingRegistrationsCount > 99 ? '99+' : pendingRegistrationsCount}
-                </span>
-              ) : null}
-            </button>
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 z-10 w-10 h-10 justify-end">
+            <AnimatePresence>
+              {!isNotificationsOpen && (
+                <motion.button 
+                  key="btn-notifications-desktop"
+                  id="btn-notifications-desktop"
+                  onClick={onOpenNotifications}
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.5, transition: { duration: 0.08 } }}
+                  transition={{ duration: 0.15 }}
+                  className="relative flex items-center justify-center w-10 h-10 p-2 text-slate-700 hover:text-emerald-600 hover:bg-slate-100/60 active:bg-slate-200/80 transition-colors cursor-pointer focus:outline-none rounded-full"
+                  title="Notifikasi Sistem"
+                  aria-label="Buka Notifikasi"
+                >
+                  <Bell className="h-5 w-5 sm:h-5.5 sm:w-5.5" strokeWidth={2} />
+                  {pendingRegistrationsCount > 0 ? (
+                    <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-rose-600 text-white font-extrabold text-[10px] shadow-xs animate-pulse">
+                      {pendingRegistrationsCount > 99 ? '99+' : pendingRegistrationsCount}
+                    </span>
+                  ) : null}
+                </motion.button>
+              )}
+            </AnimatePresence>
           </div>
 
         </div>
