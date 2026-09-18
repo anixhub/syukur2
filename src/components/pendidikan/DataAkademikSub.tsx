@@ -28,7 +28,7 @@ import {
   UserCheck,
   GraduationCap
 } from 'lucide-react';
-import { Santri, Lembaga, Kelas, KategoriRombel, KelompokRombel, RombelAssignment, isGenderMatch, isDefaultClass, isCalonClass } from '../../types';
+import { Santri, Lembaga, Kelas, KategoriRombel, KelompokRombel, RombelAssignment, isGenderMatch, isClassGenderMatch, isDefaultClass, isCalonClass } from '../../types';
 import { parseCatatanInvalid, cleanWaliKelas, isMatchLembagaStrict, getLembagaJenis, getSantriFormalEducationInfo, getDefaultCalonClassName } from '../../lib/utils';
 import { renderSantriAvatar, getPesantrenProfile, calculateRealtimeAge } from '../SekretarisHelper';
 import SantriDetailModal from '../sekretaris/SantriDetailModal';
@@ -540,6 +540,13 @@ export default function DataAkademikSub({
       return studentClassInLembagaCache.get(cacheKey)!;
     }
 
+    if (!s || !l) return null;
+    // STRICT GENDER CONSTRAINT:
+    if (!isGenderMatch(l.gender, s.gender)) {
+      studentClassInLembagaCache.set(cacheKey, null);
+      return null;
+    }
+
     const isFormal = getLembagaJenis(l) === 'Formal';
     const norm = (str?: string | null) => (str || '').trim().toLowerCase();
     const targetId = norm(l.id);
@@ -588,14 +595,15 @@ export default function DataAkademikSub({
         for (const entry of formalParts) {
           const dashParts = entry.split('-');
           const prefix = dashParts[0].trim();
-          if (isMatchLembagaStrict(l, prefix)) {
+          if (isMatchLembagaStrict(l, prefix, s.gender) || isMatchLembagaStrict(l, entry, s.gender)) {
             if (dashParts.length > 1) {
               const clsPart = dashParts.slice(1).join('-').trim();
-              if (clsPart && !/^\d{6,}$/.test(clsPart)) {
+              if (clsPart && !/^\d{6,}$/.test(clsPart) && isClassGenderMatch(clsPart, s.gender)) {
                 const clsPartClean = cleanClassStr(clsPart);
                 const clsPartCompact = compactClassStr(clsPart);
                 const matched = kelasList.find(k => {
                   if (String(k.lembagaId || (k as any).lembaga_id) !== String(l.id)) return false;
+                  if (!isClassGenderMatch(k.nama, s.gender)) return false;
                   const kClean = cleanClassStr(k.nama);
                   const kCompact = compactClassStr(k.nama);
                   return k.nama.trim().toLowerCase() === clsPart.toLowerCase() ||
@@ -622,7 +630,7 @@ export default function DataAkademikSub({
         const sClasses = s.kelas.split(',').map(x => norm(x)).filter(Boolean);
         const otherFormalLembagas = lembagasList.filter(otherL => getLembagaJenis(otherL) === 'Formal' && String(otherL.id) !== String(l.id));
         const hasOtherFormalConflict = otherFormalLembagas.some(otherL => {
-          return sClasses.some(sc => isMatchLembagaStrict(otherL, sc));
+          return sClasses.some(sc => isMatchLembagaStrict(otherL, sc, s.gender));
         });
         if (hasOtherFormalConflict) {
           studentClassInLembagaCache.set(cacheKey, null);
@@ -631,7 +639,7 @@ export default function DataAkademikSub({
 
         const classesOfL = kelasList.filter(k => {
           const lemId = norm((k as any).lembagaId || (k as any).lembaga_id);
-          return lemId === targetId && !norm(k.nama).includes('calon') && !norm(k.nama).includes('tanpa kelas');
+          return lemId === targetId && !norm(k.nama).includes('calon') && !norm(k.nama).includes('tanpa kelas') && isClassGenderMatch(k.nama, s.gender);
         });
         for (const k of classesOfL) {
           const kClean = cleanClassStr(k.nama);
@@ -657,14 +665,15 @@ export default function DataAkademikSub({
         for (const entry of internalParts) {
           const dashParts = entry.split('-');
           const prefix = dashParts[0].trim();
-          if (isMatchLembagaStrict(l, prefix) || norm(prefix) === targetId) {
+          if (isMatchLembagaStrict(l, prefix, s.gender) || norm(prefix) === targetId) {
             if (dashParts.length > 1) {
               const clsPart = dashParts.slice(1).join('-').trim();
-              if (clsPart && !/^\d{6,}$/.test(clsPart)) {
+              if (clsPart && !/^\d{6,}$/.test(clsPart) && isClassGenderMatch(clsPart, s.gender)) {
                 const clsPartClean = cleanClassStr(clsPart);
                 const clsPartCompact = compactClassStr(clsPart);
                 const matched = kelasList.find(k => {
                   if (String(k.lembagaId || (k as any).lembaga_id) !== String(l.id)) return false;
+                  if (!isClassGenderMatch(k.nama, s.gender)) return false;
                   const kClean = cleanClassStr(k.nama);
                   const kCompact = compactClassStr(k.nama);
                   return k.nama.trim().toLowerCase() === clsPart.toLowerCase() ||
@@ -688,7 +697,7 @@ export default function DataAkademikSub({
         const sClasses = s.kelas.split(',').map(x => norm(x)).filter(Boolean);
         const classesOfL = kelasList.filter(k => {
           const lemId = norm((k as any).lembagaId || (k as any).lembaga_id);
-          return lemId === targetId && !norm(k.nama).includes('calon') && !norm(k.nama).includes('tanpa kelas');
+          return lemId === targetId && !norm(k.nama).includes('calon') && !norm(k.nama).includes('tanpa kelas') && isClassGenderMatch(k.nama, s.gender);
         });
         for (const k of classesOfL) {
           const kClean = cleanClassStr(k.nama);
@@ -3648,6 +3657,11 @@ export default function DataAkademikSub({
       <SantriDetailModal 
         selectedSantri={selectedSantri} 
         onClose={() => setSelectedSantri(null)} 
+        lembagasList={lembagasList}
+        kelasList={kelasList}
+        rombelAssignments={assignmentsList}
+        rombelGroups={groupsList}
+        rombelCategories={categoriesList}
       />
 
       {/* --- PINDAH KELAS MODAL --- */}

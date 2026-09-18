@@ -166,6 +166,7 @@ export interface Lembaga {
   id: string;
   nama: string;
   kode: string; // e.g., "MADIN", "MA", "TAHFIDZ"
+  jenjang?: string;
   deskripsi?: string;
   gender?: 'Putra' | 'Putri';
   jenis?: 'Formal' | 'Internal' | 'Rombel';
@@ -245,6 +246,24 @@ export const isGenderMatch = (lembagaGender?: string | null, santriGender?: stri
   if (isMale(lG) && isMale(sG)) return true;
   if (isFemale(lG) && isFemale(sG)) return true;
   return lG === sG;
+};
+
+export const isClassGenderMatch = (className?: string | null, santriGender?: string | null): boolean => {
+  if (!className || !santriGender) return true;
+  const cNorm = className.trim().toLowerCase();
+  const sG = santriGender.trim().toLowerCase();
+  const isMale = sG === 'putra' || sG === 'laki-laki' || sG === 'l';
+  const isFemale = sG === 'putri' || sG === 'perempuan' || sG === 'p';
+
+  if (isMale) {
+    if (/\b(pi|putri)\b/i.test(cNorm)) return false;
+    if (cNorm.endsWith(' pi') || cNorm.endsWith('-pi') || cNorm.endsWith('_pi')) return false;
+  }
+  if (isFemale) {
+    if (/\b(pa|putra)\b/i.test(cNorm)) return false;
+    if (cNorm.endsWith(' pa') || cNorm.endsWith('-pa') || cNorm.endsWith('_pa')) return false;
+  }
+  return true;
 };
 
 export const isEmisTerdaftar = (status?: string | null): boolean => {

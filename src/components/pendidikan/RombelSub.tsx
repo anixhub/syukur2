@@ -2961,6 +2961,9 @@ export default function RombelSub({
       <SantriDetailModal 
         selectedSantri={selectedSantriForDetail}
         onClose={() => setSelectedSantriForDetail(null)}
+        rombelAssignments={assignmentsList}
+        rombelGroups={groupsList}
+        rombelCategories={categoriesList}
       />
 
     </div>

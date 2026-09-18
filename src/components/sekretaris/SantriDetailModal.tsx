@@ -35,11 +35,20 @@ import {
 } from 'lucide-react';
 import { Santri, BendaharaRecord, KeamananRecord, Kamar, Kompleks, Kelas, Lembaga, KelompokRombel, RombelAssignment, KategoriRombel } from '../../types';
 import { renderSantriAvatar, isCustomPasFoto, calculateRealtimeAge } from '../SekretarisHelper';
-import { uploadFileToStorage, updateTableRow, getApiUrl } from '../../lib/api';
-import { processUploadedFile } from '../../lib/utils';
+import { uploadFileToStorage, updateTableRow, getApiUrl, fetchTableData } from '../../lib/api';
+import { 
+  processUploadedFile, 
+  getSantriAcademicPlacements, 
+  getSantriFormalEducationInfo, 
+  getStudentClassInLembaga, 
+  isCalonClass, 
+  getLembagaJenis, 
+  isGenderMatch 
+} from '../../lib/utils';
 import { 
   formatTanggalMasukDMY,
-  parseTanggalMasukToYear
+  parseTanggalMasukToYear,
+  getSantriNismForLembaga
 } from '../../lib/nismHelper';
 
 const formatDateDMY = (dateVal?: any) => {
@@ -119,6 +128,11 @@ interface SantriDetailModalProps {
   onClose: () => void;
   onUpdateSantri?: (updatedSantri: Santri) => void;
   canWrite?: boolean;
+  lembagasList?: Lembaga[];
+  kelasList?: Kelas[];
+  rombelAssignments?: RombelAssignment[];
+  rombelGroups?: KelompokRombel[];
+  rombelCategories?: KategoriRombel[];
 }
 
 type TabType = 'biodata' | 'pembayaran' | 'akademik' | 'keamanan';
@@ -174,14 +188,149 @@ const compressImageAndGetBase64 = (file: File, maxWidth = 800, maxHeight = 1066,
   });
 };
 
-export default function SantriDetailModal({ selectedSantri, onClose, onUpdateSantri, canWrite = true }: SantriDetailModalProps) {
+export default function SantriDetailModal({ 
+  selectedSantri, 
+  onClose, 
+  onUpdateSantri, 
+  canWrite = true,
+  lembagasList,
+  kelasList,
+  rombelAssignments,
+  rombelGroups,
+  rombelCategories
+}: SantriDetailModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>('biodata');
   const [localSantri, setLocalSantri] = useState<Santri | null>(selectedSantri);
   const [isUploadingPasFoto, setIsUploadingPasFoto] = useState(false);
   const [isUploadingDoc, setIsUploadingDoc] = useState<Record<string, boolean>>({});
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
   const [isPhotoPreviewOpen, setIsPhotoPreviewOpen] = useState(false);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+
+  // Synchronized Education & Class States (from Modul Pendidikan)
+  const [dbLembagas, setDbLembagas] = useState<Lembaga[]>(() => {
+    if (lembagasList && lembagasList.length > 0) return lembagasList;
+    try {
+      const saved = typeof window !== 'undefined' ? localStorage.getItem('smartsantri_lembagas') : null;
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [dbKelas, setDbKelas] = useState<Kelas[]>(() => {
+    if (kelasList && kelasList.length > 0) return kelasList;
+    try {
+      const saved = typeof window !== 'undefined' ? localStorage.getItem('smartsantri_kelas') : null;
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [dbAssignments, setDbAssignments] = useState<RombelAssignment[]>(() => {
+    if (rombelAssignments && rombelAssignments.length > 0) return rombelAssignments;
+    try {
+      const saved = typeof window !== 'undefined' ? localStorage.getItem('smartsantri_rombel_assignments') : null;
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [dbGroups, setDbGroups] = useState<KelompokRombel[]>(() => {
+    if (rombelGroups && rombelGroups.length > 0) return rombelGroups;
+    try {
+      const saved = typeof window !== 'undefined' ? localStorage.getItem('smartsantri_rombel_groups') : null;
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [dbCategories, setDbCategories] = useState<KategoriRombel[]>(() => {
+    if (rombelCategories && rombelCategories.length > 0) return rombelCategories;
+    try {
+      const saved = typeof window !== 'undefined' ? localStorage.getItem('smartsantri_rombel_categories') : null;
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Keep state synced with props if updated externally
+  React.useEffect(() => {
+    if (lembagasList && lembagasList.length > 0) setDbLembagas(lembagasList);
+  }, [lembagasList]);
+
+  React.useEffect(() => {
+    if (kelasList && kelasList.length > 0) setDbKelas(kelasList);
+  }, [kelasList]);
+
+  React.useEffect(() => {
+    if (rombelAssignments && rombelAssignments.length > 0) setDbAssignments(rombelAssignments);
+  }, [rombelAssignments]);
+
+  React.useEffect(() => {
+    if (rombelGroups && rombelGroups.length > 0) setDbGroups(rombelGroups);
+  }, [rombelGroups]);
+
+  React.useEffect(() => {
+    if (rombelCategories && rombelCategories.length > 0) setDbCategories(rombelCategories);
+  }, [rombelCategories]);
+
+  // Fetch education data if missing from initial state
+  React.useEffect(() => {
+    if (dbLembagas.length === 0) {
+      fetchTableData<Lembaga>('lembaga', 'smartsantri_lembagas', []).then(res => {
+        if (res && res.length > 0) setDbLembagas(res);
+      }).catch(() => {});
+    }
+    if (dbKelas.length === 0) {
+      fetchTableData<Kelas>('kelas', 'smartsantri_kelas', []).then(res => {
+        if (res && res.length > 0) setDbKelas(res);
+      }).catch(() => {});
+    }
+    if (dbAssignments.length === 0) {
+      fetchTableData<RombelAssignment>('rombel_assignments', 'smartsantri_rombel_assignments', []).then(res => {
+        if (res && res.length > 0) setDbAssignments(res);
+      }).catch(() => {});
+    }
+    if (dbGroups.length === 0) {
+      fetchTableData<KelompokRombel>('rombel_groups', 'smartsantri_rombel_groups', []).then(res => {
+        if (res && res.length > 0) setDbGroups(res);
+      }).catch(() => {});
+    }
+    if (dbCategories.length === 0) {
+      fetchTableData<KategoriRombel>('rombel_categories', 'smartsantri_rombel_categories', []).then(res => {
+        if (res && res.length > 0) setDbCategories(res);
+      }).catch(() => {});
+    }
+  }, []);
+
+  // Sync across tabs/windows via storage event
+  React.useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'smartsantri_lembagas' && e.newValue) {
+        try { setDbLembagas(JSON.parse(e.newValue)); } catch {}
+      }
+      if (e.key === 'smartsantri_kelas' && e.newValue) {
+        try { setDbKelas(JSON.parse(e.newValue)); } catch {}
+      }
+      if (e.key === 'smartsantri_rombel_assignments' && e.newValue) {
+        try { setDbAssignments(JSON.parse(e.newValue)); } catch {}
+      }
+      if (e.key === 'smartsantri_rombel_groups' && e.newValue) {
+        try { setDbGroups(JSON.parse(e.newValue)); } catch {}
+      }
+      if (e.key === 'smartsantri_rombel_categories' && e.newValue) {
+        try { setDbCategories(JSON.parse(e.newValue)); } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
 
   const handleUploadDoc = async (fileKey: string, file: File) => {
     if (!localSantri) return;
@@ -324,89 +473,37 @@ export default function SantriDetailModal({ selectedSantri, onClose, onUpdateSan
     }
   }, [localSantri]);
 
-  const studentClasses = useMemo(() => {
+  // Comprehensive Academic Placements accurately resolved from Modul Pendidikan
+  const academicSummary = useMemo(() => {
+    if (!localSantri) return null;
+    return getSantriAcademicPlacements(localSantri, dbLembagas, dbKelas);
+  }, [localSantri, dbLembagas, dbKelas]);
+
+  // Registered classes displayed in modal, synchronized with Pendidikan
+  const academicClasses = useMemo(() => {
+    if (!academicSummary) return [];
+    return academicSummary.registeredClasses;
+  }, [academicSummary]);
+
+  // Rombongan Belajar resolved from assignments
+  const academicRombels = useMemo(() => {
     if (!localSantri) return [];
     try {
-      const kelasLocal = localStorage.getItem('smartsantri_kelas');
-      const kelasList: Kelas[] = kelasLocal ? JSON.parse(kelasLocal) : [];
-
-      const lembagaLocal = localStorage.getItem('smartsantri_lembagas');
-      const lembagasList: Lembaga[] = lembagaLocal ? JSON.parse(lembagaLocal) : [];
-
-      // Parse classes from localSantri.kelas (comma separated)
-      const assignedClassNames = localSantri.kelas 
-        ? localSantri.kelas.split(',').map(name => name.trim().toLowerCase()) 
-        : [];
-
-      // Find matching kelas records
-      const matched = kelasList.filter(k => 
-        assignedClassNames.includes(k.nama.toLowerCase().trim())
-      ).map(k => {
-        const lembaga = lembagasList.find(l => l.id === k.lembagaId);
-        return {
-          ...k,
-          lembagaNama: lembaga ? lembaga.nama : 'Lembaga Umum',
-          lembagaKode: lembaga ? lembaga.kode : 'UMUM'
-        };
-      });
-
-      return matched;
-    } catch (e) {
-      return [];
-    }
-  }, [localSantri]);
-
-  const studentRombels = useMemo(() => {
-    if (!localSantri) return [];
-    try {
-      const assignmentsLocal = localStorage.getItem('smartsantri_rombel_assignments');
-      const assignments: RombelAssignment[] = assignmentsLocal ? JSON.parse(assignmentsLocal) : [];
-
-      const groupsLocal = localStorage.getItem('smartsantri_rombel_groups');
-      const groups: KelompokRombel[] = groupsLocal ? JSON.parse(groupsLocal) : [];
-
-      const categoriesLocal = localStorage.getItem('smartsantri_rombel_categories');
-      const categories: KategoriRombel[] = categoriesLocal ? JSON.parse(categoriesLocal) : [];
-
-      // Filter assignments for this student
-      const studentAssigns = assignments.filter(a => a.santriId === localSantri.id);
-
-      const list = studentAssigns.map(a => {
-        const group = groups.find(g => g.id === a.kelompokId);
-        const category = categories.find(c => c.id === a.kategoriId);
+      const studentAssigns = dbAssignments.filter(a => a.santriId === localSantri.id);
+      return studentAssigns.map(a => {
+        const group = dbGroups.find(g => g.id === a.kelompokId);
+        const category = dbCategories.find(c => c.id === a.kategoriId);
         return {
           groupId: a.kelompokId,
-          groupNama: group ? group.nama : 'Kelompok Belajar',
-          pembimbing: group ? group.pembimbing : 'Ustadz Pembimbing',
-          categoryNama: category ? category.nama : 'Rombongan Belajar',
+          group: group ? group.nama : 'Kelompok Belajar',
+          pembimbing: group ? group.pembimbing : '',
+          category: category ? category.nama : 'Rombongan Belajar'
         };
       });
-
-      return list;
     } catch (e) {
       return [];
     }
-  }, [localSantri]);
-
-  const academicClasses = useMemo(() => {
-    if (studentClasses && studentClasses.length > 0) {
-      return studentClasses.map(cls => ({
-        lembaga: cls.lembagaNama ? cls.lembagaNama.toUpperCase() : 'LEMBAGA',
-        kelas: cls.nama
-      }));
-    }
-    return [];
-  }, [studentClasses]);
-
-  const academicRombels = useMemo(() => {
-    if (studentRombels && studentRombels.length > 0) {
-      return studentRombels.map(rom => ({
-        category: rom.categoryNama || 'Rombongan Belajar',
-        group: rom.groupNama
-      }));
-    }
-    return [];
-  }, [studentRombels]);
+  }, [localSantri, dbAssignments, dbGroups, dbCategories]);
 
   const displayViolations = useMemo(() => {
     if (violations && violations.length > 0) {
@@ -1047,99 +1144,195 @@ export default function SantriDetailModal({ selectedSantri, onClose, onUpdateSan
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 text-xs">
-                          {[
-                            {
-                              id: 'wustho',
-                              key: 'indukWustho',
-                              nama: 'SPM Wustho',
-                              jenjang: 'Wustho',
-                              deskripsi: "Pendidikan Mu'adalah Tingkat Pertama (Setara SMP/MTs)",
-                              badgeColor: 'bg-emerald-50 text-emerald-800 border-emerald-200',
-                              value: localSantri.indukWustho
-                            },
-                            {
-                              id: 'ulya',
-                              key: 'indukUlya',
-                              nama: 'SPM Ulya',
-                              jenjang: 'Ulya',
-                              deskripsi: "Pendidikan Mu'adalah Tingkat Atas (Setara SMA/MA)",
-                              badgeColor: 'bg-indigo-50 text-indigo-800 border-indigo-200',
-                              value: localSantri.indukUlya
-                            },
-                            {
-                              id: 'mhd',
-                              key: 'indukMhd',
-                              nama: 'Madrasah Diniyyah (MHD)',
-                              jenjang: 'MHD',
-                              deskripsi: 'Pendidikan Diniyyah & Kitab Kuning Pesantren',
-                              badgeColor: 'bg-amber-50 text-amber-800 border-amber-200',
-                              value: localSantri.indukMhd
-                            },
-                            {
-                              id: 'formal',
-                              key: 'nism',
-                              nama: 'Pendidikan Formal / Umum',
-                              jenjang: 'Formal',
-                              deskripsi: 'Pendidikan Formal & Umum Pesantren',
-                              badgeColor: 'bg-sky-50 text-sky-800 border-sky-200',
-                              value: localSantri.nism
-                            }
-                          ].map((item, idx) => {
-                            const rawDate = localSantri.tanggalMasukLembaga || localSantri.tanggalMasuk || '';
-                            const formattedDate = formatTanggalMasukDMY(rawDate);
-                            const computedYear = parseTanggalMasukToYear(rawDate || '2024');
+                          {academicSummary && academicSummary.placements.length > 0 ? (
+                            academicSummary.placements.map((item, idx) => {
+                              const rawDate = localSantri.tanggalMasukLembaga || localSantri.tanggalMasuk || '';
+                              const formattedDate = formatTanggalMasukDMY(rawDate);
+                              const computedYear = parseTanggalMasukToYear(rawDate || '2024');
 
-                            return (
-                              <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                                {/* 1. NO */}
-                                <td className="py-3 px-3 text-center font-bold text-slate-400 border-r border-slate-100">
-                                  {idx + 1}
-                                </td>
+                              return (
+                                <tr key={item.lembagaId || idx} className="hover:bg-slate-50/80 transition-colors">
+                                  {/* 1. NO */}
+                                  <td className="py-3 px-3 text-center font-bold text-slate-400 border-r border-slate-100">
+                                    {idx + 1}
+                                  </td>
 
-                                {/* 2. LEMBAGA / SATUAN */}
-                                <td className="py-3 px-4 border-r border-slate-100">
-                                  <div>
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="font-extrabold text-slate-800 text-xs">
-                                        {item.nama}
-                                      </span>
-                                      <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border ${item.badgeColor}`}>
-                                        {item.jenjang}
-                                      </span>
+                                  {/* 2. LEMBAGA / SATUAN & STATUS KELAS */}
+                                  <td className="py-3 px-4 border-r border-slate-100">
+                                    <div>
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="font-extrabold text-slate-800 text-xs">
+                                          {item.lembagaNama}
+                                        </span>
+                                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border ${
+                                          item.jenis === 'Formal'
+                                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                            : 'bg-amber-50 text-amber-800 border-amber-200'
+                                        }`}>
+                                          {item.lembagaKode || item.jenjang}
+                                        </span>
+                                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                                          item.jenis === 'Formal'
+                                            ? 'bg-sky-50 text-sky-700'
+                                            : 'bg-purple-50 text-purple-700'
+                                        }`}>
+                                          {item.jenis}
+                                        </span>
+                                      </div>
+
+                                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                        <span className="text-[10px] text-slate-500 font-medium">
+                                          Kelas Aktif:
+                                        </span>
+                                        {item.isRegistered ? (
+                                          <span className={`inline-flex items-center gap-1 font-extrabold text-[10px] px-2 py-0.5 rounded-full border ${
+                                            item.isCalon
+                                              ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                              : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                          }`}>
+                                            {item.isCalon && <Clock className="w-2.5 h-2.5 text-amber-600 shrink-0" />}
+                                            {item.kelas}
+                                          </span>
+                                        ) : (
+                                          <span className="text-[10px] text-slate-400 italic">
+                                            Belum Terdaftar
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      <p className="text-[10px] text-slate-400 font-medium mt-0.5 line-clamp-1">
+                                        {item.deskripsi}
+                                      </p>
                                     </div>
-                                    <p className="text-[10px] text-slate-400 font-medium mt-0.5">
-                                      {item.deskripsi}
-                                    </p>
-                                  </div>
-                                </td>
+                                  </td>
 
-                                {/* 3. TGL MASUK LEMBAGA */}
-                                <td className="py-3 px-4 border-r border-slate-100 font-mono text-slate-700 font-semibold">
-                                  {formattedDate || '-'}
-                                </td>
+                                  {/* 3. TGL MASUK LEMBAGA */}
+                                  <td className="py-3 px-4 border-r border-slate-100 font-mono text-slate-700 font-semibold">
+                                    {formattedDate || '-'}
+                                  </td>
 
-                                {/* 4. THN ACUAN */}
-                                <td className="py-3 px-3 text-center font-mono font-bold text-slate-700 border-r border-slate-100">
-                                  <span className="bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-xs">
-                                    {computedYear || '-'}
-                                  </span>
-                                </td>
-
-                                {/* 5. NOMOR NISM / INDUK */}
-                                <td className="py-3 px-4">
-                                  {item.value ? (
-                                    <span className="inline-block font-mono font-black text-slate-800 tracking-wider bg-slate-100/90 px-2.5 py-1 rounded-lg border border-slate-200">
-                                      {item.value}
+                                  {/* 4. THN ACUAN */}
+                                  <td className="py-3 px-3 text-center font-mono font-bold text-slate-700 border-r border-slate-100">
+                                    <span className="bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-xs">
+                                      {computedYear || '-'}
                                     </span>
-                                  ) : (
-                                    <span className="text-slate-300 italic text-[11px]">
-                                      Belum digenerate
+                                  </td>
+
+                                  {/* 5. NOMOR NISM / INDUK */}
+                                  <td className="py-3 px-4">
+                                    {item.nism ? (
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="inline-block font-mono font-black text-slate-800 tracking-wider bg-slate-100/90 px-2.5 py-1 rounded-lg border border-slate-200 text-xs">
+                                          {item.nism}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            navigator.clipboard.writeText(item.nism);
+                                            setCopiedKey(`nism_${item.lembagaId}`);
+                                            setTimeout(() => setCopiedKey(null), 2000);
+                                          }}
+                                          className="p-1 hover:bg-slate-200/80 rounded transition-colors text-slate-400 hover:text-slate-600"
+                                          title="Salin NISM"
+                                        >
+                                          {copiedKey === `nism_${item.lembagaId}` ? (
+                                            <Check className="h-3.5 w-3.5 text-emerald-600" />
+                                          ) : (
+                                            <FileText className="h-3.5 w-3.5" />
+                                          )}
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <span className="text-slate-300 italic text-[11px]">
+                                        Belum digenerate
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          ) : (
+                            [
+                              {
+                                id: 'wustho',
+                                nama: 'SPM Wustho',
+                                jenjang: 'Wustho',
+                                deskripsi: "Pendidikan Mu'adalah Tingkat Pertama (Setara SMP/MTs)",
+                                badgeColor: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+                                value: localSantri.indukWustho
+                              },
+                              {
+                                id: 'ulya',
+                                nama: 'SPM Ulya',
+                                jenjang: 'Ulya',
+                                deskripsi: "Pendidikan Mu'adalah Tingkat Atas (Setara SMA/MA)",
+                                badgeColor: 'bg-indigo-50 text-indigo-800 border-indigo-200',
+                                value: localSantri.indukUlya
+                              },
+                              {
+                                id: 'mhd',
+                                nama: 'Madrasah Diniyyah (MHD)',
+                                jenjang: 'MHD',
+                                deskripsi: 'Pendidikan Diniyyah & Kitab Kuning Pesantren',
+                                badgeColor: 'bg-amber-50 text-amber-800 border-amber-200',
+                                value: localSantri.indukMhd
+                              },
+                              {
+                                id: 'formal',
+                                nama: 'Pendidikan Formal / Umum',
+                                jenjang: 'Formal',
+                                deskripsi: 'Pendidikan Formal & Umum Pesantren',
+                                badgeColor: 'bg-sky-50 text-sky-800 border-sky-200',
+                                value: localSantri.nism
+                              }
+                            ].map((item, idx) => {
+                              const rawDate = localSantri.tanggalMasukLembaga || localSantri.tanggalMasuk || '';
+                              const formattedDate = formatTanggalMasukDMY(rawDate);
+                              const computedYear = parseTanggalMasukToYear(rawDate || '2024');
+
+                              return (
+                                <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+                                  <td className="py-3 px-3 text-center font-bold text-slate-400 border-r border-slate-100">
+                                    {idx + 1}
+                                  </td>
+                                  <td className="py-3 px-4 border-r border-slate-100">
+                                    <div>
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="font-extrabold text-slate-800 text-xs">
+                                          {item.nama}
+                                        </span>
+                                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border ${item.badgeColor}`}>
+                                          {item.jenjang}
+                                        </span>
+                                      </div>
+                                      <p className="text-[10px] text-slate-400 font-medium mt-0.5">
+                                        {item.deskripsi}
+                                      </p>
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-4 border-r border-slate-100 font-mono text-slate-700 font-semibold">
+                                    {formattedDate || '-'}
+                                  </td>
+                                  <td className="py-3 px-3 text-center font-mono font-bold text-slate-700 border-r border-slate-100">
+                                    <span className="bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-xs">
+                                      {computedYear || '-'}
                                     </span>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })}
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    {item.value ? (
+                                      <span className="inline-block font-mono font-black text-slate-800 tracking-wider bg-slate-100/90 px-2.5 py-1 rounded-lg border border-slate-200">
+                                        {item.value}
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-300 italic text-[11px]">
+                                        Belum digenerate
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
                         </tbody>
                       </table>
                     </div>
@@ -1150,27 +1343,49 @@ export default function SantriDetailModal({ selectedSantri, onClose, onUpdateSan
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Kelas Card */}
                   <div className="bg-[#eefcd2] p-4 rounded-[24px] border border-[#d3e9a5] shadow-xs">
-                    <h4 className="text-center font-black text-slate-800 text-sm mb-3 tracking-wide">
-                      Kelas Terdaftar
-                    </h4>
+                    <div className="flex items-center justify-between mb-3 px-1">
+                      <h4 className="font-black text-slate-800 text-sm tracking-wide flex items-center gap-1.5">
+                        <GraduationCap className="w-4 h-4 text-emerald-700" />
+                        Kelas Terdaftar
+                      </h4>
+                      <span className="bg-emerald-200/80 text-emerald-900 font-extrabold text-[10px] px-2.5 py-0.5 rounded-full">
+                        {academicClasses.length} Terdaftar
+                      </span>
+                    </div>
                     <div className="space-y-2">
                       {academicClasses.length > 0 ? (
                         academicClasses.map((cls, idx) => (
                           <div 
                             key={idx} 
-                            className="bg-white px-4 py-2 rounded-full shadow-xs border border-slate-100 flex items-center justify-between gap-3 text-xs"
+                            className="bg-white px-4 py-2.5 rounded-2xl shadow-xs border border-slate-100 flex items-center justify-between gap-3 text-xs"
                           >
-                            <span className="font-extrabold text-slate-800 uppercase tracking-wide truncate">
-                              {cls.lembaga}
-                            </span>
-                            <span className="bg-[#ffe4a0] text-slate-800 font-extrabold px-3 py-0.5 rounded-full shrink-0 min-w-[80px] text-center">
-                              {cls.kelas}
-                            </span>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider shrink-0 border ${
+                                cls.jenis === 'Formal'
+                                  ? 'bg-sky-50 text-sky-800 border-sky-200'
+                                  : 'bg-amber-50 text-amber-800 border-amber-200'
+                              }`}>
+                                {cls.lembagaKode || cls.jenis}
+                              </span>
+                              <span className="font-extrabold text-slate-800 truncate" title={cls.lembaga}>
+                                {cls.lembaga}
+                              </span>
+                            </div>
+                            <div className="shrink-0 flex items-center gap-1">
+                              <span className={`font-black px-3 py-1 rounded-full text-xs text-center ${
+                                cls.isCalon
+                                  ? 'bg-amber-100 text-amber-900 border border-amber-200'
+                                  : 'bg-[#ffe4a0] text-slate-900 border border-amber-200/60'
+                              }`}>
+                                {cls.kelas}
+                              </span>
+                            </div>
                           </div>
                         ))
                       ) : (
-                        <div className="text-center py-4 text-xs text-slate-500 font-medium bg-white rounded-full border border-slate-100">
-                          Belum terdaftar di kelas mana pun
+                        <div className="text-center py-5 text-xs text-slate-500 font-medium bg-white rounded-2xl border border-slate-100 flex flex-col items-center justify-center gap-1">
+                          <Info className="w-4 h-4 text-slate-400" />
+                          <span>Belum terdaftar di kelas mana pun di Modul Pendidikan</span>
                         </div>
                       )}
                     </div>
@@ -1178,27 +1393,41 @@ export default function SantriDetailModal({ selectedSantri, onClose, onUpdateSan
 
                   {/* Rombongan Belajar Card */}
                   <div className="bg-[#eefcd2] p-4 rounded-[24px] border border-[#d3e9a5] shadow-xs">
-                    <h4 className="text-center font-black text-slate-800 text-sm mb-3 tracking-wide">
-                      Rombongan Belajar
-                    </h4>
+                    <div className="flex items-center justify-between mb-3 px-1">
+                      <h4 className="font-black text-slate-800 text-sm tracking-wide flex items-center gap-1.5">
+                        <Layers className="w-4 h-4 text-emerald-700" />
+                        Rombongan Belajar
+                      </h4>
+                      <span className="bg-emerald-200/80 text-emerald-900 font-extrabold text-[10px] px-2.5 py-0.5 rounded-full">
+                        {academicRombels.length} Kelompok
+                      </span>
+                    </div>
                     <div className="space-y-2">
                       {academicRombels.length > 0 ? (
                         academicRombels.map((rom, idx) => (
                           <div 
                             key={idx} 
-                            className="bg-white px-4 py-2 rounded-full shadow-xs border border-slate-100 flex items-center justify-between gap-3 text-xs"
+                            className="bg-white px-4 py-2.5 rounded-2xl shadow-xs border border-slate-100 flex items-center justify-between gap-3 text-xs"
                           >
-                            <span className="font-extrabold text-slate-800 truncate">
-                              {rom.category}
-                            </span>
-                            <span className="bg-[#ffe4a0] text-slate-800 font-extrabold px-3 py-0.5 rounded-full shrink-0 min-w-[80px] text-center">
+                            <div className="min-w-0">
+                              <span className="font-extrabold text-slate-800 block truncate">
+                                {rom.category}
+                              </span>
+                              {rom.pembimbing && (
+                                <span className="text-[10px] text-slate-400 font-medium block truncate">
+                                  Pembimbing: {rom.pembimbing}
+                                </span>
+                              )}
+                            </div>
+                            <span className="bg-[#ffe4a0] text-slate-800 font-black px-3 py-1 rounded-full shrink-0 text-center border border-amber-200/60">
                               {rom.group}
                             </span>
                           </div>
                         ))
                       ) : (
-                        <div className="text-center py-4 text-xs text-slate-500 font-medium bg-white rounded-full border border-slate-100">
-                          Belum terdaftar di rombongan belajar mana pun
+                        <div className="text-center py-5 text-xs text-slate-500 font-medium bg-white rounded-2xl border border-slate-100 flex flex-col items-center justify-center gap-1">
+                          <Info className="w-4 h-4 text-slate-400" />
+                          <span>Belum terdaftar di rombongan belajar mana pun</span>
                         </div>
                       )}
                     </div>
@@ -1207,26 +1436,60 @@ export default function SantriDetailModal({ selectedSantri, onClose, onUpdateSan
 
                 {/* 3. Dokumen & Riwayat Ringkas */}
                 <div className="bg-[#eefcd2] p-4 rounded-[24px] border border-[#d3e9a5] shadow-xs">
-                  <h4 className="text-center font-black text-slate-800 text-sm mb-3 tracking-wide">
+                  <h4 className="text-center font-black text-slate-800 text-sm mb-3 tracking-wide flex items-center justify-center gap-1.5">
+                    <BookOpen className="w-4 h-4 text-emerald-700" />
                     Ringkasan Identitas Akademik
                   </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
                     {[
                       { label: 'NISN', val: localSantri.nisn || '-' },
-                      { label: 'KELAS MHD', val: localSantri.kelasMhd || localSantri.indukMhd || '-' },
+                      { 
+                        label: 'KELAS MHD / DINIYYAH', 
+                        val: academicSummary?.kelasMhd || (localSantri.kelasMhd && !/^\d{6,}$/.test(localSantri.kelasMhd) ? localSantri.kelasMhd : '-') 
+                      },
+                      { 
+                        label: 'PENDIDIKAN FORMAL', 
+                        val: (academicSummary?.formalInfo?.fullDisplay && academicSummary.formalInfo.fullDisplay !== 'TIDAK TERDAFTAR')
+                          ? academicSummary.formalInfo.fullDisplay
+                          : (localSantri.pendidikanFormal || '-') 
+                      },
+                      { 
+                        label: 'STATUS EMIS', 
+                        val: localSantri.statusEmis || 'Belum',
+                        isStatus: true,
+                        statusVal: localSantri.statusEmis || 'Belum'
+                      },
                       { label: 'SEMESTER', val: localSantri.semester || 'Semester 1' },
-                      { label: 'Pendidikan Terakhir', val: localSantri.pendidikanTerakhir || '-' },
+                      { label: 'TAHUN MASUK', val: localSantri.tahunMasuk || parseTanggalMasukToYear(localSantri.tanggalMasukLembaga || localSantri.tanggalMasuk || '') },
+                      { label: 'PENDIDIKAN TERAKHIR', val: localSantri.pendidikanTerakhir || '-' },
+                      { label: 'STATUS KEANGGOTAAN', val: localSantri.statusKeanggotaan || 'Aktif' }
                     ].map((item, idx) => (
                       <div 
                         key={idx} 
-                        className="bg-white px-3 py-2 rounded-xl shadow-xs border border-slate-100 flex flex-col justify-between gap-1 text-xs"
+                        className="bg-white px-3.5 py-2.5 rounded-xl shadow-xs border border-slate-100 flex flex-col justify-between gap-1 text-xs"
                       >
                         <span className="font-extrabold text-slate-400 text-[10px] uppercase tracking-wider">
                           {item.label}
                         </span>
-                        <span className="font-black text-slate-800 truncate">
-                          {item.val}
-                        </span>
+                        {(item as any).isStatus ? (
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider w-fit ${
+                            (item as any).statusVal === 'Terdaftar'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : (item as any).statusVal === 'Invalid'
+                              ? 'bg-rose-100 text-rose-800'
+                              : (item as any).statusVal === 'Keluar'
+                              ? 'bg-amber-100 text-amber-800'
+                              : (item as any).statusVal === 'Lulus'
+                              ? 'bg-blue-100 text-blue-800'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            {(item as any).statusVal}
+                          </span>
+                        ) : (
+                          <span className="font-black text-slate-800 truncate" title={item.val}>
+                            {item.val}
+                          </span>
+                        )}
                       </div>
                     ))}
                   </div>

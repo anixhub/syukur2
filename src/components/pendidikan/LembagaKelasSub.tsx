@@ -1006,7 +1006,7 @@ export default function LembagaKelasSub({
           for (const entry of formalParts) {
             const dashParts = entry.split('-');
             const prefix = dashParts[0].trim();
-            if (isMatchLembagaStrict(l, prefix) || isMatchLembagaStrict(l, entry)) {
+            if (isMatchLembagaStrict(l, prefix, s.gender) || isMatchLembagaStrict(l, entry, s.gender)) {
               return true;
             }
           }
@@ -1015,7 +1015,7 @@ export default function LembagaKelasSub({
           const matchesOtherFormal = otherFormalLembagas.some(otherL => {
             return formalParts.some(entry => {
               const prefix = entry.split('-')[0].trim();
-              return isMatchLembagaStrict(otherL, prefix);
+              return isMatchLembagaStrict(otherL, prefix, s.gender);
             });
           });
           if (matchesOtherFormal) {
@@ -1037,7 +1037,7 @@ export default function LembagaKelasSub({
           const sClasses = s.kelas.split(',').map(x => norm(x)).filter(Boolean);
           
           const hasOtherFormalConflict = otherFormalLembagas.some(otherL => {
-            return sClasses.some(sc => isMatchLembagaStrict(otherL, sc));
+            return sClasses.some(sc => isMatchLembagaStrict(otherL, sc, s.gender));
           });
           if (hasOtherFormalConflict) return false;
 
@@ -1065,7 +1065,7 @@ export default function LembagaKelasSub({
           for (const entry of internalParts) {
             const dashParts = entry.split('-');
             const prefix = dashParts[0].trim();
-            if (isMatchLembagaStrict(l, prefix) || rawLower(prefix) === targetId || isMatchLembagaStrict(l, entry)) {
+            if (isMatchLembagaStrict(l, prefix, s.gender) || rawLower(prefix) === targetId || isMatchLembagaStrict(l, entry, s.gender)) {
               return true;
             }
           }
@@ -1145,7 +1145,7 @@ export default function LembagaKelasSub({
         for (const entry of formalEntries) {
           const dashParts = entry.split('-');
           const prefix = dashParts[0].trim();
-          if (isMatchLembagaStrict(l, prefix)) {
+          if (isMatchLembagaStrict(l, prefix, s.gender)) {
             if (dashParts.length > 1) {
               specificClassForThisLembaga = dashParts.slice(1).join('-').trim();
             } else {
@@ -1161,7 +1161,7 @@ export default function LembagaKelasSub({
         for (const entry of internalEntries) {
           const dashParts = entry.split('-');
           const prefix = dashParts[0].trim();
-          if (isMatchLembagaStrict(l, prefix)) {
+          if (isMatchLembagaStrict(l, prefix, s.gender)) {
             if (dashParts.length > 1) {
               specificClassForThisLembaga = dashParts.slice(1).join('-').trim();
             } else {
@@ -6101,6 +6101,8 @@ export default function LembagaKelasSub({
         <SantriDetailModal
           selectedSantri={selectedSantriForDetail}
           onClose={() => setSelectedSantriForDetail(null)}
+          lembagasList={lembagasList}
+          kelasList={kelasList}
         />
       )}
 
