@@ -46,7 +46,8 @@ import {
   Coins,
   Ban,
   Wallet,
-  HelpCircle
+  HelpCircle,
+  Info
 } from 'lucide-react';
 
 interface Contact {
@@ -88,6 +89,7 @@ export interface CardBudgetItem {
   name: string;
   targetType: 'transfer' | 'send'; // 'transfer' (ke rekening lain) or 'send' (kirim kas / pembayaran)
   targetDetail: string; // e.g. "BSI Syariah 7144219988 a.n Yayasan" or "Dapur Santri Putra & Putri"
+  targetCardId?: string;
   bankName?: string;
   accountNumber?: string;
   accountHolder?: string;
@@ -560,6 +562,17 @@ function formatTickLabel(val: number): string {
   return val.toLocaleString('id-ID');
 }
 
+const CARD_GRADIENT_PALETTES = [
+  { label: 'Biru Samudra', grad: 'from-blue-600 via-blue-700 to-indigo-800' },
+  { label: 'Midnight Navy', grad: 'from-slate-800 via-slate-900 to-blue-950' },
+  { label: 'Hijau Zamrud', grad: 'from-emerald-600 via-teal-700 to-slate-900' },
+  { label: 'Teal Tropis', grad: 'from-teal-600 via-cyan-700 to-blue-900' },
+  { label: 'Indigo Royal', grad: 'from-indigo-600 via-violet-700 to-purple-900' },
+  { label: 'Ungu Elegan', grad: 'from-purple-700 via-indigo-800 to-slate-900' },
+  { label: 'Mawar Rose', grad: 'from-rose-600 via-pink-700 to-slate-900' },
+  { label: 'Emas Amber', grad: 'from-amber-500 via-orange-600 to-stone-900' }
+];
+
 export default function WalletSubView() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeChartMode, setActiveChartMode] = useState<'bar' | 'line'>('bar');
@@ -770,13 +783,10 @@ export default function WalletSubView() {
   const handleSaveEditCard = (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeCard) return;
-    const cleanBalance = Math.max(0, parseInt(editCardBalance.replace(/\D/g, '') || '0', 10));
     setCards(prev => prev.map(c => c.id === activeCard.id ? {
       ...c,
       type: editCardType.trim() || c.type,
-      brand: editCardBrand,
       holder: (editCardHolder.trim() || c.holder).toUpperCase(),
-      balance: cleanBalance,
       gradient: editCardGradient
     } : c));
     setShowEditCardModal(false);
@@ -800,18 +810,24 @@ export default function WalletSubView() {
     showToast(`Kartu "${cardTitle}" berhasil dihapus.`);
   };
 
+  const handleOpenAddCard = () => {
+    setNewCardType('');
+    setNewCardHolder('BENDAHARA PESANTREN');
+    setNewCardGradient('from-blue-600 via-blue-700 to-indigo-800');
+    setShowAddCardModal(true);
+  };
+
   const handleSaveNewCard = (e: React.FormEvent) => {
     e.preventDefault();
-    const parsedBalance = Math.max(0, parseInt(newCardBalance.replace(/\D/g, '') || '0', 10));
     const newId = `c-${Date.now()}`;
     const newCardItem: WalletCard = {
       id: newId,
-      type: newCardType.trim() || 'Kas Operasional',
-      brand: newCardBrand,
-      balance: parsedBalance,
+      type: newCardType.trim() || 'Kas Rekening',
+      brand: 'BSI Syariah',
+      balance: 0,
       holder: (newCardHolder.trim() || 'BENDAHARA PESANTREN').toUpperCase(),
       gradient: newCardGradient,
-      cardNumber: newCardNumber.trim() || '4219 •••• •••• 8899',
+      cardNumber: '4219 •••• •••• ' + Math.floor(1000 + Math.random() * 9000),
       isLocked: false
     };
 
@@ -825,21 +841,6 @@ export default function WalletSubView() {
         { id: `${newId}-4`, name: 'Poskestren', avatar: 'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=120&auto=format&fit=crop&q=80', role: 'Kesehatan' },
       ]
     }));
-    setTransactions(prev => [
-      {
-        id: `tx-${Date.now()}`,
-        cardId: newId,
-        name: `Saldo Awal ${newCardItem.type}`,
-        date: 'Hari Ini',
-        amount: parsedBalance,
-        type: 'income',
-        status: 'Selesai',
-        logoType: 'td',
-        logoColor: 'bg-emerald-600',
-        logoLetter: newCardItem.brand.slice(0, 2).toUpperCase()
-      },
-      ...prev
-    ]);
 
     // Focus immediately on the new card
     setActiveCardIndex(cards.length);
@@ -892,38 +893,39 @@ export default function WalletSubView() {
   const [showAddBudgetModal, setShowAddBudgetModal] = useState(false);
   const [showBudgetLockedNotice, setShowBudgetLockedNotice] = useState(false);
   const [showBudgetNoticeBanner, setShowBudgetNoticeBanner] = useState(true);
-  const [disburseConfirmItem, setDisburseConfirmItem] = useState<CardBudgetItem | null>(null);
+  const [disburseModalItems, setDisburseModalItems] = useState<CardBudgetItem[] | null>(null);
 
   // Form states for Tambah Anggaran
   const [budgetName, setBudgetName] = useState('');
   const [budgetTargetType, setBudgetTargetType] = useState<'transfer' | 'send'>('transfer');
-  // For transfer to other bank account:
-  const [budgetBankName, setBudgetBankName] = useState('BSI Syariah');
-  const [budgetAccountNumber, setBudgetAccountNumber] = useState('');
-  const [budgetAccountHolder, setBudgetAccountHolder] = useState('');
+  // For transfer to other card:
+  const [budgetTargetCardId, setBudgetTargetCardId] = useState('');
   // For send / operasional:
-  const [budgetRecipient, setBudgetRecipient] = useState('Dapur Pesantren');
+  const [budgetRecipient, setBudgetRecipient] = useState('Pengurus Dapur & Konsumsi');
   const [budgetNotes, setBudgetNotes] = useState('');
-  // Allocation method: percentage or amount
-  const [budgetAllocType, setBudgetAllocType] = useState<'percentage' | 'amount'>('percentage');
+  // Allocation method: percentage only
   const [budgetPercentage, setBudgetPercentage] = useState<number>(25);
-  const [budgetAmountInput, setBudgetAmountInput] = useState<string>('');
 
   // Active card's budgeting status & calculations
   const isBudgetActive = !!(activeCard && cardBudgetEnabled[activeCard.id]);
 
   const activeCardBudgets = useMemo(() => {
     if (!activeCard) return [];
-    return cardBudgets.filter(b => b.cardId === activeCard.id);
+    return cardBudgets
+      .filter(b => b.cardId === activeCard.id)
+      .map(b => ({
+        ...b,
+        amount: Math.round((activeCard.balance * b.percentage) / 100)
+      }));
   }, [cardBudgets, activeCard]);
 
   const activeUndisbursedBudgets = useMemo(() => {
-    return activeCardBudgets.filter(b => !b.disbursed);
+    return activeCardBudgets.filter(b => b.amount > 0);
   }, [activeCardBudgets]);
 
   const totalAllocatedAmount = useMemo(() => {
-    return activeUndisbursedBudgets.reduce((sum, b) => sum + b.amount, 0);
-  }, [activeUndisbursedBudgets]);
+    return activeCardBudgets.reduce((sum, b) => sum + b.amount, 0);
+  }, [activeCardBudgets]);
 
   const totalAllocatedPercent = useMemo(() => {
     if (!activeCard || activeCard.balance <= 0) return 0;
@@ -955,34 +957,18 @@ export default function WalletSubView() {
   const handleOpenAddBudget = () => {
     setBudgetName('');
     setBudgetTargetType('transfer');
-    setBudgetBankName('BSI Syariah');
-    setBudgetAccountNumber('');
-    setBudgetAccountHolder('');
-    setBudgetRecipient('Dapur Pesantren');
+    const otherCard = cards.find(c => c.id !== activeCard?.id) || cards[0];
+    setBudgetTargetCardId(otherCard ? otherCard.id : '');
+    setBudgetRecipient('Pengurus Dapur & Konsumsi');
     setBudgetNotes('');
-    setBudgetAllocType('percentage');
     const safeDefaultPercent = Math.max(5, Math.min(25, Math.floor(unallocatedPercent) || 10));
     setBudgetPercentage(safeDefaultPercent);
-    setBudgetAmountInput(activeCard ? Math.round((safeDefaultPercent / 100) * activeCard.balance).toString() : '');
     setShowAddBudgetModal(true);
   };
 
   const handlePercentageChange = (pct: number) => {
     const clamped = Math.max(1, Math.min(100, pct));
     setBudgetPercentage(clamped);
-    if (activeCard && activeCard.balance > 0) {
-      const calculatedAmt = Math.round((clamped / 100) * activeCard.balance);
-      setBudgetAmountInput(calculatedAmt.toString());
-    }
-  };
-
-  const handleAmountChange = (valStr: string) => {
-    setBudgetAmountInput(valStr);
-    const num = parseFloat(valStr) || 0;
-    if (activeCard && activeCard.balance > 0) {
-      const pct = Math.min(100, Math.max(0, (num / activeCard.balance) * 100));
-      setBudgetPercentage(Math.round(pct * 10) / 10);
-    }
   };
 
   // Save budget handler
@@ -995,31 +981,20 @@ export default function WalletSubView() {
       return;
     }
 
-    let allocatedAmt = 0;
-    let allocatedPct = 0;
-
-    if (budgetAllocType === 'percentage') {
-      const pct = Math.max(1, Math.min(100, budgetPercentage));
-      allocatedPct = pct;
-      allocatedAmt = Math.round((pct / 100) * activeCard.balance);
-    } else {
-      const amt = Math.max(0, parseInt(budgetAmountInput.replace(/\D/g, '') || '0', 10));
-      if (amt <= 0) {
-        showToast('Mohon masukkan nominal saldo anggaran yang valid');
-        return;
-      }
-      allocatedAmt = amt;
-      allocatedPct = activeCard.balance > 0 ? Math.round((amt / activeCard.balance) * 1000) / 10 : 0;
-    }
+    const pct = Math.max(1, Math.min(100, budgetPercentage));
+    const allocatedPct = pct;
+    const allocatedAmt = Math.round((pct / 100) * activeCard.balance);
 
     if (allocatedAmt > unallocatedBalance && unallocatedBalance > 0) {
-      showToast(`Alokasi melebihi sisa saldo bebas (${formatMoney(unallocatedBalance)})`);
+      showToast(`Alokasi (${pct}%) melebihi sisa saldo bebas (${formatMoney(unallocatedBalance)})`);
       return;
     }
 
     let targetDesc = '';
     if (budgetTargetType === 'transfer') {
-      targetDesc = `${budgetBankName} • ${budgetAccountNumber || 'Rekening'} a.n ${budgetAccountHolder || 'Penerima'}`;
+      const targetCard = cards.find(c => c.id === budgetTargetCardId);
+      const targetName = targetCard ? `${targetCard.brand} - ${targetCard.type}` : 'Kartu Pesantren';
+      targetDesc = `Transfer ke ${targetName}`;
     } else {
       targetDesc = `${budgetRecipient}${budgetNotes ? ` (${budgetNotes})` : ''}`;
     }
@@ -1030,12 +1005,10 @@ export default function WalletSubView() {
       name: cleanName,
       targetType: budgetTargetType,
       targetDetail: targetDesc,
-      bankName: budgetTargetType === 'transfer' ? budgetBankName : undefined,
-      accountNumber: budgetTargetType === 'transfer' ? budgetAccountNumber : undefined,
-      accountHolder: budgetTargetType === 'transfer' ? budgetAccountHolder : undefined,
+      targetCardId: budgetTargetType === 'transfer' ? budgetTargetCardId : undefined,
       recipientCategory: budgetTargetType === 'send' ? budgetRecipient : undefined,
       notes: budgetNotes,
-      allocationType: budgetAllocType,
+      allocationType: 'percentage',
       percentage: allocatedPct,
       amount: allocatedAmt,
       disbursed: false,
@@ -1044,7 +1017,7 @@ export default function WalletSubView() {
 
     setCardBudgets(prev => [...prev, newBudgetItem]);
     setShowAddBudgetModal(false);
-    showToast(`Pos anggaran "${cleanName}" (${formatMoney(allocatedAmt)}) berhasil ditambahkan.`);
+    showToast(`Anggaran dana "${cleanName}" (${allocatedPct}%) berhasil disimpan.`);
   };
 
   // Delete budget handler
@@ -1053,33 +1026,39 @@ export default function WalletSubView() {
     showToast('Pos anggaran berhasil dihapus.');
   };
 
-  // Prompt disbursement
+  // Prompt disbursement for single item
   const handlePromptDisburse = (item: CardBudgetItem) => {
-    setDisburseConfirmItem(item);
+    setDisburseModalItems([item]);
   };
 
   // Confirm disbursement
-  const handleConfirmDisburse = () => {
-    if (!disburseConfirmItem) return;
-    const item = disburseConfirmItem;
+  const handleConfirmDisburseItems = () => {
+    if (!disburseModalItems || disburseModalItems.length === 0 || !activeCard) return;
+
+    const itemsToProcess = disburseModalItems;
+    const totalAmount = itemsToProcess.reduce((sum, b) => sum + b.amount, 0);
+    const itemIds = new Set(itemsToProcess.map(b => b.id));
+
+    const newBalance = Math.max(0, activeCard.balance - totalAmount);
 
     // Deduct from card balance
     setCards(prev => prev.map(c => {
-      if (c.id === item.cardId) {
+      if (c.id === activeCard.id) {
         return {
           ...c,
-          balance: Math.max(0, c.balance - item.amount)
+          balance: newBalance
         };
       }
       return c;
     }));
 
-    // Mark budget as disbursed
+    // Update budget items: recalculate nominal based on new remaining balance
     setCardBudgets(prev => prev.map(b => {
-      if (b.id === item.id) {
+      if (b.cardId === activeCard.id) {
         return {
           ...b,
-          disbursed: true,
+          amount: Math.round((newBalance * b.percentage) / 100),
+          disbursed: false,
           disbursedAt: 'Hari ini'
         };
       }
@@ -1087,8 +1066,9 @@ export default function WalletSubView() {
     }));
 
     // Record in transaction history
-    const newTx: TransactionItem = {
-      id: `tx-${Date.now()}`,
+    const baseTime = Date.now();
+    const newTxs: TransactionItem[] = itemsToProcess.map((item, idx) => ({
+      id: `tx-${baseTime}-${idx}`,
       cardId: item.cardId,
       name: `Anggaran: ${item.name}`,
       date: 'Hari Ini',
@@ -1098,13 +1078,18 @@ export default function WalletSubView() {
       logoType: item.targetType === 'transfer' ? 'td' : 'cnx',
       logoColor: item.targetType === 'transfer' ? 'bg-indigo-600' : 'bg-blue-600',
       logoLetter: item.name.substring(0, 2).toUpperCase()
-    };
+    }));
 
-    setTransactions(prev => [newTx, ...prev]);
-    setSpendingCurrent(prev => prev + item.amount);
-    setTodayExpensesAdded(prev => prev + item.amount);
-    setDisburseConfirmItem(null);
-    showToast(`Dana pos anggaran "${item.name}" sebesar ${formatMoney(item.amount)} berhasil disalurkan.`);
+    setTransactions(prev => [...newTxs, ...prev]);
+    setSpendingCurrent(prev => prev + totalAmount);
+    setTodayExpensesAdded(prev => prev + totalAmount);
+    setDisburseModalItems(null);
+
+    if (itemsToProcess.length === 1) {
+      showToast(`Dana pos anggaran "${itemsToProcess[0].name}" sebesar ${formatMoney(totalAmount)} berhasil disalurkan.`);
+    } else {
+      showToast(`Sebanyak ${itemsToProcess.length} pos anggaran (${formatMoney(totalAmount)}) berhasil disalurkan.`);
+    }
   };
 
   // Currency Formatter: Always Indonesian Rupiah (Rp)
@@ -1376,22 +1361,25 @@ export default function WalletSubView() {
         <div className={`absolute inset-0 bg-gradient-to-tr ${card.gradient}`} />
 
         <div className="relative z-10 flex flex-col justify-between h-36 sm:h-40">
-          {/* Top row: Lock Badge & Anggaran Aktif Badge & Brand */}
-          <div className="flex items-center justify-between min-h-[22px]">
+          {/* Top row: Lock Badge & Anggaran Aktif Badge & Cardholder Name (Kanan Atas) */}
+          <div className="flex items-center justify-between min-h-[22px] gap-2">
             <div className="flex items-center gap-1.5 flex-wrap">
               {card.isLocked && (
                 <span className="inline-flex items-center gap-1 bg-rose-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow-xs">
                   <Lock className="w-2.5 h-2.5" /> Terkunci
                 </span>
               )}
-              {cardBudgetEnabled[card.id] && (
-                <span className="inline-flex items-center gap-1 bg-amber-500/90 text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow-xs backdrop-blur-xs">
-                  <PieChart className="w-2.5 h-2.5" /> Anggaran Aktif
+              {cardBudgetEnabled[card.id] && !card.isLocked && (
+                <span className="inline-flex items-center justify-center bg-amber-500/90 text-white w-5 h-5 rounded-full shadow-xs backdrop-blur-xs" title="Anggaran Aktif (Transfer manual dikunci)">
+                  <Lock className="w-2.5 h-2.5" />
                 </span>
               )}
             </div>
-            <span className="text-xs sm:text-sm font-black italic tracking-wider shrink-0">
-              {card.brand}
+            <span
+              className="text-[11px] sm:text-xs font-bold uppercase tracking-wider shrink-0 truncate max-w-[160px] sm:max-w-[200px] drop-shadow-xs"
+              title={card.holder}
+            >
+              {card.holder}
             </span>
           </div>
 
@@ -1401,13 +1389,19 @@ export default function WalletSubView() {
             <div className="w-full h-0.5 bg-amber-600/40 rounded-full" />
           </div>
 
-          {/* Nominal Saldo Kartu */}
+          {/* Nominal Saldo Kartu & Nama Rekening */}
           <div className="space-y-0.5">
             <span className="text-[9px] sm:text-[10px] uppercase font-bold tracking-wider text-blue-200/90 block">
               Saldo Kartu
             </span>
             <div className="text-base sm:text-xl font-black font-mono tracking-tight text-white drop-shadow-xs truncate">
               {formatMoney(card.balance)}
+            </div>
+            <div
+              className="text-[11px] sm:text-xs font-semibold text-white/90 truncate tracking-wide drop-shadow-xs"
+              title={card.type}
+            >
+              {card.type}
             </div>
           </div>
         </div>
@@ -2147,7 +2141,7 @@ export default function WalletSubView() {
 
                 <button
                   type="button"
-                  onClick={() => setShowAddCardModal(true)}
+                  onClick={handleOpenAddCard}
                   className="flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -2190,12 +2184,12 @@ export default function WalletSubView() {
 
               {/* Navigation below card on the left side, and View All button on the right (sejajar navigasi kartu) */}
               <div className="flex items-center justify-between mt-3 px-0.5">
-                <div className="flex items-center gap-1 bg-slate-100/90 p-0.5 rounded-lg border border-slate-200/60">
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={handlePrevCard}
                     disabled={cards.length <= 1 || slideDirection !== null}
-                    className="w-7 h-7 rounded-md hover:bg-white text-slate-700 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-all cursor-pointer shadow-2xs"
+                    className="w-8 h-8 rounded-full bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-all cursor-pointer shadow-xs hover:border-slate-300"
                     title="Kartu Sebelumnya"
                   >
                     <ChevronLeft className="w-4 h-4" />
@@ -2204,7 +2198,7 @@ export default function WalletSubView() {
                     type="button"
                     onClick={handleNextCard}
                     disabled={cards.length <= 1 || slideDirection !== null}
-                    className="w-7 h-7 rounded-md hover:bg-white text-slate-700 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-all cursor-pointer shadow-2xs"
+                    className="w-8 h-8 rounded-full bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-all cursor-pointer shadow-xs hover:border-slate-300"
                     title="Kartu Berikutnya"
                   >
                     <ChevronRight className="w-4 h-4" />
@@ -2223,187 +2217,146 @@ export default function WalletSubView() {
                 </button>
               </div>
 
-              {/* Expanded Services & Card Management (Shown when Lainnya is clicked, meluas ke bawah, NO modal) */}
-              <div
-                className={`grid transition-all duration-300 ease-in-out overflow-hidden ${
-                  isMoreExpanded
-                    ? 'grid-rows-[1fr] opacity-100 mt-4 pt-3.5 border-t border-slate-100'
-                    : 'grid-rows-[0fr] opacity-0 mt-0 pt-0'
-                }`}
-              >
-                <div className="overflow-hidden">
-                  <div className="flex items-center justify-between mb-3 px-0.5">
-                    <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                      Layanan & Pengaturan Kartu
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setIsMoreExpanded(false)}
-                      className="text-[10px] font-bold text-slate-400 hover:text-slate-600 cursor-pointer flex items-center gap-0.5"
-                    >
-                      <span>Tutup</span>
-                      <ChevronUp className="w-3 h-3" />
-                    </button>
+              {/* TOMBOL AKSI KARTU: Kirim, Transfer, Terima, Edit, Hapus */}
+              <div className="grid grid-cols-5 gap-2 text-center mt-3.5 pt-3 border-t border-slate-100">
+                {/* 1. Kirim */}
+                <button
+                  type="button"
+                  disabled={isBudgetActive}
+                  onClick={() => {
+                    if (isBudgetActive) return;
+                    if (activeCard.isLocked) {
+                      setCardLockedNoticeModal(true);
+                      return;
+                    }
+                    setSelectedContact(null);
+                    setModalRecipient('');
+                    setShowSendModal(true);
+                  }}
+                  className={`flex flex-col items-center gap-1.5 group transition-all ${
+                    isBudgetActive ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+                  }`}
+                  title={isBudgetActive ? 'Kirim dinonaktifkan saat Anggarkan Dana aktif' : 'Kirim Uang'}
+                >
+                  <div
+                    className={`w-10 h-10 rounded-full border flex items-center justify-center transition-all shadow-2xs ${
+                      isBudgetActive
+                        ? 'bg-slate-100 border-slate-200 text-slate-400'
+                        : 'bg-blue-50 border-blue-100 text-blue-600 group-hover:bg-blue-600 group-hover:text-white group-hover:border-blue-600'
+                    }`}
+                  >
+                    <ArrowUpRight className="w-4 h-4" />
                   </div>
+                  <span className={`text-[11px] font-semibold ${isBudgetActive ? 'text-slate-400' : 'text-slate-600 group-hover:text-blue-600'}`}>
+                    Kirim
+                  </span>
+                </button>
 
-                  <div className="grid grid-cols-4 gap-2 text-center">
-                    {/* 1. Isi Saldo */}
-                    <button
-                      type="button"
-                      onClick={() => setShowTopUpModal(true)}
-                      className="flex flex-col items-center gap-1.5 group cursor-pointer"
-                    >
-                      <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white flex items-center justify-center transition-colors">
-                        <Plus className="w-4 h-4" />
-                      </div>
-                      <span className="text-[11px] font-semibold text-slate-600 group-hover:text-emerald-600">
-                        Isi Saldo
-                      </span>
-                    </button>
-
-                    {/* 2. Kunci / Buka Kunci */}
-                    <button
-                      type="button"
-                      onClick={handleToggleLockCard}
-                      className="flex flex-col items-center gap-1.5 group cursor-pointer"
-                    >
-                      <div
-                        className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-colors ${
-                          activeCard.isLocked
-                            ? 'bg-emerald-50 border-emerald-100 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white'
-                            : 'bg-amber-50 border-amber-100 text-amber-600 group-hover:bg-amber-600 group-hover:text-white'
-                        }`}
-                      >
-                        {activeCard.isLocked ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
-                      </div>
-                      <span className="text-[11px] font-semibold text-slate-600 group-hover:text-amber-600">
-                        {activeCard.isLocked ? 'Buka Kunci' : 'Kunci'}
-                      </span>
-                    </button>
-
-                    {/* 3. Atur Limit */}
-                    <button
-                      type="button"
-                      onClick={() => showToast(`Limit harian kartu ${activeCard.brand}: Rp 25.000.000`)}
-                      className="flex flex-col items-center gap-1.5 group cursor-pointer"
-                    >
-                      <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white flex items-center justify-center transition-colors">
-                        <ShieldCheck className="w-4 h-4" />
-                      </div>
-                      <span className="text-[11px] font-semibold text-slate-600 group-hover:text-indigo-600">
-                        Atur Limit
-                      </span>
-                    </button>
-
-                    {/* 4. Hapus Kartu */}
-                    <button
-                      type="button"
-                      onClick={handleOpenDeleteCard}
-                      className="flex flex-col items-center gap-1.5 group cursor-pointer"
-                    >
-                      <div className="w-10 h-10 rounded-xl bg-rose-50 border border-rose-100 text-rose-600 group-hover:bg-rose-600 group-hover:text-white flex items-center justify-center transition-colors">
-                        <Trash2 className="w-4 h-4" />
-                      </div>
-                      <span className="text-[11px] font-semibold text-slate-600 group-hover:text-rose-600">
-                        Hapus
-                      </span>
-                    </button>
-
-                    {/* 5. Rekening Bank */}
-                    <button
-                      type="button"
-                      onClick={() => showToast(`Rekening terdaftar pada ${activeCard.brand}`)}
-                      className="flex flex-col items-center gap-1.5 group cursor-pointer"
-                    >
-                      <div className="w-10 h-10 rounded-xl bg-slate-100 border border-slate-200 text-slate-700 group-hover:bg-slate-800 group-hover:text-white flex items-center justify-center transition-colors">
-                        <Building className="w-4 h-4" />
-                      </div>
-                      <span className="text-[11px] font-semibold text-slate-600 group-hover:text-slate-800">
-                        Rekening
-                      </span>
-                    </button>
-
-                    {/* 6. Unduh Mutasi */}
-                    <button
-                      type="button"
-                      onClick={() => showToast('Mengunduh mutasi rekening PDF...')}
-                      className="flex flex-col items-center gap-1.5 group cursor-pointer"
-                    >
-                      <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white flex items-center justify-center transition-colors">
-                        <Download className="w-4 h-4" />
-                      </div>
-                      <span className="text-[11px] font-semibold text-slate-600 group-hover:text-emerald-600">
-                        Mutasi PDF
-                      </span>
-                    </button>
-
-                    {/* 7. Statistik */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const el = document.getElementById('transaction-history-section');
-                        el?.scrollIntoView({ behavior: 'smooth' });
-                      }}
-                      className="flex flex-col items-center gap-1.5 group cursor-pointer"
-                    >
-                      <div className="w-10 h-10 rounded-xl bg-purple-50 border border-purple-100 text-purple-600 group-hover:bg-purple-600 group-hover:text-white flex items-center justify-center transition-colors">
-                        <BarChart3 className="w-4 h-4" />
-                      </div>
-                      <span className="text-[11px] font-semibold text-slate-600 group-hover:text-purple-600">
-                        Statistik
-                      </span>
-                    </button>
-
-                    {/* 8. Transfer Manual */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (cardBudgetEnabled[activeCard.id]) {
-                          setShowBudgetLockedNotice(true);
-                        } else {
-                          setShowTransferModal(true);
-                        }
-                      }}
-                      className="flex flex-col items-center gap-1.5 group cursor-pointer"
-                      title={cardBudgetEnabled[activeCard.id] ? 'Transfer manual dikunci karena mode Anggarkan Dana aktif' : 'Transfer manual ke rekening atau kartu lain'}
-                    >
-                      <div
-                        className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-colors ${
-                          cardBudgetEnabled[activeCard.id]
-                            ? 'bg-amber-50 border-amber-200 text-amber-600'
-                            : 'bg-indigo-50 border-indigo-100 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white'
-                        }`}
-                      >
-                        {cardBudgetEnabled[activeCard.id] ? <Lock className="w-4 h-4" /> : <ArrowLeftRight className="w-4 h-4" />}
-                      </div>
-                      <span className={`text-[11px] font-semibold ${
-                        cardBudgetEnabled[activeCard.id] ? 'text-amber-700' : 'text-slate-600 group-hover:text-indigo-600'
-                      }`}>
-                        {cardBudgetEnabled[activeCard.id] ? 'Transfer (Kunci)' : 'Transfer'}
-                      </span>
-                    </button>
+                {/* 2. Transfer */}
+                <button
+                  type="button"
+                  disabled={isBudgetActive}
+                  onClick={() => {
+                    if (isBudgetActive) return;
+                    if (activeCard.isLocked) {
+                      setCardLockedNoticeModal(true);
+                      return;
+                    }
+                    setShowTransferModal(true);
+                  }}
+                  className={`flex flex-col items-center gap-1.5 group transition-all ${
+                    isBudgetActive ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+                  }`}
+                  title={isBudgetActive ? 'Transfer dinonaktifkan saat Anggarkan Dana aktif' : 'Transfer Antar Rekening / Kartu'}
+                >
+                  <div
+                    className={`w-10 h-10 rounded-full border flex items-center justify-center transition-all shadow-2xs ${
+                      isBudgetActive
+                        ? 'bg-slate-100 border-slate-200 text-slate-400'
+                        : 'bg-blue-50 border-blue-100 text-blue-600 group-hover:bg-blue-600 group-hover:text-white group-hover:border-blue-600'
+                    }`}
+                  >
+                    <ArrowLeftRight className="w-4 h-4 -rotate-45" />
                   </div>
-                </div>
+                  <span className={`text-[11px] font-semibold ${isBudgetActive ? 'text-slate-400' : 'text-slate-600 group-hover:text-blue-600'}`}>
+                    Transfer
+                  </span>
+                </button>
+
+                {/* 3. Terima */}
+                <button
+                  type="button"
+                  disabled={isBudgetActive}
+                  onClick={() => {
+                    if (isBudgetActive) return;
+                    setShowReceiveModal(true);
+                  }}
+                  className={`flex flex-col items-center gap-1.5 group transition-all ${
+                    isBudgetActive ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+                  }`}
+                  title={isBudgetActive ? 'Terima dana dinonaktifkan saat Anggarkan Dana aktif' : 'Terima Dana / QRIS'}
+                >
+                  <div
+                    className={`w-10 h-10 rounded-full border flex items-center justify-center transition-all shadow-2xs ${
+                      isBudgetActive
+                        ? 'bg-slate-100 border-slate-200 text-slate-400'
+                        : 'bg-blue-50 border-blue-100 text-blue-600 group-hover:bg-blue-600 group-hover:text-white group-hover:border-blue-600'
+                    }`}
+                  >
+                    <ArrowDownLeft className="w-4 h-4" />
+                  </div>
+                  <span className={`text-[11px] font-semibold ${isBudgetActive ? 'text-slate-400' : 'text-slate-600 group-hover:text-blue-600'}`}>
+                    Terima
+                  </span>
+                </button>
+
+                {/* 4. Edit */}
+                <button
+                  type="button"
+                  onClick={handleOpenEditCard}
+                  className="flex flex-col items-center gap-1.5 group cursor-pointer"
+                  title="Edit Data Kartu"
+                >
+                  <div className="w-10 h-10 rounded-full bg-blue-50 border border-blue-100 text-blue-600 group-hover:bg-blue-600 group-hover:text-white group-hover:border-blue-600 flex items-center justify-center transition-all shadow-2xs">
+                    <Edit2 className="w-4 h-4" />
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-600 group-hover:text-blue-600">
+                    Edit
+                  </span>
+                </button>
+
+                {/* 5. Hapus */}
+                <button
+                  type="button"
+                  onClick={handleOpenDeleteCard}
+                  className="flex flex-col items-center gap-1.5 group cursor-pointer"
+                  title="Hapus Kartu Ini"
+                >
+                  <div className="w-10 h-10 rounded-full bg-blue-50 border border-blue-100 text-blue-600 group-hover:bg-blue-600 group-hover:text-white group-hover:border-blue-600 flex items-center justify-center transition-all shadow-2xs">
+                    <Trash2 className="w-4 h-4" />
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-600 group-hover:text-blue-600">
+                    Hapus
+                  </span>
+                </button>
               </div>
 
               {/* ================================================================= */}
               {/* MODUL ANGGARKAN DANA (PENGGANTI TRANSFER CEPAT) */}
               {/* ================================================================= */}
               <div className="mt-4 pt-4 border-t border-slate-100">
-                {/* Header with Toggle Switch */}
+                {/* Header with Toggle Switch & Info Tooltip */}
                 <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <h3 className="text-xs font-bold text-slate-900">Anggarkan Dana</h3>
-                    {isBudgetActive ? (
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-200/80">
-                        Terkunci
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-500">
-                        Nonaktif
-                      </span>
-                    )}
+                    {/* Tooltip info kecil */}
+                    <div className="relative group cursor-pointer" tabIndex={0} aria-label="Informasi Anggaran Dana">
+                      <Info className="w-3.5 h-3.5 text-slate-400 hover:text-blue-600 transition-colors" />
+                      <div className="absolute left-0 bottom-full mb-1.5 hidden group-hover:block group-focus:block z-30 w-56 p-2 bg-slate-900 text-white text-[11px] font-medium rounded-lg shadow-lg pointer-events-none leading-snug">
+                        Transfer manual dinonaktifkan saat saldo dianggarkan.
+                        <div className="absolute top-full left-3 border-4 border-transparent border-t-slate-900" />
+                      </div>
+                    </div>
                   </div>
 
                   {/* Toggle Button */}
@@ -2423,7 +2376,7 @@ export default function WalletSubView() {
                     >
                       <span
                         aria-hidden="true"
-                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
                           isBudgetActive ? 'translate-x-5' : 'translate-x-0'
                         }`}
                       />
@@ -2432,176 +2385,71 @@ export default function WalletSubView() {
                 </div>
 
                 {/* Content based on Toggle State */}
-                {isBudgetActive ? (
-                  <div className="space-y-3 pt-1 animate-in fade-in duration-200">
-                    {/* Notice Info Banner (Simple & Dismissible) */}
-                    {showBudgetNoticeBanner && (
-                      <div className="px-3 py-2 rounded-xl bg-amber-50/80 border border-amber-200/60 text-amber-900 flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-medium text-amber-900 leading-snug">
-                          Transfer manual dinonaktifkan saat saldo dianggarkan.
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setShowBudgetNoticeBanner(false)}
-                          className="text-amber-600 hover:text-amber-900 p-0.5 rounded-md hover:bg-amber-100 transition-colors cursor-pointer shrink-0"
-                          title="Tutup pemberitahuan"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
+                {isBudgetActive && (
+                  <div className="space-y-2.5 pt-1 animate-in fade-in duration-200">
+                    {/* 1. Daftar Anggaran Yang Dibuat (Tampilan Sesimpel Mungkin) */}
+                    {activeCardBudgets.length > 0 && (
+                      <div className="space-y-1">
+                        <div className="divide-y divide-slate-100 rounded-xl border border-slate-100 bg-slate-50/70 p-1">
+                          {activeCardBudgets.map(item => (
+                            <div
+                              key={item.id}
+                              onClick={() => {
+                                if (item.amount > 0) {
+                                  handlePromptDisburse(item);
+                                } else {
+                                  showToast('Saldo kartu saat ini Rp 0. Tidak ada dana yang dapat disalurkan.');
+                                }
+                              }}
+                              className="flex items-center justify-between py-2 px-2.5 text-xs rounded-lg hover:bg-white cursor-pointer transition-colors"
+                              title="Klik untuk salurkan pos anggaran ini"
+                            >
+                              <div className="flex items-center gap-1.5 truncate pr-2">
+                                <span className="font-medium text-slate-800 truncate" title={item.name}>
+                                  {item.name}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="text-[11px] font-medium text-slate-400">
+                                  {item.percentage}%
+                                </span>
+                                <span className="font-bold text-slate-800">
+                                  {formatMoney(item.amount)}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
 
-                    {/* Allocation Breakdown Bar & Stats */}
-                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
-                      <div className="flex items-center justify-between text-xs mb-1.5">
-                        <div>
-                          <span className="text-[10px] text-slate-400 font-semibold block uppercase tracking-wider">Teralokasi</span>
-                          <span className="font-bold text-slate-800">{formatMoney(totalAllocatedAmount)}</span>
-                          <span className="text-[10px] text-blue-600 font-bold ml-1">({totalAllocatedPercent.toFixed(1)}%)</span>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-[10px] text-slate-400 font-semibold block uppercase tracking-wider">Sisa Bebas</span>
-                          <span className="font-bold text-slate-600">{formatMoney(unallocatedBalance)}</span>
-                          <span className="text-[10px] text-slate-400 font-bold ml-1">({unallocatedPercent.toFixed(1)}%)</span>
-                        </div>
-                      </div>
+                    {/* 2. Tombol Selebar Kontainer: Buat Anggaran (di bawah daftar anggaran dan di atas salurkan dana) */}
+                    <button
+                      type="button"
+                      onClick={handleOpenAddBudget}
+                      className="w-full py-2.5 px-4 rounded-xl text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200/80 transition-all shadow-2xs cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Buat Anggaran</span>
+                    </button>
 
-                      {/* Progress Bar */}
-                      <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden flex">
-                        <div
-                          style={{ width: `${Math.min(100, totalAllocatedPercent)}%` }}
-                          className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full transition-all duration-300"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Action Header for Pos Anggaran */}
-                    <div className="flex items-center justify-between pt-0.5">
-                      <span className="text-xs font-bold text-slate-800">
-                        Daftar Pos Anggaran ({activeCardBudgets.length})
-                      </span>
-                      <button
-                        type="button"
-                        onClick={handleOpenAddBudget}
-                        className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Tambah Anggaran</span>
-                      </button>
-                    </div>
-
-                    {/* List of Budgets */}
-                    <div className="space-y-2 max-h-60 overflow-y-auto pr-0.5">
-                      {activeCardBudgets.map(item => (
-                        <div
-                          key={item.id}
-                          className={`p-2.5 rounded-xl border transition-all ${
-                            item.disbursed
-                              ? 'bg-emerald-50/40 border-emerald-200/60'
-                              : 'bg-white border-slate-200/80 hover:border-slate-300 shadow-2xs'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="text-xs font-bold text-slate-900 truncate">{item.name}</span>
-                                {item.targetType === 'transfer' ? (
-                                  <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-1.5 py-0.2 rounded-md">
-                                    <ArrowLeftRight className="w-2.5 h-2.5" /> Transfer Rekening
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-1.5 py-0.2 rounded-md">
-                                    <Send className="w-2.5 h-2.5" /> Kirim Kas
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-[10px] text-slate-500 font-medium truncate mt-0.5">
-                                {item.targetDetail}
-                              </p>
-                              <div className="flex items-center gap-2 mt-1">
-                                <span className="text-xs font-extrabold text-blue-600">
-                                  {formatMoney(item.amount)}
-                                </span>
-                                <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.2 rounded">
-                                  {item.percentage}%
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Actions */}
-                            <div className="flex items-center gap-1 shrink-0 pt-0.5">
-                              {item.disbursed ? (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100/80 px-2 py-1 rounded-lg">
-                                  <CheckCircle2 className="w-3 h-3" /> Tersalurkan
-                                </span>
-                              ) : (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => handlePromptDisburse(item)}
-                                    className="inline-flex items-center gap-1 text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2.5 py-1 rounded-lg transition-colors cursor-pointer shadow-xs"
-                                    title="Salurkan dana pos anggaran ini"
-                                  >
-                                    <ArrowUpRight className="w-3 h-3" />
-                                    <span>Salurkan</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteBudget(item.id)}
-                                    className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                                    title="Hapus pos anggaran"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-
-                      {activeCardBudgets.length === 0 && (
-                        <div className="p-4 rounded-xl border border-dashed border-slate-200 text-center">
-                          <p className="text-xs text-slate-400 font-medium">Belum ada pos anggaran pada kartu ini.</p>
-                          <button
-                            type="button"
-                            onClick={handleOpenAddBudget}
-                            className="mt-2 text-xs font-bold text-blue-600 hover:underline inline-flex items-center gap-1 cursor-pointer"
-                          >
-                            <Plus className="w-3 h-3" /> Buat Pos Anggaran Pertama
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  /* State when Anggarkan Dana is OFF */
-                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100 text-center space-y-2.5 animate-in fade-in duration-200">
-                    <div className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded-full">
-                      <Check className="w-3 h-3" /> Transfer Manual Diizinkan
-                    </div>
-                    <p className="text-xs text-slate-500 font-medium max-w-xs mx-auto leading-relaxed">
-                      Aktifkan <strong>Anggarkan Dana</strong> untuk mengunci saldo ke pos-pos pengeluaran tertentu (seperti operasional dapur, gaji, atau kas pembangunan) agar kartu tidak bisa ditransfer manual tanpa rencana.
-                    </p>
-                    <div className="pt-1 flex items-center justify-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleToggleBudgetMode}
-                        className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-xs cursor-pointer inline-flex items-center gap-1.5"
-                      >
-                        <PieChart className="w-3.5 h-3.5" />
-                        <span>Aktifkan Anggarkan Dana</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setShowTransferModal(true)}
-                        className="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-200/80 bg-slate-100 transition-colors cursor-pointer inline-flex items-center gap-1"
-                        title="Uji Transfer Manual saat mode anggaran OFF"
-                      >
-                        <ArrowLeftRight className="w-3 h-3" />
-                        <span>Transfer Manual</span>
-                      </button>
-                    </div>
+                    {/* 3. Tombol Selebar Kontainer: Salurkan Dana (di bawah buat anggaran) */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (activeCardBudgets.length === 0) {
+                          showToast('Belum ada anggaran yang dibuat. Silakan klik "Buat Anggaran" terlebih dahulu.');
+                        } else if (activeCard.balance <= 0) {
+                          showToast('Saldo kartu saat ini Rp 0. Tidak ada dana yang dapat disalurkan.');
+                        } else {
+                          setDisburseModalItems(activeCardBudgets);
+                        }
+                      }}
+                      className="w-full py-2.5 px-4 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition-all shadow-xs hover:shadow-md cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <ArrowUpRight className="w-4 h-4" />
+                      <span>Salurkan Dana</span>
+                    </button>
                   </div>
                 )}
               </div>
@@ -2686,13 +2534,13 @@ export default function WalletSubView() {
       {/* ========================================================================= */}
 
       {/* SEND MONEY / QUICK PAYMENT MODAL */}
-      {showSendModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in">
+      {showSendModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                  <Send className="w-4 h-4" />
+                  <ArrowUpRight className="w-4 h-4" />
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-slate-900">Kirim Pembayaran</h3>
@@ -2702,7 +2550,7 @@ export default function WalletSubView() {
               <button
                 type="button"
                 onClick={() => { setShowSendModal(false); setSelectedContact(null); }}
-                className="text-slate-400 hover:text-slate-700 p-1"
+                className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -2764,14 +2612,14 @@ export default function WalletSubView() {
                 <button
                   type="button"
                   onClick={() => setShowSendModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={cardBudgetEnabled[activeCard.id]}
-                  className={`px-5 py-2 rounded-xl text-xs font-bold text-white transition-colors ${
+                  className={`px-5 py-2 rounded-xl text-xs font-bold text-white transition-colors cursor-pointer ${
                     cardBudgetEnabled[activeCard.id]
                       ? 'bg-slate-300 cursor-not-allowed'
                       : 'bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-600/20'
@@ -2782,17 +2630,18 @@ export default function WalletSubView() {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* TRANSFER ANTAR KARTU / REKENING MODAL */}
-      {showTransferModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in">
+      {showTransferModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                  <ArrowLeftRight className="w-4 h-4" />
+                  <ArrowLeftRight className="w-4 h-4 -rotate-45" />
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-slate-900">Transfer Dana</h3>
@@ -2904,12 +2753,13 @@ export default function WalletSubView() {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* RECEIVE / TERIMA DANA MODAL */}
-      {showReceiveModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in">
+      {showReceiveModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
@@ -3001,12 +2851,13 @@ export default function WalletSubView() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* TOP UP MODAL */}
-      {showTopUpModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in">
+      {showTopUpModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
@@ -3021,7 +2872,7 @@ export default function WalletSubView() {
               <button
                 type="button"
                 onClick={() => setShowTopUpModal(false)}
-                className="text-slate-400 hover:text-slate-700 p-1"
+                className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -3061,25 +2912,26 @@ export default function WalletSubView() {
                 <button
                   type="button"
                   onClick={() => setShowTopUpModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-600/20"
+                  className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-600/20 cursor-pointer"
                 >
                   Konfirmasi Isi Saldo
                 </button>
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ADD GOAL MODAL */}
-      {showAddGoalModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in">
+      {showAddGoalModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
@@ -3094,7 +2946,7 @@ export default function WalletSubView() {
               <button
                 type="button"
                 onClick={() => setShowAddGoalModal(false)}
-                className="text-slate-400 hover:text-slate-700 p-1"
+                className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -3145,7 +2997,7 @@ export default function WalletSubView() {
                   <button
                     type="button"
                     onClick={() => setNewGoalCategory('this_year')}
-                    className={`py-1.5 px-3 rounded-xl text-xs font-bold border transition-all ${
+                    className={`py-1.5 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
                       newGoalCategory === 'this_year'
                         ? 'border-blue-600 bg-blue-50 text-blue-700'
                         : 'border-slate-200 text-slate-600'
@@ -3156,7 +3008,7 @@ export default function WalletSubView() {
                   <button
                     type="button"
                     onClick={() => setNewGoalCategory('long_term')}
-                    className={`py-1.5 px-3 rounded-xl text-xs font-bold border transition-all ${
+                    className={`py-1.5 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
                       newGoalCategory === 'long_term'
                         ? 'border-blue-600 bg-blue-50 text-blue-700'
                         : 'border-slate-200 text-slate-600'
@@ -3171,25 +3023,26 @@ export default function WalletSubView() {
                 <button
                   type="button"
                   onClick={() => setShowAddGoalModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-600/20"
+                  className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-600/20 cursor-pointer"
                 >
                   Simpan Target
                 </button>
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* EDIT SPENDING LIMIT MODAL */}
-      {showEditLimitModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in">
+      {showEditLimitModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
@@ -3204,7 +3057,7 @@ export default function WalletSubView() {
               <button
                 type="button"
                 onClick={() => setShowEditLimitModal(false)}
-                className="text-slate-400 hover:text-slate-700 p-1"
+                className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -3228,14 +3081,15 @@ export default function WalletSubView() {
                 <button
                   type="button"
                   onClick={() => setShowEditLimitModal(false)}
-                  className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-600/20"
+                  className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-600/20 cursor-pointer"
                 >
                   Simpan Perubahan
                 </button>
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
 
@@ -3243,8 +3097,8 @@ export default function WalletSubView() {
       {/* ======================================================== */}
       {/* EDIT CARD MODAL */}
       {/* ======================================================== */}
-      {showEditCardModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in">
+      {showEditCardModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
@@ -3267,20 +3121,25 @@ export default function WalletSubView() {
 
             {/* Live Mini Preview */}
             <div className={`mt-3 p-3.5 rounded-xl bg-gradient-to-r ${editCardGradient || activeCard.gradient} text-white shadow-xs`}>
-              <div className="flex justify-end items-center text-xs font-bold">
-                <span className="italic">{editCardBrand || activeCard.brand}</span>
+              <div className="flex justify-between items-center text-xs font-bold gap-2">
+                <span className="text-[9px] uppercase font-bold tracking-wider text-blue-200/90 block">
+                  Saldo Kartu
+                </span>
+                <span className="text-[10px] font-bold uppercase tracking-wider truncate max-w-[170px]" title={editCardHolder || activeCard.holder}>
+                  {editCardHolder || activeCard.holder}
+                </span>
               </div>
-              <div className="mt-2 text-base font-black font-mono">
-                {formatMoney(parseInt(editCardBalance.replace(/\D/g, '') || '0', 10))}
+              <div className="mt-1 text-base font-black font-mono">
+                {formatMoney(activeCard.balance)}
               </div>
-              <div className="mt-1 text-[10px] opacity-80 uppercase tracking-wider">
-                {editCardHolder || activeCard.holder}
+              <div className="mt-0.5 text-xs font-semibold text-white/90 truncate tracking-wide">
+                {editCardType || activeCard.type}
               </div>
             </div>
 
             <form onSubmit={handleSaveEditCard} className="space-y-3 pt-3">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Nama / Tipe Rekening</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Nama Rekening</label>
                 <input
                   type="text"
                   value={editCardType}
@@ -3289,23 +3148,6 @@ export default function WalletSubView() {
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
                   required
                 />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Bank / Penerbit</label>
-                <select
-                  value={editCardBrand}
-                  onChange={e => setEditCardBrand(e.target.value)}
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 bg-white"
-                >
-                  <option value="BSI Syariah">BSI Syariah</option>
-                  <option value="Bank Muamalat">Bank Muamalat</option>
-                  <option value="BCA Syariah">BCA Syariah</option>
-                  <option value="Mandiri Syariah">Mandiri Syariah</option>
-                  <option value="GPN Syariah">GPN Syariah</option>
-                  <option value="VISA">VISA</option>
-                  <option value="Mastercard">Mastercard</option>
-                </select>
               </div>
 
               <div>
@@ -3319,37 +3161,16 @@ export default function WalletSubView() {
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Saldo Rekening (Rp)</label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">Rp</span>
-                  <input
-                    type="number"
-                    value={editCardBalance}
-                    onChange={e => setEditCardBalance(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 text-xs font-bold rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
-                    required
-                  />
-                </div>
-              </div>
-
               {/* Color Theme Swatches */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">Warna Kartu</label>
-                <div className="flex items-center gap-2">
-                  {[
-                    { label: 'Blue', grad: 'from-blue-600 via-blue-700 to-indigo-800' },
-                    { label: 'Dark Navy', grad: 'from-slate-800 via-slate-900 to-blue-950' },
-                    { label: 'Emerald', grad: 'from-emerald-700 via-teal-800 to-slate-900' },
-                    { label: 'Purple', grad: 'from-purple-700 via-indigo-800 to-slate-900' },
-                    { label: 'Rose', grad: 'from-rose-600 via-pink-700 to-slate-900' },
-                    { label: 'Amber', grad: 'from-amber-600 via-orange-700 to-stone-900' }
-                  ].map(swatch => (
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">Pilih Warna Kartu</label>
+                <div className="grid grid-cols-8 gap-1.5 sm:gap-2 w-full pt-1">
+                  {CARD_GRADIENT_PALETTES.map(swatch => (
                     <button
                       key={swatch.label}
                       type="button"
                       onClick={() => setEditCardGradient(swatch.grad)}
-                      className={`w-7 h-7 rounded-full bg-gradient-to-tr ${swatch.grad} cursor-pointer transition-transform ${
+                      className={`w-7 h-7 sm:w-8 sm:h-8 mx-auto rounded-full bg-gradient-to-tr ${swatch.grad} cursor-pointer transition-all ${
                         editCardGradient === swatch.grad ? 'ring-2 ring-offset-2 ring-blue-600 scale-110' : 'hover:scale-105'
                       }`}
                       title={swatch.label}
@@ -3375,14 +3196,15 @@ export default function WalletSubView() {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ======================================================== */}
       {/* DELETE CARD CONFIRMATION MODAL */}
       {/* ======================================================== */}
-      {showDeleteCardModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in">
+      {showDeleteCardModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
@@ -3423,14 +3245,15 @@ export default function WalletSubView() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ======================================================== */}
       {/* ADD CARD MODAL (Dynamic & Fully Functional) */}
       {/* ======================================================== */}
-      {showAddCardModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in">
+      {showAddCardModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
@@ -3453,20 +3276,25 @@ export default function WalletSubView() {
 
             {/* Live Interactive Preview */}
             <div className={`mt-3 p-3.5 rounded-xl bg-gradient-to-r ${newCardGradient} text-white shadow-xs`}>
-              <div className="flex justify-end items-center text-xs font-bold">
-                <span className="italic">{newCardBrand}</span>
+              <div className="flex justify-between items-center text-xs font-bold gap-2">
+                <span className="text-[9px] uppercase font-bold tracking-wider text-blue-200/90 block">
+                  Saldo Kartu
+                </span>
+                <span className="text-[10px] font-bold uppercase tracking-wider truncate max-w-[170px]" title={newCardHolder || 'BENDAHARA PESANTREN'}>
+                  {newCardHolder || 'BENDAHARA PESANTREN'}
+                </span>
               </div>
-              <div className="mt-2 text-base font-black font-mono">
-                {formatMoney(parseInt(newCardBalance.replace(/\D/g, '') || '0', 10))}
+              <div className="mt-1 text-base font-black font-mono">
+                Rp 0
               </div>
-              <div className="mt-1 text-[10px] opacity-80 uppercase tracking-wider">
-                {newCardHolder || 'BENDAHARA PESANTREN'}
+              <div className="mt-0.5 text-xs font-semibold text-white/90 truncate tracking-wide">
+                {newCardType || 'Kas Rekening Baru'}
               </div>
             </div>
 
             <form onSubmit={handleSaveNewCard} className="space-y-3 pt-3">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Nama / Tipe Rekening</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Nama Rekening</label>
                 <input
                   type="text"
                   value={newCardType}
@@ -3475,37 +3303,6 @@ export default function WalletSubView() {
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
                   required
                 />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Bank Penerbit</label>
-                  <select
-                    value={newCardBrand}
-                    onChange={e => setNewCardBrand(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 bg-white"
-                  >
-                    <option value="BSI Syariah">BSI Syariah</option>
-                    <option value="Bank Muamalat">Bank Muamalat</option>
-                    <option value="BCA Syariah">BCA Syariah</option>
-                    <option value="Mandiri Syariah">Mandiri Syariah</option>
-                    <option value="GPN Syariah">GPN Syariah</option>
-                    <option value="VISA">VISA</option>
-                    <option value="Mastercard">Mastercard</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Saldo Awal (Rp)</label>
-                  <input
-                    type="number"
-                    value={newCardBalance}
-                    onChange={e => setNewCardBalance(e.target.value)}
-                    placeholder="5000000"
-                    className="w-full px-3 py-2 text-xs font-bold rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
-                    required
-                  />
-                </div>
               </div>
 
               <div>
@@ -3519,34 +3316,16 @@ export default function WalletSubView() {
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Nomor Kartu (Opsional)</label>
-                <input
-                  type="text"
-                  value={newCardNumber}
-                  onChange={e => setNewCardNumber(e.target.value)}
-                  placeholder="4219 8812 3456 7890"
-                  className="w-full px-3 py-2 text-xs font-mono rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
-                />
-              </div>
-
               {/* Color Theme Swatches */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">Pilih Warna Kartu</label>
-                <div className="flex items-center gap-2">
-                  {[
-                    { label: 'Blue', grad: 'from-blue-600 via-blue-700 to-indigo-800' },
-                    { label: 'Dark Navy', grad: 'from-slate-800 via-slate-900 to-blue-950' },
-                    { label: 'Emerald', grad: 'from-emerald-700 via-teal-800 to-slate-900' },
-                    { label: 'Purple', grad: 'from-purple-700 via-indigo-800 to-slate-900' },
-                    { label: 'Rose', grad: 'from-rose-600 via-pink-700 to-slate-900' },
-                    { label: 'Amber', grad: 'from-amber-600 via-orange-700 to-stone-900' }
-                  ].map(swatch => (
+                <div className="grid grid-cols-8 gap-1.5 sm:gap-2 w-full pt-1">
+                  {CARD_GRADIENT_PALETTES.map(swatch => (
                     <button
                       key={swatch.label}
                       type="button"
                       onClick={() => setNewCardGradient(swatch.grad)}
-                      className={`w-7 h-7 rounded-full bg-gradient-to-tr ${swatch.grad} cursor-pointer transition-transform ${
+                      className={`w-7 h-7 sm:w-8 sm:h-8 mx-auto rounded-full bg-gradient-to-tr ${swatch.grad} cursor-pointer transition-all ${
                         newCardGradient === swatch.grad ? 'ring-2 ring-offset-2 ring-blue-600 scale-110' : 'hover:scale-105'
                       }`}
                       title={swatch.label}
@@ -3572,14 +3351,15 @@ export default function WalletSubView() {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ======================================================== */}
       {/* CARD LOCKED WARNING MODAL */}
       {/* ======================================================== */}
-      {cardLockedNoticeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in">
+      {cardLockedNoticeModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
@@ -3616,7 +3396,8 @@ export default function WalletSubView() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ======================================================== */}
@@ -3698,8 +3479,8 @@ export default function WalletSubView() {
                     <div className={`absolute inset-0 bg-gradient-to-tr ${card.gradient}`} />
 
                     <div className="relative z-10 flex flex-col justify-between h-44">
-                      {/* Top row: Status Badge & Brand */}
-                      <div className="flex items-center justify-between">
+                      {/* Top row: Status Badge & Cardholder Name (Kanan Atas) */}
+                      <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {isCurrent && (
                             <span className="inline-flex items-center gap-1 bg-white text-slate-900 text-[10px] font-extrabold px-2 py-0.5 rounded-full shadow-xs">
@@ -3711,14 +3492,14 @@ export default function WalletSubView() {
                               <Lock className="w-2.5 h-2.5" /> Terkunci
                             </span>
                           )}
-                          {cardBudgetEnabled[card.id] && (
-                            <span className="inline-flex items-center gap-1 bg-amber-500/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs">
-                              <PieChart className="w-2.5 h-2.5" /> Anggaran
+                          {cardBudgetEnabled[card.id] && !card.isLocked && (
+                            <span className="inline-flex items-center justify-center bg-amber-500/90 text-white w-5 h-5 rounded-full shadow-xs" title="Anggaran Aktif">
+                              <Lock className="w-2.5 h-2.5" />
                             </span>
                           )}
                         </div>
-                        <span className="text-sm font-black italic tracking-wider">
-                          {card.brand}
+                        <span className="text-xs sm:text-sm font-bold uppercase tracking-wider truncate max-w-[170px]" title={card.holder}>
+                          {card.holder}
                         </span>
                       </div>
 
@@ -3728,7 +3509,7 @@ export default function WalletSubView() {
                         <div className="w-full h-0.5 bg-amber-600/40 rounded-full" />
                       </div>
 
-                      {/* Nominal Saldo Kartu */}
+                      {/* Nominal Saldo Kartu & Nama Rekening */}
                       <div className="space-y-0.5">
                         <span className="text-[10px] uppercase font-bold tracking-wider text-blue-200/90 block">
                           Saldo Kartu
@@ -3736,11 +3517,15 @@ export default function WalletSubView() {
                         <div className="text-xl font-black font-mono tracking-tight text-white drop-shadow-xs truncate">
                           {formatMoney(card.balance)}
                         </div>
+                        <div className="text-xs font-semibold text-white/90 truncate tracking-wide" title={card.type}>
+                          {card.type}
+                        </div>
                       </div>
 
-                      {/* Bottom row: Cardholder only */}
+                      {/* Bottom row: Brand & Card Number */}
                       <div className="flex items-center justify-between text-xs font-semibold text-blue-100">
-                        <span className="uppercase tracking-wider truncate">{card.holder}</span>
+                        <span className="text-[11px] opacity-80">{card.brand}</span>
+                        <span className="font-mono text-[11px] tracking-wider opacity-90">{card.cardNumber}</span>
                       </div>
                     </div>
                   </div>
@@ -3782,24 +3567,14 @@ export default function WalletSubView() {
       )}
 
       {/* ======================================================== */}
-      {/* MODAL TAMBAH ANGGARAN BARU */}
+      {/* MODAL TAMBAH ANGGARAN BARU (PORTAL AGAR SIDEBAR IKUT GELAP) */}
       {/* ======================================================== */}
-      {showAddBudgetModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
+      {showAddBudgetModal && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto">
             {/* Header */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shadow-2xs">
-                  <PieChart className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">Tambah Pos Anggaran</h3>
-                  <p className="text-[11px] text-slate-500">
-                    Kartu {activeCard.brand} ({activeCard.type})
-                  </p>
-                </div>
-              </div>
+              <h3 className="text-sm font-bold text-slate-900">Buat Anggaran Dana</h3>
               <button
                 type="button"
                 onClick={() => setShowAddBudgetModal(false)}
@@ -3809,25 +3584,11 @@ export default function WalletSubView() {
               </button>
             </div>
 
-            {/* Sisa Saldo Kartu Info Banner */}
-            <div className="mt-3 p-3 rounded-xl bg-gradient-to-r from-slate-50 to-blue-50/40 border border-blue-100/80 flex items-center justify-between">
-              <div>
-                <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Total Saldo Kartu</span>
-                <span className="text-xs font-bold text-slate-800">{formatMoney(activeCard.balance)}</span>
-              </div>
-              <div className="text-right">
-                <span className="text-[10px] uppercase font-bold text-blue-600 block tracking-wider">Sisa Saldo Bebas</span>
-                <span className="text-xs font-black text-blue-700">
-                  {formatMoney(unallocatedBalance)} <span className="text-[10px] font-bold text-slate-500">({unallocatedPercent.toFixed(1)}%)</span>
-                </span>
-              </div>
-            </div>
-
             <form onSubmit={handleSaveBudget} className="space-y-4 pt-3.5">
-              {/* 1. Nama Anggaran */}
+              {/* 1. Nama Anggaran (Tanpa shortcut sugesti) */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Nama Pos Anggaran <span className="text-rose-500">*</span>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Nama Anggaran <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -3837,123 +3598,68 @@ export default function WalletSubView() {
                   onChange={e => setBudgetName(e.target.value)}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 font-medium"
                 />
-                {/* Quick Chips */}
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {[
-                    'Dapur & Konsumsi',
-                    'Gaji / Honor Asatidz',
-                    'Renovasi Asrama',
-                    'Listrik & Air',
-                    'Kesehatan & Poskestren',
-                    'Sarpras Belajar'
-                  ].map(chip => (
-                    <button
-                      key={chip}
-                      type="button"
-                      onClick={() => setBudgetName(chip)}
-                      className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-600 transition-colors cursor-pointer"
-                    >
-                      + {chip}
-                    </button>
-                  ))}
-                </div>
               </div>
 
-              {/* 2. Tujuan Anggaran (Transfer ke Rekening Lain ATAU Kirim Kas) */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Tujuan Alokasi Dana <span className="text-rose-500">*</span>
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setBudgetTargetType('transfer')}
-                    className={`p-2.5 rounded-xl border text-left flex items-center gap-2.5 transition-all cursor-pointer ${
-                      budgetTargetType === 'transfer'
-                        ? 'border-blue-600 bg-blue-50/70 text-blue-900 ring-1 ring-blue-500'
-                        : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
-                    }`}
-                  >
-                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                      budgetTargetType === 'transfer' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
-                    }`}>
-                      <ArrowLeftRight className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-bold leading-tight">Transfer ke Rekening Lain</div>
-                      <div className="text-[10px] text-slate-500 leading-tight">Kirim ke nomor rekening bank</div>
-                    </div>
-                  </button>
+              {/* Kolom Nama Kartu dan Besaran Alokasi Satu Kontainer */}
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/90 space-y-3.5">
+                {/* Pilihan Tujuan Alokasi */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Tujuan Alokasi Dana <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-2 mb-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setBudgetTargetType('transfer')}
+                      className={`p-2 rounded-xl border text-left flex items-center gap-2 transition-all cursor-pointer ${
+                        budgetTargetType === 'transfer'
+                          ? 'border-blue-600 bg-blue-50 text-blue-900 ring-1 ring-blue-500'
+                          : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
+                      }`}
+                    >
+                      <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${
+                        budgetTargetType === 'transfer' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        <ArrowLeftRight className="w-3 h-3" />
+                      </div>
+                      <div className="text-xs font-bold leading-tight truncate">Transfer Rekening</div>
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={() => setBudgetTargetType('send')}
-                    className={`p-2.5 rounded-xl border text-left flex items-center gap-2.5 transition-all cursor-pointer ${
-                      budgetTargetType === 'send'
-                        ? 'border-emerald-600 bg-emerald-50/70 text-emerald-900 ring-1 ring-emerald-500'
-                        : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
-                    }`}
-                  >
-                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                      budgetTargetType === 'send' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'
-                    }`}>
-                      <Send className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-bold leading-tight">Kirim Kas / Pos</div>
-                      <div className="text-[10px] text-slate-500 leading-tight">Alokasi divisi atau pengurus</div>
-                    </div>
-                  </button>
-                </div>
+                    <button
+                      type="button"
+                      onClick={() => setBudgetTargetType('send')}
+                      className={`p-2 rounded-xl border text-left flex items-center gap-2 transition-all cursor-pointer ${
+                        budgetTargetType === 'send'
+                          ? 'border-emerald-600 bg-emerald-50 text-emerald-900 ring-1 ring-emerald-500'
+                          : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
+                      }`}
+                    >
+                      <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${
+                        budgetTargetType === 'send' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        <Send className="w-3 h-3" />
+                      </div>
+                      <div className="text-xs font-bold leading-tight truncate">Kirim Kas / Pos</div>
+                    </button>
+                  </div>
 
-                {/* Form fields based on Target Type */}
-                <div className="mt-2.5 p-3 rounded-xl bg-slate-50/80 border border-slate-100 space-y-2.5">
                   {budgetTargetType === 'transfer' ? (
-                    <>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Bank Tujuan</label>
-                          <select
-                            value={budgetBankName}
-                            onChange={e => setBudgetBankName(e.target.value)}
-                            className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-white font-medium focus:ring-1 focus:ring-blue-500 focus:outline-none"
-                          >
-                            <option value="Bank Syariah Indonesia (BSI)">Bank Syariah Indonesia (BSI)</option>
-                            <option value="Bank Muamalat">Bank Muamalat</option>
-                            <option value="BCA Syariah">BCA Syariah</option>
-                            <option value="Bank Mandiri">Bank Mandiri</option>
-                            <option value="Bank BRI">Bank BRI</option>
-                            <option value="Bank BNI">Bank BNI</option>
-                            <option value="Bank Jatim Syariah">Bank Jatim Syariah</option>
-                            <option value="Rekening Bank Lainnya">Rekening Bank Lainnya</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Nomor Rekening</label>
-                          <input
-                            type="text"
-                            required
-                            placeholder="Contoh: 7129381928"
-                            value={budgetAccountNumber}
-                            onChange={e => setBudgetAccountNumber(e.target.value)}
-                            className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-white font-medium focus:ring-1 focus:ring-blue-500 focus:outline-none"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">Atas Nama Penerima Rekening</label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="Contoh: Yayasan Pesantren / CV Mitra Niaga"
-                          value={budgetAccountHolder}
-                          onChange={e => setBudgetAccountHolder(e.target.value)}
-                          className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-white font-medium focus:ring-1 focus:ring-blue-500 focus:outline-none"
-                        />
-                      </div>
-                    </>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Nama Kartu</label>
+                      <select
+                        value={budgetTargetCardId}
+                        onChange={e => setBudgetTargetCardId(e.target.value)}
+                        className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-200 bg-white font-medium focus:ring-1 focus:ring-blue-500 focus:outline-none cursor-pointer"
+                      >
+                        {cards.map(c => (
+                          <option key={c.id} value={c.id} disabled={c.id === activeCard?.id}>
+                            {c.brand} - {c.type} {c.id === activeCard?.id ? '(Kartu Saat Ini)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   ) : (
-                    <>
+                    <div className="space-y-2">
                       <div>
                         <label className="block text-[11px] font-bold text-slate-700 mb-1">Divisi / Penanggung Jawab Penerima</label>
                         <select
@@ -3979,161 +3685,44 @@ export default function WalletSubView() {
                           className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-white font-medium focus:ring-1 focus:ring-emerald-500 focus:outline-none"
                         />
                       </div>
-                    </>
+                    </div>
                   )}
                 </div>
-              </div>
 
-              {/* 3. Jumlah Saldo / Persentase Input Mode */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-bold text-slate-700">
-                    Besaran Alokasi Saldo <span className="text-rose-500">*</span>
+                {/* Divider halus di dalam kontainer yang sama */}
+                <div className="border-t border-slate-200/70" />
+
+                {/* Besaran Alokasi (%) di dalam kontainer yang sama (tanpa shortcut) */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Besaran Alokasi (%) <span className="text-rose-500">*</span>
                   </label>
-                  {/* Toggle Input Mode */}
-                  <div className="inline-flex rounded-lg bg-slate-100 p-0.5">
-                    <button
-                      type="button"
-                      onClick={() => setBudgetAllocType('percentage')}
-                      className={`px-2 py-0.5 text-[11px] font-bold rounded-md transition-colors cursor-pointer flex items-center gap-1 ${
-                        budgetAllocType === 'percentage'
-                          ? 'bg-white text-blue-600 shadow-2xs'
-                          : 'text-slate-500 hover:text-slate-800'
-                      }`}
-                    >
-                      <Percent className="w-3 h-3" />
-                      <span>Persentase (%)</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setBudgetAllocType('amount')}
-                      className={`px-2 py-0.5 text-[11px] font-bold rounded-md transition-colors cursor-pointer flex items-center gap-1 ${
-                        budgetAllocType === 'amount'
-                          ? 'bg-white text-blue-600 shadow-2xs'
-                          : 'text-slate-500 hover:text-slate-800'
-                      }`}
-                    >
-                      <Coins className="w-3 h-3" />
-                      <span>Nominal (Rp)</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Input Fields depending on Mode */}
-                {budgetAllocType === 'percentage' ? (
-                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-2">
-                    <div className="flex items-center gap-3">
-                      <div className="relative w-32 shrink-0">
-                        <input
-                          type="number"
-                          min={1}
-                          max={100}
-                          step={1}
-                          value={budgetPercentage}
-                          onChange={e => handlePercentageChange(parseFloat(e.target.value) || 0)}
-                          className="w-full pl-3 pr-8 py-2 text-sm font-bold text-slate-900 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 bg-white"
-                        />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">%</span>
-                      </div>
-
-                      {/* Range slider */}
+                  <div className="flex items-center gap-3">
+                    <div className="relative w-24 shrink-0">
                       <input
-                        type="range"
+                        type="number"
                         min={1}
                         max={100}
                         step={1}
                         value={budgetPercentage}
                         onChange={e => handlePercentageChange(parseFloat(e.target.value) || 0)}
-                        className="flex-1 accent-blue-600 cursor-pointer"
+                        className="w-full pl-3 pr-6 py-2 text-xs font-bold text-slate-900 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
                       />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">%</span>
                     </div>
 
-                    {/* Quick Percentage Presets */}
-                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      {[10, 20, 25, 35, 50].map(pct => (
-                        <button
-                          key={pct}
-                          type="button"
-                          onClick={() => handlePercentageChange(pct)}
-                          className={`text-[10px] font-bold px-2 py-1 rounded-lg border transition-colors cursor-pointer ${
-                            budgetPercentage === pct
-                              ? 'bg-blue-600 text-white border-blue-600'
-                              : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-                          }`}
-                        >
-                          {pct}%
-                        </button>
-                      ))}
-                      {unallocatedPercent > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => handlePercentageChange(Math.min(100, Math.round(unallocatedPercent)))}
-                          className="text-[10px] font-bold px-2 py-1 rounded-lg border bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer"
-                        >
-                          Sisa Bebas ({Math.min(100, Math.round(unallocatedPercent))}%)
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Calculation Preview */}
-                    <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200/60">
-                      <span className="text-slate-500">Nominal Ekuivalen:</span>
-                      <span className="font-extrabold text-blue-700">
-                        {formatMoney(Math.round((budgetPercentage / 100) * activeCard.balance))}
-                      </span>
-                    </div>
+                    {/* Range slider */}
+                    <input
+                      type="range"
+                      min={1}
+                      max={100}
+                      step={1}
+                      value={budgetPercentage}
+                      onChange={e => handlePercentageChange(parseFloat(e.target.value) || 0)}
+                      className="flex-1 accent-blue-600 cursor-pointer"
+                    />
                   </div>
-                ) : (
-                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-2">
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">Rp</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={activeCard.balance}
-                        step={50000}
-                        required
-                        placeholder="0"
-                        value={budgetAmountInput}
-                        onChange={e => handleAmountChange(e.target.value)}
-                        className="w-full pl-9 pr-3 py-2 text-sm font-bold text-slate-900 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 bg-white"
-                      />
-                    </div>
-
-                    {/* Quick Amount Presets */}
-                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      {[500000, 1000000, 2500000, 5000000].map(amt => (
-                        <button
-                          key={amt}
-                          type="button"
-                          onClick={() => handleAmountChange(amt.toString())}
-                          className="text-[10px] font-bold px-2 py-1 rounded-lg border bg-white text-slate-600 border-slate-200 hover:bg-slate-100 transition-colors cursor-pointer"
-                        >
-                          {amt >= 1000000 ? `${amt / 1000000} Jt` : `${amt / 1000} Rb`}
-                        </button>
-                      ))}
-                      {unallocatedBalance > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => handleAmountChange(unallocatedBalance.toString())}
-                          className="text-[10px] font-bold px-2 py-1 rounded-lg border bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer"
-                        >
-                          Maksimal Bebas
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Calculation Preview */}
-                    <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200/60">
-                      <span className="text-slate-500">Persentase Ekuivalen:</span>
-                      <span className="font-extrabold text-blue-700">
-                        {activeCard.balance > 0
-                          ? ((parseFloat(budgetAmountInput) || 0) / activeCard.balance * 100).toFixed(1)
-                          : 0}%
-                      </span>
-                    </div>
-                  </div>
-                )}
+                </div>
               </div>
 
               {/* Action Buttons */}
@@ -4150,79 +3739,88 @@ export default function WalletSubView() {
                   className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-600/20 transition-all cursor-pointer inline-flex items-center gap-1.5"
                 >
                   <Check className="w-3.5 h-3.5" />
-                  <span>Simpan Pos Anggaran</span>
+                  <span>Simpan Anggaran Dana</span>
                 </button>
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ======================================================== */}
-      {/* MODAL KONFIRMASI PENYALURAN DANA ANGGARAN */}
+      {/* MODAL SALURKAN ANGGARAN (PORTAL AGAR SIDEBAR IKUT GELAP) */}
       {/* ======================================================== */}
-      {disburseConfirmItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in">
+      {disburseModalItems && disburseModalItems.length > 0 && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200">
-            <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
-              <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shrink-0">
-                <ArrowUpRight className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">Salurkan Pos Anggaran</h3>
-                <p className="text-[11px] text-slate-500">Pencairan resmi dari saldo kartu</p>
-              </div>
-            </div>
-
-            <div className="py-4 space-y-3">
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-2">
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Pos Anggaran</span>
-                  <span className="text-xs font-bold text-slate-800">{disburseConfirmItem.name}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Tujuan Penyaluran</span>
-                  <span className="text-xs font-semibold text-slate-700">{disburseConfirmItem.targetDetail}</span>
-                </div>
-                <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
-                  <span className="text-[10px] uppercase font-bold text-slate-400">Nominal Penyaluran</span>
-                  <span className="text-sm font-extrabold text-blue-600">
-                    {formatMoney(disburseConfirmItem.amount)}
-                  </span>
-                </div>
-              </div>
-
-              <div className="p-2.5 rounded-xl bg-blue-50/80 border border-blue-100 text-[11px] text-blue-900 leading-snug">
-                Setelah disalurkan, saldo kartu <strong>{activeCard.brand}</strong> akan terpotong dan transaksi akan dicatat pada riwayat transaksi pengeluaran.
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-900">Salurkan Anggaran</h3>
               <button
                 type="button"
-                onClick={() => setDisburseConfirmItem(null)}
+                onClick={() => setDisburseModalItems(null)}
+                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Isi Modal: Daftar Rincian Anggaran & Total Anggaran Disalurkan */}
+            <div className="py-3.5 space-y-3">
+              {/* Daftar Rincian Anggaran */}
+              <div className="divide-y divide-slate-100 rounded-xl bg-slate-50 border border-slate-200/80 p-2.5 max-h-52 overflow-y-auto space-y-1.5">
+                {disburseModalItems.map(item => (
+                  <div key={item.id} className="pt-1.5 first:pt-0 flex items-center justify-between text-xs">
+                    <div className="truncate pr-2">
+                      <div className="font-bold text-slate-800 truncate">{item.name}</div>
+                      <div className="text-[10px] text-slate-500 truncate">{item.targetDetail}</div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="font-bold text-slate-900">{formatMoney(item.amount)}</div>
+                      <div className="text-[10px] text-slate-400 font-medium">{item.percentage}%</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Total Anggaran Disalurkan */}
+              <div className="flex items-center justify-between px-1 py-1.5 border-t border-slate-100">
+                <span className="text-xs font-bold text-slate-700">Total Anggaran Disalurkan</span>
+                <span className="text-sm font-extrabold text-blue-600">
+                  {formatMoney(disburseModalItems.reduce((sum, b) => sum + b.amount, 0))}
+                </span>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setDisburseModalItems(null)}
                 className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 Batal
               </button>
               <button
                 type="button"
-                onClick={handleConfirmDisburse}
+                onClick={handleConfirmDisburseItems}
                 className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-600/20 transition-all cursor-pointer inline-flex items-center gap-1.5"
               >
                 <Check className="w-3.5 h-3.5" />
-                <span>Konfirmasi & Salurkan</span>
+                <span>Salurkan Sekarang</span>
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ======================================================== */}
       {/* MODAL PERINGATAN KUNCI ANGGARAN (BUDGET LOCKED NOTICE) */}
       {/* ======================================================== */}
-      {showBudgetLockedNotice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in">
+      {showBudgetLockedNotice && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200">
             <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
               <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center shrink-0">
@@ -4275,7 +3873,8 @@ export default function WalletSubView() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ======================================================== */}
