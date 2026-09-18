@@ -891,6 +891,7 @@ export default function WalletSubView() {
   // Budget modals
   const [showAddBudgetModal, setShowAddBudgetModal] = useState(false);
   const [showBudgetLockedNotice, setShowBudgetLockedNotice] = useState(false);
+  const [showBudgetNoticeBanner, setShowBudgetNoticeBanner] = useState(true);
   const [disburseConfirmItem, setDisburseConfirmItem] = useState<CardBudgetItem | null>(null);
 
   // Form states for Tambah Anggaran
@@ -938,6 +939,7 @@ export default function WalletSubView() {
     setCardBudgetEnabled(prev => {
       const nextState = !prev[activeCard.id];
       if (nextState) {
+        setShowBudgetNoticeBanner(true);
         showToast(`Mode Anggarkan Dana diaktifkan untuk ${activeCard.type}. Transfer manual kartu dikunci.`);
       } else {
         showToast(`Mode Anggarkan Dana dinonaktifkan untuk ${activeCard.type}. Transfer manual kembali aktif.`);
@@ -2188,45 +2190,25 @@ export default function WalletSubView() {
 
               {/* Navigation below card on the left side, and View All button on the right (sejajar navigasi kartu) */}
               <div className="flex items-center justify-between mt-3 px-0.5">
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1 bg-slate-100/90 p-0.5 rounded-lg border border-slate-200/60">
-                    <button
-                      type="button"
-                      onClick={handlePrevCard}
-                      disabled={cards.length <= 1 || slideDirection !== null}
-                      className="w-7 h-7 rounded-md hover:bg-white text-slate-700 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-all cursor-pointer shadow-2xs"
-                      title="Kartu Sebelumnya"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-                    <span className="text-[11px] font-bold text-slate-600 px-1 min-w-8 text-center">
-                      {activeCardIndex + 1}/{cards.length}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleNextCard}
-                      disabled={cards.length <= 1 || slideDirection !== null}
-                      className="w-7 h-7 rounded-md hover:bg-white text-slate-700 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-all cursor-pointer shadow-2xs"
-                      title="Kartu Berikutnya"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  {/* Dot Indicators */}
-                  <div className="hidden sm:flex items-center gap-1 px-1">
-                    {cards.map((c, idx) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => setActiveCardIndex(idx)}
-                        className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${
-                          idx === activeCardIndex ? 'w-4 bg-blue-600' : 'w-1.5 bg-slate-300 hover:bg-slate-400'
-                        }`}
-                        title={c.brand}
-                      />
-                    ))}
-                  </div>
+                <div className="flex items-center gap-1 bg-slate-100/90 p-0.5 rounded-lg border border-slate-200/60">
+                  <button
+                    type="button"
+                    onClick={handlePrevCard}
+                    disabled={cards.length <= 1 || slideDirection !== null}
+                    className="w-7 h-7 rounded-md hover:bg-white text-slate-700 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-all cursor-pointer shadow-2xs"
+                    title="Kartu Sebelumnya"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleNextCard}
+                    disabled={cards.length <= 1 || slideDirection !== null}
+                    className="w-7 h-7 rounded-md hover:bg-white text-slate-700 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-all cursor-pointer shadow-2xs"
+                    title="Kartu Berikutnya"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
                 </div>
 
                 {/* Tombol View All sejajar navigasi kartu */}
@@ -2238,9 +2220,6 @@ export default function WalletSubView() {
                 >
                   <CreditCard className="w-3.5 h-3.5" />
                   <span>View All</span>
-                  <span className="text-[10px] bg-blue-200/70 text-blue-800 font-bold px-1.5 py-0.2 rounded-full">
-                    {cards.length}
-                  </span>
                 </button>
               </div>
 
@@ -2415,34 +2394,16 @@ export default function WalletSubView() {
                 {/* Header with Toggle Switch */}
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <div
-                      className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
-                        isBudgetActive
-                          ? 'bg-amber-50 text-amber-600 border border-amber-200/80 shadow-2xs'
-                          : 'bg-slate-100 text-slate-500'
-                      }`}
-                    >
-                      <PieChart className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <h3 className="text-xs font-bold text-slate-900">Anggarkan Dana</h3>
-                        {isBudgetActive ? (
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-200/80 flex items-center gap-1">
-                            <Lock className="w-2.5 h-2.5" /> Terkunci
-                          </span>
-                        ) : (
-                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-500">
-                            Nonaktif
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[10px] text-slate-400 font-medium leading-none mt-0.5">
-                        {isBudgetActive
-                          ? 'Transfer manual dikunci • Alokasi pos dana aktif'
-                          : 'Kunci alokasi saldo ke pos khusus pesantren'}
-                      </p>
-                    </div>
+                    <h3 className="text-xs font-bold text-slate-900">Anggarkan Dana</h3>
+                    {isBudgetActive ? (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-200/80">
+                        Terkunci
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-500">
+                        Nonaktif
+                      </span>
+                    )}
                   </div>
 
                   {/* Toggle Button */}
@@ -2473,13 +2434,22 @@ export default function WalletSubView() {
                 {/* Content based on Toggle State */}
                 {isBudgetActive ? (
                   <div className="space-y-3 pt-1 animate-in fade-in duration-200">
-                    {/* Notice Info Banner */}
-                    <div className="p-2.5 rounded-xl bg-amber-50/90 border border-amber-200/70 text-amber-900 flex items-start gap-2">
-                      <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
-                      <div className="text-[11px] leading-snug">
-                        <span className="font-bold">Transfer Manual Dinonaktifkan:</span> Saldo kartu dikunci khusus untuk pos anggaran terencana. Salurkan dana melalui tombol <em>Salurkan</em> pada pos anggaran di bawah.
+                    {/* Notice Info Banner (Simple & Dismissible) */}
+                    {showBudgetNoticeBanner && (
+                      <div className="px-3 py-2 rounded-xl bg-amber-50/80 border border-amber-200/60 text-amber-900 flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-medium text-amber-900 leading-snug">
+                          Transfer manual dinonaktifkan saat saldo dianggarkan.
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowBudgetNoticeBanner(false)}
+                          className="text-amber-600 hover:text-amber-900 p-0.5 rounded-md hover:bg-amber-100 transition-colors cursor-pointer shrink-0"
+                          title="Tutup pemberitahuan"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
                       </div>
-                    </div>
+                    )}
 
                     {/* Allocation Breakdown Bar & Stats */}
                     <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
