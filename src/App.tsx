@@ -7,8 +7,10 @@ import Sidebar from './components/Sidebar';
 import HelpModal from './components/HelpModal';
 import AdminChatDrawer from './components/AdminChatDrawer';
 import NotificationsPage from './components/NotificationsPage';
+import NotificationPermissionModal from './components/NotificationPermissionModal';
 import OfflineStatusBanner from './components/OfflineStatusBanner';
 import { fetchTableData, insertTableRow, insertTableRows, updateTableRow, deleteTableRow, subscribeRealtimeChanges, snakeToCamel, safeLocalStorageSetItem } from './lib/api';
+import { sendDeviceNotification } from './lib/notificationHelper';
 
 // Views (Lazy-loaded for code splitting and instant initial page load)
 const HomeView = React.lazy(() => import('./components/HomeView'));
@@ -153,7 +155,20 @@ export default function App() {
   const [hasMentionNotification, setHasMentionNotification] = useState<boolean>(false);
   const [headerSelectedSantri, setHeaderSelectedSantri] = useState<Santri | null>(null);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState<boolean>(false);
+  const [showNotifPermissionModal, setShowNotifPermissionModal] = useState<boolean>(false);
   const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState<boolean>(true);
+
+  // Auto prompt for notification permission on initial load if not yet decided and not dismissed
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'default' && !localStorage.getItem('smartsantri_notif_modal_dismissed')) {
+        const timer = setTimeout(() => {
+          setShowNotifPermissionModal(true);
+        }, 2200);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, []);
 
   // Measure physical rendered width of #main-app-container to handle responsive adaptations
   const mainAppContainerRef = useRef<HTMLDivElement>(null);
@@ -350,7 +365,13 @@ export default function App() {
 
         const msgList = Array.isArray(rawObj) ? rawObj : [rawObj];
         msgList.forEach((msgObj: any) => {
-          if (msgObj && (msgObj.message || msgObj.text)) {
+          if (!msgObj) return;
+          const senderUsername = (msgObj.sender_username || msgObj.sender || '').trim().toLowerCase();
+          const senderPrefix = senderUsername.split('@')[0];
+          const isFromMe = senderUsername && (senderUsername === currentUsername || (currentPrefix && senderPrefix === currentPrefix));
+
+          // Mention detector
+          if (msgObj.message || msgObj.text) {
             const lowerMsg = String(msgObj.message || msgObj.text).toLowerCase();
             const isMentioned = lowerMsg.includes(`@${currentRole}`) || 
                                 lowerMsg.includes(`@${currentUsername}`) || 
@@ -360,6 +381,26 @@ export default function App() {
               setHasMentionNotification(true);
             }
           }
+
+          // Trigger Device / Browser Notification with sound and vibration if message is from another user
+          if (!isFromMe) {
+            const senderName = msgObj.sender_name || msgObj.sender || 'Admin Pesantren';
+            const role = msgObj.sender_role || msgObj.senderRole || '';
+            const rawText = msgObj.message || msgObj.text || (msgObj.attachment ? `[Lampiran: ${msgObj.attachment.name || 'File'}]` : 'Mengirim pesan baru.');
+            const cleanText = String(rawText).length > 120 ? String(rawText).slice(0, 117) + '...' : String(rawText);
+
+            // Send notification to device
+            sendDeviceNotification({
+              title: `${senderName}${role ? ` (${role})` : ''}`,
+              body: cleanText,
+              icon: msgObj.sender_avatar || msgObj.senderAvatar || '/logo.svg',
+              tag: `smartsantri-chat-${msgObj.id || Date.now()}`,
+              url: '/',
+              onClick: () => {
+                setIsChatOpen(true);
+              }
+            });
+          }
         });
 
         if (!isChatOpen) {
@@ -367,7 +408,23 @@ export default function App() {
         }
       }
     });
-    return () => unsubscribe();
+
+    // Listen for service worker notification clicks
+    const handleSwMessage = (e: MessageEvent) => {
+      if (e.data && e.data.type === 'NOTIFICATION_CLICKED') {
+        setIsChatOpen(true);
+      }
+    };
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', handleSwMessage);
+    }
+
+    return () => {
+      unsubscribe();
+      if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+      }
+    };
   }, [isChatOpen]);
 
   const handleChangeModule = (mod: string, subTab?: string) => {
@@ -411,9 +468,27 @@ export default function App() {
     }
   };
 
-  // Unified States for Pesantren Records (Full online Supabase state)
-  const [santriList, setSantriList] = useState<Santri[]>([]);
-  const [bendaharaList, setBendaharaList] = useState<BendaharaRecord[]>([]);
+  // Unified States for Pesantren Records (Full online Supabase state with Instant Local Cache Warm-up)
+  const [santriList, setSantriList] = useState<Santri[]>(() => {
+    try {
+      const cached = localStorage.getItem('smartsantri_santriList');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  });
+  const [bendaharaList, setBendaharaList] = useState<BendaharaRecord[]>(() => {
+    try {
+      const cached = localStorage.getItem('smartsantri_bendaharaList');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  });
   const [keamananList, setKeamananList] = useState<KeamananRecord[]>(() => {
     try {
       const cached = localStorage.getItem('smartsantri_keamananList');
@@ -424,8 +499,26 @@ export default function App() {
     } catch (e) {}
     return [];
   });
-  const [humasList, setHumasList] = useState<HumasAgenda[]>([]);
-  const [pendidikanList, setPendidikanList] = useState<KelasPendidikan[]>([]);
+  const [humasList, setHumasList] = useState<HumasAgenda[]>(() => {
+    try {
+      const cached = localStorage.getItem('smartsantri_humasList');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  });
+  const [pendidikanList, setPendidikanList] = useState<KelasPendidikan[]>(() => {
+    try {
+      const cached = localStorage.getItem('smartsantri_pendidikanList');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  });
   
   // Track loaded modules to fetch on demand
   const loadedModulesRef = React.useRef<Set<string>>(new Set());
@@ -521,8 +614,16 @@ export default function App() {
             .map((op: { data: Santri; timestamp: number }) => op.data);
 
           const resultList = [...brandNewPending, ...updatedCleaned];
-          if (JSON.stringify(prev) === JSON.stringify(resultList)) {
+          if (prev === resultList) {
             return prev;
+          }
+          if (prev.length === resultList.length && prev.length > 0) {
+            // Fast equality heuristic to avoid freezing the main thread with 4.3MB JSON.stringify
+            if (prev[0]?.id === resultList[0]?.id && 
+                prev[prev.length - 1]?.id === resultList[resultList.length - 1]?.id &&
+                (prev[0] as any)?.updated_at === (resultList[0] as any)?.updated_at) {
+              return prev;
+            }
           }
           return resultList;
         });
@@ -1415,6 +1516,12 @@ export default function App() {
 
       {/* Offline & Sync Status Banner */}
       <OfflineStatusBanner />
+
+      {/* Global Notification Permission Pop-up Dialog */}
+      <NotificationPermissionModal
+        isOpen={showNotifPermissionModal}
+        onClose={() => setShowNotifPermissionModal(false)}
+      />
 
     </div>
   );

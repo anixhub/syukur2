@@ -1,4 +1,5 @@
 import express from "express";
+import compression from "compression";
 import mysql from "mysql2/promise";
 import dotenv from "dotenv";
 import path from "path";
@@ -65,6 +66,12 @@ const findAndLoadEnv = () => {
 findAndLoadEnv();
 
 const app = express();
+
+// High-speed HTTP Gzip/Deflate compression for fast JSON payloads (cuts 4.3MB santri data to ~400KB)
+app.use(compression({
+  threshold: 1024,
+  level: 6
+}));
 
 // WebSocket Instance Management for Realtime Broadcasting
 let wssInstance: WebSocketServer | null = null;
@@ -1082,6 +1089,33 @@ async function ensurePermissionsTablesAndSeed(pool: mysql.Pool | null) {
   }
 }
 
+// High-speed batch column checking helper to eliminate slow sequential ALTER TABLE calls
+async function ensureTableColumnsFast(
+  pool: mysql.Pool,
+  table: string,
+  createTableSql: string,
+  requiredCols: string[]
+) {
+  try {
+    await withTimeout(pool.query(createTableSql), 2000);
+    const [rows]: any = await withTimeout(pool.query(`SHOW COLUMNS FROM \`${table}\``), 2000);
+    if (Array.isArray(rows)) {
+      const existingCols = new Set(rows.map((r: any) => r.Field));
+      tableColumnsCache.set(table, existingCols);
+
+      const missing = requiredCols.filter(col => !existingCols.has(col));
+      if (missing.length > 0) {
+        const addClauses = missing.map(col => `ADD COLUMN \`${col}\` LONGTEXT NULL`).join(", ");
+        await withTimeout(pool.query(`ALTER TABLE \`${table}\` ${addClauses}`), 3000);
+        missing.forEach(col => existingCols.add(col));
+      }
+    }
+  } catch (e: any) {
+    handleMySQLError(e);
+    console.warn(`Could not fast-ensure table/columns for ${table}:`, e.message);
+  }
+}
+
 async function ensureTableExists(table: string, pool: mysql.Pool) {
   if (ensuredTablesSet.has(table)) {
     return;
@@ -1098,381 +1132,281 @@ async function ensureTableExists(table: string, pool: mysql.Pool) {
       return;
     }
     if (table === 'admin_chat') {
-      try {
-        await pool.query(`
-          CREATE TABLE IF NOT EXISTS \`admin_chat\` (
-            \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
-            \`sender_username\` VARCHAR(100) NULL,
-            \`sender_name\` VARCHAR(100) NULL,
-            \`sender_role\` VARCHAR(50) NULL,
-            \`recipient_role\` VARCHAR(50) NULL,
-            \`message\` LONGTEXT NULL,
-            \`sender\` VARCHAR(100) NULL,
-            \`senderRole\` VARCHAR(50) NULL,
-            \`senderAvatar\` TEXT NULL,
-            \`text\` LONGTEXT NULL,
-            \`timestamp\` VARCHAR(100) NULL,
-            \`channel\` VARCHAR(50) DEFAULT 'semua',
-            \`mentions\` LONGTEXT NULL,
-            \`attachment\` LONGTEXT NULL,
-            \`reply_to\` LONGTEXT NULL,
-            \`replyTo\` LONGTEXT NULL,
-            \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
-          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        `);
-
-        const columnsToEnsure = ['sender_username', 'sender_name', 'sender_role', 'sender_avatar', 'recipient_role', 'message', 'text', 'timestamp', 'sender', 'senderRole', 'reply_to'];
-        for (const col of columnsToEnsure) {
-          try {
-            await pool.query(`ALTER TABLE \`admin_chat\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
-          } catch (e) {}
-        }
-      } catch (e: any) {
-        handleMySQLError(e);
-        console.warn("Could not auto-create admin_chat table:", e.message);
-      }
+      const createSql = `
+        CREATE TABLE IF NOT EXISTS \`admin_chat\` (
+          \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
+          \`sender_username\` VARCHAR(100) NULL,
+          \`sender_name\` VARCHAR(100) NULL,
+          \`sender_role\` VARCHAR(50) NULL,
+          \`recipient_role\` VARCHAR(50) NULL,
+          \`message\` LONGTEXT NULL,
+          \`sender\` VARCHAR(100) NULL,
+          \`senderRole\` VARCHAR(50) NULL,
+          \`senderAvatar\` TEXT NULL,
+          \`text\` LONGTEXT NULL,
+          \`timestamp\` VARCHAR(100) NULL,
+          \`channel\` VARCHAR(50) DEFAULT 'semua',
+          \`mentions\` LONGTEXT NULL,
+          \`attachment\` LONGTEXT NULL,
+          \`reply_to\` LONGTEXT NULL,
+          \`replyTo\` LONGTEXT NULL,
+          \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `;
+      const cols = ['sender_username', 'sender_name', 'sender_role', 'sender_avatar', 'recipient_role', 'message', 'text', 'timestamp', 'sender', 'senderRole', 'reply_to'];
+      await ensureTableColumnsFast(pool, 'admin_chat', createSql, cols);
     } else if (table === 'lembaga') {
-      try {
-        await pool.query(`
-          CREATE TABLE IF NOT EXISTS \`lembaga\` (
-            \`id\` VARCHAR(50) NOT NULL PRIMARY KEY,
-            \`nama\` VARCHAR(100) NOT NULL,
-            \`kode\` VARCHAR(20) NOT NULL,
-            \`deskripsi\` LONGTEXT NULL,
-            \`gender\` VARCHAR(10) DEFAULT 'Putra',
-            \`jenis\` VARCHAR(20) DEFAULT 'Internal',
-            \`logo\` LONGTEXT NULL,
-            \`nomor_statistik\` VARCHAR(50) NULL,
-            \`npsn\` VARCHAR(50) NULL,
-            \`ta_mulai_tanggal\` INT DEFAULT 1,
-            \`ta_mulai_bulan\` INT DEFAULT 7,
-            \`ta_selesai_tanggal\` INT DEFAULT 30,
-            \`ta_selesai_bulan\` INT DEFAULT 6,
-            \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
-          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        `);
-        const cols = ['logo', 'deskripsi', 'kode', 'gender', 'jenis', 'nomor_statistik', 'nomorStatistik', 'npsn', 'ta_mulai_tanggal', 'ta_mulai_bulan', 'ta_selesai_tanggal', 'ta_selesai_bulan'];
-        for (const col of cols) {
-          try {
-            await pool.query(`ALTER TABLE \`lembaga\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
-          } catch (e) {}
-        }
-      } catch (e: any) {
-        handleMySQLError(e);
-        console.warn("Could not auto-create lembaga table:", e.message);
-      }
+      const createSql = `
+        CREATE TABLE IF NOT EXISTS \`lembaga\` (
+          \`id\` VARCHAR(50) NOT NULL PRIMARY KEY,
+          \`nama\` VARCHAR(100) NOT NULL,
+          \`kode\` VARCHAR(20) NOT NULL,
+          \`deskripsi\` LONGTEXT NULL,
+          \`gender\` VARCHAR(10) DEFAULT 'Putra',
+          \`jenis\` VARCHAR(20) DEFAULT 'Internal',
+          \`logo\` LONGTEXT NULL,
+          \`nomor_statistik\` VARCHAR(50) NULL,
+          \`npsn\` VARCHAR(50) NULL,
+          \`ta_mulai_tanggal\` INT DEFAULT 1,
+          \`ta_mulai_bulan\` INT DEFAULT 7,
+          \`ta_selesai_tanggal\` INT DEFAULT 30,
+          \`ta_selesai_bulan\` INT DEFAULT 6,
+          \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `;
+      const cols = ['logo', 'deskripsi', 'kode', 'gender', 'jenis', 'nomor_statistik', 'nomorStatistik', 'npsn', 'ta_mulai_tanggal', 'ta_mulai_bulan', 'ta_selesai_tanggal', 'ta_selesai_bulan'];
+      await ensureTableColumnsFast(pool, 'lembaga', createSql, cols);
     } else if (table === 'kelas') {
-      try {
-        await pool.query(`
-          CREATE TABLE IF NOT EXISTS \`kelas\` (
-            \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
-            \`lembaga_id\` VARCHAR(50) NOT NULL,
-            \`nama\` VARCHAR(100) NOT NULL,
-            \`wali_kelas\` LONGTEXT NULL,
-            \`tingkatan\` VARCHAR(50) DEFAULT 'Lainnya',
-            \`kapasitas\` INT DEFAULT 40,
-            \`is_default\` TINYINT(1) DEFAULT 0,
-            \`batas_usia_hari\` INT DEFAULT 1,
-            \`batas_usia_bulan\` INT DEFAULT 7,
-            \`batas_usia_umur_min\` INT DEFAULT 0,
-            \`batas_usia_umur_max\` INT DEFAULT 99,
-            \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
-          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        `);
-        const cols = ['wali_kelas', 'tingkatan', 'kapasitas', 'is_default', 'isDefault', 'batas_usia_hari', 'batas_usia_bulan', 'batas_usia_umur_min', 'batas_usia_umur_max'];
-        for (const col of cols) {
-          try {
-            await pool.query(`ALTER TABLE \`kelas\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
-          } catch (e) {}
-        }
-        try {
-          await pool.query(`ALTER TABLE \`kelas\` MODIFY COLUMN \`wali_kelas\` LONGTEXT NULL`);
-        } catch (e) {}
-      } catch (e: any) {
-        handleMySQLError(e);
-        console.warn("Could not auto-create kelas table:", e.message);
-      }
+      const createSql = `
+        CREATE TABLE IF NOT EXISTS \`kelas\` (
+          \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
+          \`lembaga_id\` VARCHAR(50) NOT NULL,
+          \`nama\` VARCHAR(100) NOT NULL,
+          \`wali_kelas\` LONGTEXT NULL,
+          \`tingkatan\` VARCHAR(50) DEFAULT 'Lainnya',
+          \`kapasitas\` INT DEFAULT 40,
+          \`is_default\` TINYINT(1) DEFAULT 0,
+          \`batas_usia_hari\` INT DEFAULT 1,
+          \`batas_usia_bulan\` INT DEFAULT 7,
+          \`batas_usia_umur_min\` INT DEFAULT 0,
+          \`batas_usia_umur_max\` INT DEFAULT 99,
+          \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `;
+      const cols = ['wali_kelas', 'tingkatan', 'kapasitas', 'is_default', 'isDefault', 'batas_usia_hari', 'batas_usia_bulan', 'batas_usia_umur_min', 'batas_usia_umur_max'];
+      await ensureTableColumnsFast(pool, 'kelas', createSql, cols);
     } else if (table === 'tugas' || table === 'tasks') {
-      try {
-        await pool.query(`
-          CREATE TABLE IF NOT EXISTS \`tugas\` (
-            \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
-            \`user_id\` VARCHAR(100) NULL,
-            \`username\` VARCHAR(100) NULL,
-            \`text\` LONGTEXT NULL,
-            \`judul\` VARCHAR(255) NULL,
-            \`description\` LONGTEXT NULL,
-            \`deskripsi\` LONGTEXT NULL,
-            \`status\` VARCHAR(50) DEFAULT 'pending',
-            \`deadline_timestamp\` BIGINT NULL,
-            \`deadlineTimestamp\` BIGINT NULL,
-            \`color\` VARCHAR(50) DEFAULT 'yellow',
-            \`prioritas\` VARCHAR(20) DEFAULT 'Sedang',
-            \`tenggat_waktu\` DATE NULL,
-            \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP,
-            \`createdAt\` BIGINT NULL,
-            \`updated_at\` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        `);
-        await pool.query(`
-          CREATE TABLE IF NOT EXISTS \`tasks\` (
-            \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
-            \`user_id\` VARCHAR(100) NULL,
-            \`username\` VARCHAR(100) NULL,
-            \`text\` LONGTEXT NULL,
-            \`title\` VARCHAR(255) NULL,
-            \`description\` LONGTEXT NULL,
-            \`status\` VARCHAR(50) DEFAULT 'pending',
-            \`deadline_timestamp\` BIGINT NULL,
-            \`color\` VARCHAR(50) DEFAULT 'yellow',
-            \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP,
-            \`updated_at\` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        `);
-
-        const tugasCols = ['text', 'description', 'deadline_timestamp', 'deadlineTimestamp', 'color', 'createdAt', 'user_id', 'username', 'judul', 'deskripsi', 'status', 'prioritas', 'tenggat_waktu'];
-        for (const col of tugasCols) {
-          try {
-            await pool.query(`ALTER TABLE \`tugas\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
-          } catch (e) {}
-          try {
-            await pool.query(`ALTER TABLE \`tasks\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
-          } catch (e) {}
-        }
-      } catch (e: any) {
-        handleMySQLError(e);
-        console.warn("Could not auto-create tasks/tugas table:", e.message);
-      }
+      const createTugasSql = `
+        CREATE TABLE IF NOT EXISTS \`tugas\` (
+          \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
+          \`user_id\` VARCHAR(100) NULL,
+          \`username\` VARCHAR(100) NULL,
+          \`text\` LONGTEXT NULL,
+          \`judul\` VARCHAR(255) NULL,
+          \`description\` LONGTEXT NULL,
+          \`deskripsi\` LONGTEXT NULL,
+          \`status\` VARCHAR(50) DEFAULT 'pending',
+          \`deadline_timestamp\` BIGINT NULL,
+          \`deadlineTimestamp\` BIGINT NULL,
+          \`color\` VARCHAR(50) DEFAULT 'yellow',
+          \`prioritas\` VARCHAR(20) DEFAULT 'Sedang',
+          \`tenggat_waktu\` DATE NULL,
+          \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP,
+          \`createdAt\` BIGINT NULL,
+          \`updated_at\` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `;
+      const createTasksSql = `
+        CREATE TABLE IF NOT EXISTS \`tasks\` (
+          \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
+          \`user_id\` VARCHAR(100) NULL,
+          \`username\` VARCHAR(100) NULL,
+          \`text\` LONGTEXT NULL,
+          \`title\` VARCHAR(255) NULL,
+          \`description\` LONGTEXT NULL,
+          \`status\` VARCHAR(50) DEFAULT 'pending',
+          \`deadline_timestamp\` BIGINT NULL,
+          \`color\` VARCHAR(50) DEFAULT 'yellow',
+          \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP,
+          \`updated_at\` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `;
+      const tugasCols = ['text', 'description', 'deadline_timestamp', 'deadlineTimestamp', 'color', 'createdAt', 'user_id', 'username', 'judul', 'deskripsi', 'status', 'prioritas', 'tenggat_waktu'];
+      await ensureTableColumnsFast(pool, 'tugas', createTugasSql, tugasCols);
+      await ensureTableColumnsFast(pool, 'tasks', createTasksSql, tugasCols);
     } else if (table === 'feedback') {
-      try {
-        await pool.query(`
-          CREATE TABLE IF NOT EXISTS \`feedback\` (
-            \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
-            \`sender_username\` VARCHAR(100) NULL,
-            \`sender_email\` VARCHAR(100) NULL,
-            \`sender_role\` VARCHAR(50) NULL,
-            \`message\` LONGTEXT NULL,
-            \`content\` LONGTEXT NULL,
-            \`is_starred\` TINYINT(1) DEFAULT 0,
-            \`isStarred\` TINYINT(1) DEFAULT 0,
-            \`status\` VARCHAR(100) DEFAULT 'Belum dikerjakan',
-            \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP,
-            \`createdAt\` DATETIME DEFAULT CURRENT_TIMESTAMP
-          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        `);
-
-        const feedbackCols = ['sender_username', 'sender_email', 'sender_role', 'message', 'content', 'is_starred', 'isStarred', 'status', 'created_at', 'createdAt'];
-        for (const col of feedbackCols) {
-          try {
-            if (col === 'status') {
-              await pool.query(`ALTER TABLE \`feedback\` ADD COLUMN \`status\` VARCHAR(100) DEFAULT 'Belum dikerjakan'`);
-            } else if (col === 'is_starred' || col === 'isStarred') {
-              await pool.query(`ALTER TABLE \`feedback\` ADD COLUMN \`${col}\` TINYINT(1) DEFAULT 0`);
-            } else {
-              await pool.query(`ALTER TABLE \`feedback\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
-            }
-          } catch (e) {}
-        }
-      } catch (e: any) {
-        handleMySQLError(e);
-        console.warn("Could not auto-create feedback table:", e.message);
-      }
+      const createSql = `
+        CREATE TABLE IF NOT EXISTS \`feedback\` (
+          \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
+          \`sender_username\` VARCHAR(100) NULL,
+          \`sender_email\` VARCHAR(100) NULL,
+          \`sender_role\` VARCHAR(50) NULL,
+          \`message\` LONGTEXT NULL,
+          \`content\` LONGTEXT NULL,
+          \`is_starred\` TINYINT(1) DEFAULT 0,
+          \`isStarred\` TINYINT(1) DEFAULT 0,
+          \`status\` VARCHAR(100) DEFAULT 'Belum dikerjakan',
+          \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP,
+          \`createdAt\` DATETIME DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `;
+      const feedbackCols = ['sender_username', 'sender_email', 'sender_role', 'message', 'content', 'is_starred', 'isStarred', 'status', 'created_at', 'createdAt'];
+      await ensureTableColumnsFast(pool, 'feedback', createSql, feedbackCols);
     } else if (table === 'perizinan') {
-      try {
-        await pool.query(`
-          CREATE TABLE IF NOT EXISTS \`perizinan\` (
-            \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
-            \`santri_id\` VARCHAR(100) NULL,
-            \`nama_santri\` VARCHAR(255) NULL,
-            \`alasan\` LONGTEXT NULL,
-            \`status\` VARCHAR(100) DEFAULT 'Izin Aktif',
-            \`tgl_keluar\` VARCHAR(50) NULL,
-            \`tgl_kembali\` VARCHAR(50) NULL,
-            \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
-          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        `);
-        const cols = [
-          'santri_id', 'nama_santri', 'alasan', 'status', 'tgl_keluar', 'tgl_kembali',
-          'namaSantri', 'kelas', 'kamar', 'jenisIzin', 'jenis_izin', 'tanggalMulai', 'tanggal_mulai',
-          'tanggalSelesai', 'tanggal_selesai', 'keterangan', 'gender', 'isCabut', 'is_cabut',
-          'tanggalCabut', 'tanggal_cabut', 'alasanCabut', 'alasan_cabut', 'santriId', 'nis',
-          'tanggalKembali', 'tanggal_kembali'
-        ];
-        for (const col of cols) {
-          try {
-            await pool.query(`ALTER TABLE \`perizinan\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
-          } catch (e) {}
-        }
-      } catch (e: any) {
-        handleMySQLError(e);
-      }
+      const createSql = `
+        CREATE TABLE IF NOT EXISTS \`perizinan\` (
+          \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
+          \`santri_id\` VARCHAR(100) NULL,
+          \`nama_santri\` VARCHAR(255) NULL,
+          \`alasan\` LONGTEXT NULL,
+          \`status\` VARCHAR(100) DEFAULT 'Izin Aktif',
+          \`tgl_keluar\` VARCHAR(50) NULL,
+          \`tgl_kembali\` VARCHAR(50) NULL,
+          \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `;
+      const cols = [
+        'santri_id', 'nama_santri', 'alasan', 'status', 'tgl_keluar', 'tgl_kembali',
+        'namaSantri', 'kelas', 'kamar', 'jenisIzin', 'jenis_izin', 'tanggalMulai', 'tanggal_mulai',
+        'tanggalSelesai', 'tanggal_selesai', 'keterangan', 'gender', 'isCabut', 'is_cabut',
+        'tanggalCabut', 'tanggal_cabut', 'alasanCabut', 'alasan_cabut', 'santriId', 'nis',
+        'tanggalKembali', 'tanggal_kembali'
+      ];
+      await ensureTableColumnsFast(pool, 'perizinan', createSql, cols);
     } else if (table === 'keamanan') {
-      try {
-        await pool.query(`
-          CREATE TABLE IF NOT EXISTS \`keamanan\` (
-            \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
-            \`santri_id\` VARCHAR(100) NULL,
-            \`nama_santri\` VARCHAR(255) NULL,
-            \`pelanggaran\` LONGTEXT NULL,
-            \`poin\` INT DEFAULT 0,
-            \`status\` VARCHAR(100) DEFAULT 'Belum Selesai',
-            \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
-          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        `);
-        const cols = ['santri_id', 'nama_santri', 'pelanggaran', 'poin', 'status'];
-        for (const col of cols) {
-          try {
-            await pool.query(`ALTER TABLE \`keamanan\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
-          } catch (e) {}
-        }
-      } catch (e: any) {
-        handleMySQLError(e);
-      }
+      const createSql = `
+        CREATE TABLE IF NOT EXISTS \`keamanan\` (
+          \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
+          \`santri_id\` VARCHAR(100) NULL,
+          \`nama_santri\` VARCHAR(255) NULL,
+          \`pelanggaran\` LONGTEXT NULL,
+          \`poin\` INT DEFAULT 0,
+          \`status\` VARCHAR(100) DEFAULT 'Belum Selesai',
+          \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `;
+      const cols = ['santri_id', 'nama_santri', 'pelanggaran', 'poin', 'status'];
+      await ensureTableColumnsFast(pool, 'keamanan', createSql, cols);
     } else if (table === 'riwayat_aktivitas') {
-      try {
-        await pool.query(`
-          CREATE TABLE IF NOT EXISTS \`riwayat_aktivitas\` (
-            \`id\` INT AUTO_INCREMENT PRIMARY KEY,
-            \`user_id\` INT NULL,
-            \`nama_user\` VARCHAR(255) NULL,
-            \`peran\` VARCHAR(100) NULL,
-            \`aksi\` VARCHAR(255) NULL,
-            \`deskripsi\` LONGTEXT NULL,
-            \`modul\` VARCHAR(100) NULL,
-            \`ip_address\` VARCHAR(100) NULL,
-            \`user_agent\` LONGTEXT NULL,
-            \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
-          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        `);
-        const cols = ['user_id', 'nama_user', 'peran', 'aksi', 'deskripsi', 'modul', 'ip_address', 'user_agent', 'created_at'];
-        for (const col of cols) {
-          try {
-            if (col === 'created_at') {
-              await pool.query(`ALTER TABLE \`riwayat_aktivitas\` ADD COLUMN \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP`);
-            } else {
-              await pool.query(`ALTER TABLE \`riwayat_aktivitas\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
-            }
-          } catch (e) {}
-        }
-      } catch (e: any) {
-        handleMySQLError(e);
-      }
+      const createSql = `
+        CREATE TABLE IF NOT EXISTS \`riwayat_aktivitas\` (
+          \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+          \`user_id\` INT NULL,
+          \`nama_user\` VARCHAR(255) NULL,
+          \`peran\` VARCHAR(100) NULL,
+          \`aksi\` VARCHAR(255) NULL,
+          \`deskripsi\` LONGTEXT NULL,
+          \`modul\` VARCHAR(100) NULL,
+          \`ip_address\` VARCHAR(100) NULL,
+          \`user_agent\` LONGTEXT NULL,
+          \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `;
+      const cols = ['user_id', 'nama_user', 'peran', 'aksi', 'deskripsi', 'modul', 'ip_address', 'user_agent', 'created_at'];
+      await ensureTableColumnsFast(pool, 'riwayat_aktivitas', createSql, cols);
     } else if (table === 'app_credentials') {
-      try {
-        await pool.query(`
-          CREATE TABLE IF NOT EXISTS \`app_credentials\` (
-            \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
-            \`username\` VARCHAR(255) NULL,
-            \`password\` LONGTEXT NULL,
-            \`role\` VARCHAR(100) NULL,
-            \`status\` VARCHAR(100) DEFAULT 'approved',
-            \`displayName\` LONGTEXT NULL,
-            \`display_name\` LONGTEXT NULL,
-            \`nama\` LONGTEXT NULL,
-            \`avatarUrl\` LONGTEXT NULL,
-            \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
-          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        `);
-        const cols = ['username', 'password', 'role', 'status', 'displayName', 'display_name', 'nama', 'avatarUrl', 'avatar_url', 'created_at'];
-        for (const col of cols) {
-          try {
-            await pool.query(`ALTER TABLE \`app_credentials\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
-          } catch (e) {}
-        }
-      } catch (e: any) {
-        handleMySQLError(e);
-      }
+      const createSql = `
+        CREATE TABLE IF NOT EXISTS \`app_credentials\` (
+          \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
+          \`username\` VARCHAR(255) NULL,
+          \`password\` LONGTEXT NULL,
+          \`role\` VARCHAR(100) NULL,
+          \`status\` VARCHAR(100) DEFAULT 'approved',
+          \`displayName\` LONGTEXT NULL,
+          \`display_name\` LONGTEXT NULL,
+          \`nama\` LONGTEXT NULL,
+          \`avatarUrl\` LONGTEXT NULL,
+          \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `;
+      const cols = ['username', 'password', 'role', 'status', 'displayName', 'display_name', 'nama', 'avatarUrl', 'avatar_url', 'created_at'];
+      await ensureTableColumnsFast(pool, 'app_credentials', createSql, cols);
     } else if (table === 'santri') {
-      try {
-        const santriCols = [
-          'nism', 'semester', 'kelas_mhd', 'tahun_lulus',
-          'induk_mhd', 'induk_wustho', 'induk_ulya',
-          'nisn', 'nik', 'no_kk', 'tempat_lahir', 'tanggal_lahir',
-          'anak_ke', 'dari_bersaudara', 'nama_ayah', 'nik_ayah',
-          'pekerjaan_ayah', 'pendidikan_ayah', 'nama_ibu', 'nik_ibu',
-          'pekerjaan_ibu', 'pendidikan_ibu', 'alamat', 'rt', 'rw',
-          'desa', 'kecamatan', 'kabupaten', 'provinsi', 'jarak_rumah',
-          'no_hp', 'status_keanggotaan', 'status_domisili', 'status_emis',
-          'status_verval', 'tanggal_keluar', 'catatan', 'nomor_lemari',
-          'pendidikan_terakhir', 'pendidikan_formal', 'pendidikan_internal', 'kelas_id'
-        ];
-        for (const col of santriCols) {
-          try {
-            await pool.query(`ALTER TABLE \`santri\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
-          } catch (e) {}
-        }
-      } catch (e: any) {
-        handleMySQLError(e);
-      }
+      const createSql = `
+        CREATE TABLE IF NOT EXISTS \`santri\` (
+          \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
+          \`nama\` VARCHAR(255) NOT NULL,
+          \`gender\` VARCHAR(10) DEFAULT 'Putra',
+          \`kelas\` VARCHAR(100) NULL,
+          \`kamar\` VARCHAR(100) NULL,
+          \`nis\` VARCHAR(50) NULL,
+          \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `;
+      const santriCols = [
+        'nism', 'semester', 'kelas_mhd', 'tahun_lulus',
+        'induk_mhd', 'induk_wustho', 'induk_ulya',
+        'nisn', 'nik', 'no_kk', 'tempat_lahir', 'tanggal_lahir',
+        'anak_ke', 'dari_bersaudara', 'nama_ayah', 'nik_ayah',
+        'pekerjaan_ayah', 'pendidikan_ayah', 'nama_ibu', 'nik_ibu',
+        'pekerjaan_ibu', 'pendidikan_ibu', 'alamat', 'rt', 'rw',
+        'desa', 'kecamatan', 'kabupaten', 'provinsi', 'jarak_rumah',
+        'no_hp', 'status_keanggotaan', 'status_domisili', 'status_emis',
+        'status_verval', 'tanggal_keluar', 'catatan', 'nomor_lemari',
+        'pendidikan_terakhir', 'pendidikan_formal', 'pendidikan_internal', 'kelas_id'
+      ];
+      await ensureTableColumnsFast(pool, 'santri', createSql, santriCols);
     } else if (table === 'pesantren_profile') {
-      try {
-        await pool.query(`
-          CREATE TABLE IF NOT EXISTS \`pesantren_profile\` (
-            \`id\` VARCHAR(50) NOT NULL PRIMARY KEY DEFAULT 'main',
-            \`nama_pesantren\` VARCHAR(100),
-            \`nama_yayasan\` VARCHAR(100),
-            \`nspp\` VARCHAR(50) DEFAULT '121235070001',
-            \`nomor_notaris\` VARCHAR(150),
-            \`alamat\` TEXT,
-            \`desa\` VARCHAR(50),
-            \`kecamatan\` VARCHAR(50),
-            \`kabupaten\` VARCHAR(50),
-            \`provinsi\` VARCHAR(50),
-            \`kode_pos\` VARCHAR(10),
-            \`telepon\` VARCHAR(20),
-            \`email\` VARCHAR(100),
-            \`website\` VARCHAR(100),
-            \`nama_pengasuh\` VARCHAR(100),
-            \`nama_wakil_pengasuh\` VARCHAR(100),
-            \`nama_ketua_yayasan\` VARCHAR(100),
-            \`nama_ketua_pondok\` VARCHAR(100),
-            \`nama_sekretaris\` VARCHAR(100),
-            \`nama_bendahara\` VARCHAR(100),
-            \`nama_ketua_keamanan\` VARCHAR(100),
-            \`nama_ketua_pendidikan\` VARCHAR(100),
-            \`nama_ketua_humasy\` VARCHAR(100),
-            \`nama_wakil_pengasuh_putra\` VARCHAR(100),
-            \`nama_ketua_pondok_putra\` VARCHAR(100),
-            \`nama_sekretaris_putra\` VARCHAR(100),
-            \`nama_bendahara_putra\` VARCHAR(100),
-            \`nama_ketua_keamanan_putra\` VARCHAR(100),
-            \`nama_ketua_pendidikan_putra\` VARCHAR(100),
-            \`nama_ketua_humasy_putra\` VARCHAR(100),
-            \`nama_wakil_pengasuh_putri\` VARCHAR(100),
-            \`nama_ketua_pondok_putri\` VARCHAR(100),
-            \`nama_sekretaris_putri\` VARCHAR(100),
-            \`nama_bendahara_putri\` VARCHAR(100),
-            \`nama_ketua_keamanan_putri\` VARCHAR(100),
-            \`nama_ketua_pendidikan_putri\` VARCHAR(100),
-            \`nama_ketua_humasy_putri\` VARCHAR(100),
-            \`kota_tanda_tangan\` VARCHAR(50),
-            \`logo_style\` VARCHAR(50) DEFAULT 'classic',
-            \`logo_url\` LONGTEXT,
-            \`kop_tambahan_1\` VARCHAR(150),
-            \`kop_tambahan_2\` VARCHAR(150),
-            \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP,
-            \`updated_at\` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        `);
-        const profileCols = [
-          'nama_pesantren', 'nama_yayasan', 'nspp', 'nomor_notaris', 'alamat', 'desa',
-          'kecamatan', 'kabupaten', 'provinsi', 'kode_pos', 'telepon', 'email', 'website',
-          'nama_pengasuh', 'nama_wakil_pengasuh', 'nama_ketua_yayasan', 'nama_ketua_pondok',
-          'nama_sekretaris', 'nama_bendahara', 'nama_ketua_keamanan', 'nama_ketua_pendidikan', 'nama_ketua_humasy',
-          'nama_wakil_pengasuh_putra', 'nama_ketua_pondok_putra', 'nama_sekretaris_putra', 'nama_bendahara_putra',
-          'nama_ketua_keamanan_putra', 'nama_ketua_pendidikan_putra', 'nama_ketua_humasy_putra',
-          'nama_wakil_pengasuh_putri', 'nama_ketua_pondok_putri', 'nama_sekretaris_putri', 'nama_bendahara_putri',
-          'nama_ketua_keamanan_putri', 'nama_ketua_pendidikan_putri', 'nama_ketua_humasy_putri',
-          'kota_tanda_tangan', 'logo_style', 'logo_url', 'kop_tambahan_1', 'kop_tambahan_2'
-        ];
-        for (const col of profileCols) {
-          try {
-            await pool.query(`ALTER TABLE \`pesantren_profile\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
-          } catch (e) {}
-        }
-      } catch (e: any) {
-        handleMySQLError(e);
-      }
+      const createSql = `
+        CREATE TABLE IF NOT EXISTS \`pesantren_profile\` (
+          \`id\` VARCHAR(50) NOT NULL PRIMARY KEY DEFAULT 'main',
+          \`nama_pesantren\` VARCHAR(100),
+          \`nama_yayasan\` VARCHAR(100),
+          \`nspp\` VARCHAR(50) DEFAULT '121235070001',
+          \`nomor_notaris\` VARCHAR(150),
+          \`alamat\` TEXT,
+          \`desa\` VARCHAR(50),
+          \`kecamatan\` VARCHAR(50),
+          \`kabupaten\` VARCHAR(50),
+          \`provinsi\` VARCHAR(50),
+          \`kode_pos\` VARCHAR(10),
+          \`telepon\` VARCHAR(20),
+          \`email\` VARCHAR(100),
+          \`website\` VARCHAR(100),
+          \`nama_pengasuh\` VARCHAR(100),
+          \`nama_wakil_pengasuh\` VARCHAR(100),
+          \`nama_ketua_yayasan\` VARCHAR(100),
+          \`nama_ketua_pondok\` VARCHAR(100),
+          \`nama_sekretaris\` VARCHAR(100),
+          \`nama_bendahara\` VARCHAR(100),
+          \`nama_ketua_keamanan\` VARCHAR(100),
+          \`nama_ketua_pendidikan\` VARCHAR(100),
+          \`nama_ketua_humasy\` VARCHAR(100),
+          \`nama_wakil_pengasuh_putra\` VARCHAR(100),
+          \`nama_ketua_pondok_putra\` VARCHAR(100),
+          \`nama_sekretaris_putra\` VARCHAR(100),
+          \`nama_bendahara_putra\` VARCHAR(100),
+          \`nama_ketua_keamanan_putra\` VARCHAR(100),
+          \`nama_ketua_pendidikan_putra\` VARCHAR(100),
+          \`nama_ketua_humasy_putra\` VARCHAR(100),
+          \`nama_wakil_pengasuh_putri\` VARCHAR(100),
+          \`nama_ketua_pondok_putri\` VARCHAR(100),
+          \`nama_sekretaris_putri\` VARCHAR(100),
+          \`nama_bendahara_putri\` VARCHAR(100),
+          \`nama_ketua_keamanan_putri\` VARCHAR(100),
+          \`nama_ketua_pendidikan_putri\` VARCHAR(100),
+          \`nama_ketua_humasy_putri\` VARCHAR(100),
+          \`kota_tanda_tangan\` VARCHAR(50),
+          \`logo_style\` VARCHAR(50) DEFAULT 'classic',
+          \`logo_url\` LONGTEXT,
+          \`kop_tambahan_1\` VARCHAR(150),
+          \`kop_tambahan_2\` VARCHAR(150),
+          \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP,
+          \`updated_at\` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `;
+      const profileCols = [
+        'nama_pesantren', 'nama_yayasan', 'nspp', 'nomor_notaris', 'alamat', 'desa',
+        'kecamatan', 'kabupaten', 'provinsi', 'kode_pos', 'telepon', 'email', 'website',
+        'nama_pengasuh', 'nama_wakil_pengasuh', 'nama_ketua_yayasan', 'nama_ketua_pondok',
+        'nama_sekretaris', 'nama_bendahara', 'nama_ketua_keamanan', 'nama_ketua_pendidikan', 'nama_ketua_humasy',
+        'nama_wakil_pengasuh_putra', 'nama_ketua_pondok_putra', 'nama_sekretaris_putra', 'nama_bendahara_putra',
+        'nama_ketua_keamanan_putra', 'nama_ketua_pendidikan_putra', 'nama_ketua_humasy_putra',
+        'nama_wakil_pengasuh_putri', 'nama_ketua_pondok_putri', 'nama_sekretaris_putri', 'nama_bendahara_putri',
+        'nama_ketua_keamanan_putri', 'nama_ketua_pendidikan_putri', 'nama_ketua_humasy_putri',
+        'kota_tanda_tangan', 'logo_style', 'logo_url', 'kop_tambahan_1', 'kop_tambahan_2'
+      ];
+      await ensureTableColumnsFast(pool, 'pesantren_profile', createSql, profileCols);
     }
   } catch (err: any) {
     handleMySQLError(err);
@@ -1535,12 +1469,19 @@ app.get("/api/db/:table", async (req, res) => {
   }
 
   const pool = getMySQLPool();
-  if (pool) {
+  if (pool && !ensuredTablesSet.has(table)) {
     await ensureTableExists(table, pool).catch(() => {});
   }
 
   let rawRows: any[] = [];
-  const mysqlRes = await tryMySQLQuery(`SELECT * FROM \`${table}\``);
+  let querySql = `SELECT * FROM \`${table}\``;
+  if (table === "riwayat_aktivitas" && limit === 0) {
+    querySql = `SELECT * FROM \`riwayat_aktivitas\` ORDER BY \`id\` DESC LIMIT 250`;
+  } else if (table === "admin_chat" && limit === 0) {
+    querySql = `SELECT * FROM \`admin_chat\` ORDER BY \`created_at\` ASC LIMIT 250`;
+  }
+
+  const mysqlRes = await tryMySQLQuery(querySql);
   if (mysqlRes.success && Array.isArray(mysqlRes.rows) && mysqlRes.rows.length > 0) {
     memoryStore.set(table, mysqlRes.rows);
     saveMemoryStoreToDisk();

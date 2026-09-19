@@ -37,7 +37,10 @@ import {
   RotateCcw,
   RefreshCw,
   Smile,
-  Calendar
+  Calendar,
+  Bell,
+  BellOff,
+  BellRing
 } from 'lucide-react';
 import { 
   fetchTableData, 
@@ -49,6 +52,13 @@ import {
   safeLocalStorageSetItem,
   uploadFileToStorage
 } from '../lib/api';
+import { 
+  getNotificationPermission, 
+  requestNotificationPermission, 
+  sendDeviceNotification, 
+  NotificationPermissionState 
+} from '../lib/notificationHelper';
+import NotificationPermissionModal from './NotificationPermissionModal';
 
 export interface ChatAttachment {
   name: string;
@@ -346,6 +356,17 @@ export default function AdminChatDrawer({
   const [filterOnlyStarred, setFilterOnlyStarred] = useState<boolean>(false);
   const [showDeleteMediaModal, setShowDeleteMediaModal] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Device Push & Browser Notification State
+  const [notifPermission, setNotifPermission] = useState<NotificationPermissionState>(() => getNotificationPermission());
+  const [showNotifPermissionModal, setShowNotifPermissionModal] = useState<boolean>(false);
+  const [showNotifBanner, setShowNotifBanner] = useState<boolean>(() => {
+    return localStorage.getItem('smartsantri_dismiss_chat_notif_banner') !== 'true';
+  });
+
+  const handleToggleOrTestNotification = () => {
+    setShowNotifPermissionModal(true);
+  };
 
   // Pinned Messages State
   const [pinnedItems, setPinnedItems] = useState<PinnedItem[]>(() => {
@@ -1390,11 +1411,18 @@ export default function AdminChatDrawer({
   }, [isOpen]);
 
   const loadChatMessages = async () => {
-    setLoading(true);
     let normalizedList: ChatMessage[] = [];
     try {
       const local = localStorage.getItem(LOCAL_STORAGE_KEY);
       let rawList: any[] = local ? JSON.parse(local) : [];
+      if (rawList.length > 0) {
+        normalizedList = rawList.map(normalizeChatMessage);
+        setMessages(normalizedList);
+        setLoading(false);
+        setTimeout(() => jumpToOldestUnreadOrBottom(normalizedList), 60);
+      } else {
+        setLoading(true);
+      }
 
       const remoteData = await fetchTableData<any>('admin_chat', LOCAL_STORAGE_KEY, rawList);
       if (Array.isArray(remoteData) && remoteData.length > 0) {
@@ -2542,6 +2570,41 @@ export default function AdminChatDrawer({
             {/* Right Action Icons */}
             <div className="flex items-center gap-1.5 z-20" onMouseDown={(e) => e.stopPropagation()}>
 
+              {/* Tombol Notifikasi Perangkat */}
+              <button
+                type="button"
+                onClick={handleToggleOrTestNotification}
+                onMouseDown={(e) => e.stopPropagation()}
+                className={`p-2 rounded-xl transition-colors cursor-pointer relative ${
+                  notifPermission === 'granted'
+                    ? 'text-emerald-700 hover:bg-emerald-50'
+                    : notifPermission === 'denied'
+                    ? 'text-rose-500 hover:bg-rose-50'
+                    : 'text-amber-600 hover:bg-amber-50'
+                }`}
+                title={
+                  notifPermission === 'granted'
+                    ? 'Notifikasi Perangkat Aktif (Klik untuk uji coba)'
+                    : notifPermission === 'denied'
+                    ? 'Izin Notifikasi Diblokir di Browser'
+                    : 'Aktifkan Notifikasi Perangkat (HP / Laptop)'
+                }
+              >
+                {notifPermission === 'granted' ? (
+                  <>
+                    <Bell className="w-5 h-5 text-emerald-600" />
+                    <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-emerald-500 rounded-full ring-2 ring-white" />
+                  </>
+                ) : notifPermission === 'denied' ? (
+                  <BellOff className="w-5 h-5 text-rose-500" />
+                ) : (
+                  <>
+                    <BellRing className="w-5 h-5 text-amber-500 animate-pulse" />
+                    <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-amber-500 rounded-full animate-ping" />
+                  </>
+                )}
+              </button>
+
               {/* Tombol Pencarian Konten Chat */}
               <button
                 type="button"
@@ -2727,6 +2790,47 @@ export default function AdminChatDrawer({
           </main>
         ) : (
           <>
+
+        {/* PROMPT BANNER UNTUK IZIN NOTIFIKASI PERANGKAT */}
+        {notifPermission === 'default' && showNotifBanner && (
+          <div className="bg-emerald-50/90 border-b border-emerald-200/80 px-3.5 py-2.5 shrink-0 relative z-20 select-none animate-in fade-in duration-200">
+            <div className={`flex items-center justify-between gap-3 w-full ${layoutMode === 'full' ? 'max-w-4xl sm:max-w-[60%] mx-auto' : ''}`}>
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                <div className="w-7 h-7 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <BellRing className="w-4 h-4 animate-bounce" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold text-emerald-950 leading-tight">
+                    Nyalakan Notifikasi Perangkat
+                  </p>
+                  <p className="text-[11px] text-emerald-700 leading-tight truncate">
+                    Dapatkan bunyi & pemberitahuan saat ada pesan baru di latar belakang.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleToggleOrTestNotification}
+                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-lg shadow-xs transition-colors cursor-pointer"
+                >
+                  Izinkan
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowNotifBanner(false);
+                    localStorage.setItem('smartsantri_dismiss_chat_notif_banner', 'true');
+                  }}
+                  className="p-1 text-emerald-600/70 hover:text-emerald-900 rounded-lg hover:bg-emerald-100/50 transition-colors cursor-pointer"
+                  title="Tutup"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* WHATSAPP-STYLE PINNED MESSAGES BANNER */}
         {activeTab === 'chat' && pinnedMessages.length > 0 && (() => {
@@ -4767,6 +4871,17 @@ export default function AdminChatDrawer({
           </div>
         </div>
       )}
+
+      {/* Pop-up Modal Perizinan & Uji Coba Notifikasi Perangkat */}
+      <NotificationPermissionModal
+        isOpen={showNotifPermissionModal}
+        onClose={() => setShowNotifPermissionModal(false)}
+        onPermissionGranted={() => {
+          setNotifPermission('granted');
+          setShowNotifBanner(false);
+          localStorage.setItem('smartsantri_dismiss_chat_notif_banner', 'true');
+        }}
+      />
     </div>
   );
 }

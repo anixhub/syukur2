@@ -50,8 +50,19 @@ import {
   UserPlus,
   Ban,
   KeyRound,
-  Copy
+  Copy,
+  Bell,
+  BellRing,
+  BellOff
 } from 'lucide-react';
+import { 
+  getNotificationPermission, 
+  requestNotificationPermission, 
+  sendDeviceNotification, 
+  playNotificationSound, 
+  NotificationPermissionState 
+} from '../lib/notificationHelper';
+import NotificationPermissionModal from './NotificationPermissionModal';
 import PhotoPreviewModal from './PhotoPreviewModal';
 import AddAccountModal from './AddAccountModal';
 import { compressImage } from '../lib/utils';
@@ -253,6 +264,21 @@ export default function SettingsModal({
   const [showHijriDate, setShowHijriDate] = useState<boolean>(() => {
     return localStorage.getItem('smartsantri_show_hijri') !== 'false';
   });
+  const [notifPermission, setNotifPermission] = useState<NotificationPermissionState>(() => getNotificationPermission());
+  const [showNotifPermissionModal, setShowNotifPermissionModal] = useState<boolean>(false);
+
+  const handleRequestNotifPermission = () => {
+    setShowNotifPermissionModal(true);
+  };
+
+  const handleTestNotification = () => {
+    playNotificationSound();
+    sendDeviceNotification({
+      title: 'Uji Coba Notifikasi SmartSantri',
+      body: 'Sistem nada dering, getaran, dan notifikasi banner di perangkat Anda berjalan lancar!',
+      icon: '/logo.svg',
+    });
+  };
 
   // Profile Settings State
   const [displayName, setDisplayName] = useState('');
@@ -1063,7 +1089,7 @@ export default function SettingsModal({
       ],
     },
     {
-      title: 'Audio',
+      title: 'Audio & Notifikasi',
       caption: 'Pilih status suara notifikasi aplikasi untuk umpan balik interaksi yang lebih baik.',
       items: [
         {
@@ -1076,6 +1102,20 @@ export default function SettingsModal({
             const next = !soundEnabled;
             setSoundEnabled(next);
             localStorage.setItem('smartsantri_sound_enabled', String(next));
+            if (next) playNotificationSound();
+          },
+        },
+        {
+          id: 'general' as SettingsTab,
+          label: 'Notifikasi Perangkat',
+          icon: notifPermission === 'granted' ? Bell : notifPermission === 'denied' ? BellOff : BellRing,
+          value: notifPermission === 'granted' ? 'Diizinkan' : notifPermission === 'denied' ? 'Diblokir' : 'Minta Izin',
+          onClick: () => {
+            if (notifPermission === 'granted') {
+              handleTestNotification();
+            } else {
+              handleRequestNotifPermission();
+            }
           },
         },
       ],
@@ -1268,6 +1308,10 @@ export default function SettingsModal({
                         key={iIdx}
                         type="button"
                         onClick={() => {
+                          if (item.onClick) {
+                            item.onClick();
+                            return;
+                          }
                           setActiveTab(item.id);
                           setMobileView('detail');
                         }}
@@ -1419,6 +1463,101 @@ export default function SettingsModal({
                         }`}
                       />
                     </button>
+                  </div>
+
+                  {/* Audio & Notifikasi Perangkat */}
+                  <div className="pt-4 border-t border-slate-100 space-y-3">
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900">Suara &amp; Notifikasi Perangkat</h4>
+                      <p className="text-xs text-slate-500">Dapatkan nada dering dan pemberitahuan langsung di layar saat ada pesan masuk.</p>
+                    </div>
+
+                    {/* Suara Notifikasi */}
+                    <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-200/80">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-700 shrink-0">
+                          <Volume2 className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <p className="text-xs sm:text-sm font-semibold text-slate-900">Suara Dering Notifikasi</p>
+                          <p className="text-[11px] text-slate-500">Bunyikan nada dering khas setiap ada obrolan baru</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = !soundEnabled;
+                          setSoundEnabled(next);
+                          localStorage.setItem('smartsantri_sound_enabled', String(next));
+                          if (next) playNotificationSound();
+                        }}
+                        className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer ${
+                          soundEnabled ? 'bg-emerald-600' : 'bg-slate-200'
+                        }`}
+                      >
+                        <div
+                          className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                            soundEnabled ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Izin Notifikasi Perangkat */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-200/80">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 ${
+                          notifPermission === 'granted'
+                            ? 'bg-emerald-50 border-emerald-200 text-emerald-600'
+                            : notifPermission === 'denied'
+                            ? 'bg-rose-50 border-rose-200 text-rose-600'
+                            : 'bg-amber-50 border-amber-200 text-amber-600'
+                        }`}>
+                          <Bell className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs sm:text-sm font-semibold text-slate-900">Notifikasi Sistem Perangkat (HP/PC)</p>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                              notifPermission === 'granted'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : notifPermission === 'denied'
+                                ? 'bg-rose-100 text-rose-800'
+                                : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {notifPermission === 'granted' ? 'Diizinkan' : notifPermission === 'denied' ? 'Diblokir' : 'Perlu Izin'}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500">
+                            {notifPermission === 'granted'
+                              ? 'Notifikasi aktif. Anda akan menerima banner & getaran saat layar aktif maupun latar belakang.'
+                              : notifPermission === 'denied'
+                              ? 'Izin notifikasi diblokir di browser. Harap izinkan melalui pengaturan situs di bilah URL.'
+                              : 'Klik Izinkan agar ponsel atau komputer dapat menampilkan notifikasi pesan masuk.'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                        {notifPermission !== 'granted' ? (
+                          <button
+                            type="button"
+                            onClick={handleRequestNotifPermission}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors cursor-pointer"
+                          >
+                            Izinkan Notifikasi
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={handleTestNotification}
+                            className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold rounded-xl shadow-2xs transition-colors cursor-pointer flex items-center gap-1.5"
+                          >
+                            <BellRing className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Uji Coba Notifikasi</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -3691,6 +3830,13 @@ export default function SettingsModal({
           setRole(activeRole);
           setAvatarUrl(activeAvatar);
         }}
+      />
+
+      {/* Pop-up Modal Perizinan Notifikasi */}
+      <NotificationPermissionModal
+        isOpen={showNotifPermissionModal}
+        onClose={() => setShowNotifPermissionModal(false)}
+        onPermissionGranted={() => setNotifPermission('granted')}
       />
     </div>
   );

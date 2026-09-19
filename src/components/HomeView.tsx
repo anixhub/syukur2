@@ -288,9 +288,27 @@ export default function HomeView({
     setShowPwaBanner(false);
   };
 
-  // State for registered accounts and logs
-  const [registeredAccounts, setRegisteredAccounts] = useState<any[]>([]);
-  const [dbActivityLogs, setDbActivityLogs] = useState<any[]>([]);
+  // State for registered accounts and logs with instant cache warm-up
+  const [registeredAccounts, setRegisteredAccounts] = useState<any[]>(() => {
+    try {
+      const cached = localStorage.getItem('smartsantri_registered_accounts') || localStorage.getItem('smartsantri_app_credentials');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  });
+  const [dbActivityLogs, setDbActivityLogs] = useState<any[]>(() => {
+    try {
+      const cached = localStorage.getItem('smartsantri_admin_activity_logs');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  });
 
   // Active Admin Name
   const [adminDisplayName, setAdminDisplayName] = useState(() => {
