@@ -8,6 +8,7 @@ import HelpModal from './components/HelpModal';
 import AdminChatDrawer from './components/AdminChatDrawer';
 import NotificationsPage from './components/NotificationsPage';
 import NotificationPermissionModal from './components/NotificationPermissionModal';
+import { ChatNotificationToast } from './components/ChatNotificationToast';
 import OfflineStatusBanner from './components/OfflineStatusBanner';
 import { fetchTableData, insertTableRow, insertTableRows, updateTableRow, deleteTableRow, subscribeRealtimeChanges, snakeToCamel, safeLocalStorageSetItem } from './lib/api';
 import { sendDeviceNotification } from './lib/notificationHelper';
@@ -160,12 +161,19 @@ export default function App() {
 
   // Auto prompt for notification permission on initial load if not yet decided and not dismissed
   useEffect(() => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      if (Notification.permission === 'default' && !localStorage.getItem('smartsantri_notif_modal_dismissed')) {
-        const timer = setTimeout(() => {
-          setShowNotifPermissionModal(true);
-        }, 2200);
-        return () => clearTimeout(timer);
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('request_notification') === '1' || urlParams.get('prompt_notif') === '1') {
+        setShowNotifPermissionModal(true);
+        return;
+      }
+      if ('Notification' in window) {
+        if (Notification.permission === 'default' && !localStorage.getItem('smartsantri_notif_modal_dismissed')) {
+          const timer = setTimeout(() => {
+            setShowNotifPermissionModal(true);
+          }, 2200);
+          return () => clearTimeout(timer);
+        }
       }
     }
   }, []);
@@ -350,11 +358,9 @@ export default function App() {
   };
 
   // Realtime WS unread notification counter & mention detector for Admin Chat
-  React.useEffect(() => {
-    const currentRole = (localStorage.getItem('smartsantri_active_role') || 'superadmin').toLowerCase();
-    const currentUsername = (localStorage.getItem('smartsantri_active_username') || 'pengurus@attaroqqy.com').toLowerCase();
-    const currentPrefix = currentUsername.split('@')[0];
+  const processedChatIdsRef = useRef<Set<string>>(new Set());
 
+  React.useEffect(() => {
     const unsubscribe = subscribeRealtimeChanges((payload: any) => {
       if (
         (payload.type === 'admin_chat_message' && payload.message) || 
@@ -364,47 +370,92 @@ export default function App() {
         if (!rawObj) return;
 
         const msgList = Array.isArray(rawObj) ? rawObj : [rawObj];
+        
+        // Dynamically read current active credentials at message receipt time
+        const currentRole = (localStorage.getItem('smartsantri_active_role') || 'superadmin').trim().toLowerCase();
+        const currentUsername = (localStorage.getItem('smartsantri_active_username') || '').trim().toLowerCase();
+        const currentUserId = String(localStorage.getItem('smartsantri_active_user_id') || '').trim();
+        const currentPrefix = currentUsername.includes('@') ? currentUsername.split('@')[0] : currentUsername;
+
+        let newUnreadCount = 0;
+
         msgList.forEach((msgObj: any) => {
           if (!msgObj) return;
-          const senderUsername = (msgObj.sender_username || msgObj.sender || '').trim().toLowerCase();
-          const senderPrefix = senderUsername.split('@')[0];
-          const isFromMe = senderUsername && (senderUsername === currentUsername || (currentPrefix && senderPrefix === currentPrefix));
 
-          // Mention detector
-          if (msgObj.message || msgObj.text) {
-            const lowerMsg = String(msgObj.message || msgObj.text).toLowerCase();
-            const isMentioned = lowerMsg.includes(`@${currentRole}`) || 
-                                lowerMsg.includes(`@${currentUsername}`) || 
-                                (currentPrefix && lowerMsg.includes(`@${currentPrefix}`)) ||
-                                lowerMsg.includes('@admin');
-            if (isMentioned) {
-              setHasMentionNotification(true);
+          // Deduplicate message processing to prevent duplicate notifications from client WS + server DB broadcast
+          const msgId = String(msgObj.id || '');
+          if (msgId) {
+            if (processedChatIdsRef.current.has(msgId)) {
+              return; // Already handled, avoid duplicate chime/badge
+            }
+            processedChatIdsRef.current.add(msgId);
+            if (processedChatIdsRef.current.size > 400) {
+              const firstId = processedChatIdsRef.current.values().next().value;
+              if (firstId) processedChatIdsRef.current.delete(firstId);
             }
           }
 
-          // Trigger Device / Browser Notification with sound and vibration if message is from another user
-          if (!isFromMe) {
-            const senderName = msgObj.sender_name || msgObj.sender || 'Admin Pesantren';
+          const senderUsername = (msgObj.sender_username || msgObj.sender || '').trim().toLowerCase();
+          const senderId = String(msgObj.sender_id || '').trim();
+
+          // Precise isFromMe verification (never fuzzy match generic prefixes)
+          const isFromMe = Boolean(
+            (currentUsername && senderUsername && senderUsername === currentUsername) ||
+            (currentUserId && senderId && senderId === currentUserId)
+          );
+
+          // Target channel check
+          const targetChannel = (msgObj.recipient_role || msgObj.channel || 'semua').trim().toLowerCase();
+          const isForMyRole = 
+            targetChannel === 'semua' || 
+            currentRole === 'superadmin' || 
+            currentRole === 'pimpinan' || 
+            targetChannel === currentRole;
+
+          // Mention detector
+          const rawMessageText = String(msgObj.message || msgObj.text || '');
+          const lowerMsg = rawMessageText.toLowerCase();
+          const isMentioned = Boolean(
+            lowerMsg.includes(`@${currentRole}`) || 
+            (currentUsername && lowerMsg.includes(`@${currentUsername}`)) || 
+            (currentPrefix && lowerMsg.includes(`@${currentPrefix}`)) ||
+            lowerMsg.includes('@admin') ||
+            lowerMsg.includes('@semua')
+          );
+
+          if (isMentioned && !isFromMe) {
+            setHasMentionNotification(true);
+          }
+
+          // Trigger Device / Browser Notification with sound and vibration if message is meant for this user
+          if (!isFromMe && (isForMyRole || isMentioned)) {
+            newUnreadCount++;
+
+            const senderName = msgObj.sender_name || msgObj.sender || 'Pengurus Pesantren';
             const role = msgObj.sender_role || msgObj.senderRole || '';
-            const rawText = msgObj.message || msgObj.text || (msgObj.attachment ? `[Lampiran: ${msgObj.attachment.name || 'File'}]` : 'Mengirim pesan baru.');
+            const rawText = rawMessageText || (msgObj.attachment ? `[Lampiran: ${msgObj.attachment.name || 'File'}]` : 'Mengirim pesan baru.');
             const cleanText = String(rawText).length > 120 ? String(rawText).slice(0, 117) + '...' : String(rawText);
 
-            // Send notification to device
+            // Send device notification & emit in-app toast event
             sendDeviceNotification({
               title: `${senderName}${role ? ` (${role})` : ''}`,
               body: cleanText,
               icon: msgObj.sender_avatar || msgObj.senderAvatar || '/logo.svg',
-              tag: `smartsantri-chat-${msgObj.id || Date.now()}`,
+              senderAvatar: msgObj.sender_avatar || msgObj.senderAvatar || '/logo.svg',
+              channel: targetChannel,
+              tag: `smartsantri-chat-${msgId || Date.now()}`,
               url: '/',
               onClick: () => {
                 setIsChatOpen(true);
+                setUnreadChatCount(0);
+                setHasMentionNotification(false);
               }
             });
           }
         });
 
-        if (!isChatOpen) {
-          setUnreadChatCount(prev => prev + (Array.isArray(rawObj) ? rawObj.length : 1));
+        if (!isChatOpen && newUnreadCount > 0) {
+          setUnreadChatCount(prev => prev + newUnreadCount);
         }
       }
     });
@@ -413,6 +464,8 @@ export default function App() {
     const handleSwMessage = (e: MessageEvent) => {
       if (e.data && e.data.type === 'NOTIFICATION_CLICKED') {
         setIsChatOpen(true);
+        setUnreadChatCount(0);
+        setHasMentionNotification(false);
       }
     };
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
@@ -1521,6 +1574,15 @@ export default function App() {
       <NotificationPermissionModal
         isOpen={showNotifPermissionModal}
         onClose={() => setShowNotifPermissionModal(false)}
+      />
+
+      {/* Realtime In-App Chat Notification Toast Banner */}
+      <ChatNotificationToast 
+        onOpenChat={(channel) => {
+          setIsChatOpen(true);
+          setUnreadChatCount(0);
+          setHasMentionNotification(false);
+        }}
       />
 
     </div>

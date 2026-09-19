@@ -1,4 +1,4 @@
-const CACHE_NAME = 'attarokey-pwa-v1';
+const CACHE_NAME = 'attarokey-pwa-v2';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -44,6 +44,21 @@ self.addEventListener('fetch', (event) => {
   if (
     requestUrl.protocol !== 'http:' && 
     requestUrl.protocol !== 'https:'
+  ) {
+    return;
+  }
+
+  // Bypass cache completely for API, Vite dev modules, TypeScript files, and dynamic paths
+  if (
+    requestUrl.pathname.startsWith('/api') ||
+    requestUrl.pathname.startsWith('/@') ||
+    requestUrl.pathname.startsWith('/src') ||
+    requestUrl.pathname.startsWith('/node_modules') ||
+    requestUrl.search.includes('t=') ||
+    requestUrl.pathname.endsWith('.ts') ||
+    requestUrl.pathname.endsWith('.tsx') ||
+    requestUrl.pathname.endsWith('.jsx') ||
+    requestUrl.hostname.includes('supabase')
   ) {
     return;
   }

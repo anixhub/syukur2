@@ -55,7 +55,6 @@ import {
 import { 
   getNotificationPermission, 
   requestNotificationPermission, 
-  sendDeviceNotification, 
   NotificationPermissionState 
 } from '../lib/notificationHelper';
 import NotificationPermissionModal from './NotificationPermissionModal';

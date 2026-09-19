@@ -272,7 +272,6 @@ export default function SettingsModal({
   };
 
   const handleTestNotification = () => {
-    playNotificationSound();
     sendDeviceNotification({
       title: 'Uji Coba Notifikasi SmartSantri',
       body: 'Sistem nada dering, getaran, dan notifikasi banner di perangkat Anda berjalan lancar!',

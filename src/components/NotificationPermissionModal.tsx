@@ -56,7 +56,6 @@ export default function NotificationPermissionModal({
 
     if (result.state === 'granted') {
       setIsSuccess(true);
-      playNotificationSound();
       sendDeviceNotification({
         title: 'Notifikasi SmartSantri Berhasil Aktif!',
         body: 'Perangkat Anda kini siap menerima notifikasi pesan masuk kapan pun.',
@@ -71,13 +70,12 @@ export default function NotificationPermissionModal({
   };
 
   const handleOpenInNewTab = () => {
-    openInNewTab();
+    openInNewTab('/?request_notification=1');
     onClose();
   };
 
   const handleTestSound = () => {
     setIsTesting(true);
-    playNotificationSound();
     sendDeviceNotification({
       title: 'Uji Suara & Notifikasi',
       body: 'Nada dering dua nada khas SmartSantri telah berbunyi di perangkat Anda.',
