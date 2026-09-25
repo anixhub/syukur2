@@ -1175,6 +1175,7 @@ export default function App() {
         viewContent = (
           <BendaharaView
             bendaharaList={bendaharaList}
+            santriList={santriList}
             onToggleStatus={handleToggleBendahara}
             activeSubTab={activeSubTab}
             onChangeSubTab={setActiveSubTab}

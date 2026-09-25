@@ -1,10 +1,12 @@
 import React from 'react';
 import { Wallet as WalletIcon, Clock, Lock, Sparkles, CheckCircle2, Search, Check, AlertCircle, Receipt, CreditCard } from 'lucide-react';
-import { BendaharaRecord } from '../types';
+import { BendaharaRecord, Santri } from '../types';
 import WalletSubView from './bendahara/WalletSubView';
+import PembayaranSubView from './bendahara/PembayaranSubView';
 
 interface BendaharaViewProps {
   bendaharaList?: BendaharaRecord[];
+  santriList?: Santri[];
   onToggleStatus?: (id: string) => void;
   activeSubTab?: string;
   onChangeSubTab?: (tab: string) => void;
@@ -12,22 +14,23 @@ interface BendaharaViewProps {
 
 export default function BendaharaView({ 
   bendaharaList = [], 
+  santriList = [],
   onToggleStatus,
   activeSubTab = 'wallet',
   onChangeSubTab
 }: BendaharaViewProps) {
-  const [localSubTab, setLocalSubTab] = React.useState<'wallet' | 'syahriah'>('wallet');
+  const [localSubTab, setLocalSubTab] = React.useState<'wallet' | 'pembayaran' | 'syahriah'>('wallet');
 
   // Sync with prop if provided
   React.useEffect(() => {
-    if (activeSubTab === 'wallet' || activeSubTab === 'syahriah') {
-      setLocalSubTab(activeSubTab as 'wallet' | 'syahriah');
+    if (activeSubTab === 'wallet' || activeSubTab === 'pembayaran' || activeSubTab === 'syahriah') {
+      setLocalSubTab(activeSubTab as 'wallet' | 'pembayaran' | 'syahriah');
     }
   }, [activeSubTab]);
 
-  const currentTab = (activeSubTab === 'wallet' || activeSubTab === 'syahriah') ? activeSubTab : localSubTab;
+  const currentTab = (activeSubTab === 'wallet' || activeSubTab === 'pembayaran' || activeSubTab === 'syahriah') ? activeSubTab : localSubTab;
 
-  const handleTabChange = (tab: 'wallet' | 'syahriah') => {
+  const handleTabChange = (tab: 'wallet' | 'pembayaran' | 'syahriah') => {
     setLocalSubTab(tab);
     if (onChangeSubTab) {
       onChangeSubTab(tab);
@@ -56,6 +59,12 @@ export default function BendaharaView({
       {/* Conditional Sub-View */}
       {currentTab === 'wallet' ? (
         <WalletSubView />
+      ) : currentTab === 'pembayaran' ? (
+        <PembayaranSubView
+          santriList={santriList}
+          bendaharaList={bendaharaList}
+          onUpdateBendaharaStatus={onToggleStatus}
+        />
       ) : (
         <div className="space-y-6">
           {/* Module Header */}

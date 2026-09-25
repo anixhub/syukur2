@@ -80,6 +80,7 @@ const MENU_ITEMS: MenuItemDef[] = [
     icon: Wallet,
     submenus: [
       { id: 'wallet', label: 'Wallet' },
+      { id: 'pembayaran', label: 'Pembayaran' },
       { id: 'syahriah', label: 'Syahriah' }
     ]
   },
