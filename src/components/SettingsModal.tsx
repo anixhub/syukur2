@@ -49,8 +49,20 @@ import {
   LogOut,
   UserPlus,
   Ban,
-  KeyRound
+  KeyRound,
+  Copy,
+  Bell,
+  BellRing,
+  BellOff
 } from 'lucide-react';
+import { 
+  getNotificationPermission, 
+  requestNotificationPermission, 
+  sendDeviceNotification, 
+  playNotificationSound, 
+  NotificationPermissionState 
+} from '../lib/notificationHelper';
+import NotificationPermissionModal from './NotificationPermissionModal';
 import PhotoPreviewModal from './PhotoPreviewModal';
 import AddAccountModal from './AddAccountModal';
 import { compressImage } from '../lib/utils';
@@ -66,7 +78,9 @@ import {
 } from '../lib/api';
 import { saveAccount, getSavedAccounts, switchAccount, logoutCurrentAccount, SavedAccount } from '../lib/accountManager';
 import { AccountRole, DEFAULT_ROLES } from '../lib/permissions';
-import { AppCredentials } from '../types';
+import { AppCredentials, PesantrenProfile } from '../types';
+
+export type { PesantrenProfile };
 
 export type SettingsTab = 
   | 'general' 
@@ -75,7 +89,6 @@ export type SettingsTab =
   | 'akses' 
   | 'kelola_akun' 
   | 'tahun_ajaran' 
-  | 'data' 
   | 'feedback' 
   | 'about';
 
@@ -113,7 +126,7 @@ export const SETTINGS_CATEGORIES: SettingsCategoryItem[] = [
   },
   {
     id: 'kelola_akun',
-    label: 'Kelola Akun',
+    label: 'Kelola Akun Pengguna',
     desc: 'Manajemen pengguna aktif, ganti role & reset akun',
     icon: Users
   },
@@ -122,12 +135,6 @@ export const SETTINGS_CATEGORIES: SettingsCategoryItem[] = [
     label: 'Tahun Ajaran',
     desc: 'Kalender pendidikan & penetapan semester aktif',
     icon: Calendar
-  },
-  {
-    id: 'data',
-    label: 'Data & Cloud',
-    desc: 'Status database Supabase, sinkronisasi & ekspor JSON',
-    icon: Database
   },
   {
     id: 'feedback',
@@ -143,36 +150,6 @@ export const SETTINGS_CATEGORIES: SettingsCategoryItem[] = [
   }
 ];
 
-export interface PesantrenProfile {
-  namaPesantren: string;
-  namaYayasan: string;
-  nspp: string;
-  nomorNotaris: string;
-  alamat: string;
-  desa: string;
-  kecamatan: string;
-  kabupaten: string;
-  provinsi: string;
-  kodePos: string;
-  telepon: string;
-  email: string;
-  website: string;
-  namaPengasuh: string;
-  namaWakilPengasuh: string;
-  namaKetuaYayasan: string;
-  namaKetuaPondok: string;
-  namaSekretaris: string;
-  namaBendahara: string;
-  namaKetuaKeamanan: string;
-  namaKetuaPendidikan: string;
-  namaKetuaHumasy: string;
-  kotaTandaTangan: string;
-  logoStyle: 'classic' | 'elegant' | 'modern';
-  kopTambahan1: string;
-  kopTambahan2: string;
-  logoUrl?: string;
-}
-
 const DEFAULT_PONDOK_PROFILE: PesantrenProfile = {
   namaPesantren: 'Pondok Pesantren Putri Attaroqqy',
   namaYayasan: 'Yayasan Pondok Pesantren Putri Attaroqqy',
@@ -187,19 +164,43 @@ const DEFAULT_PONDOK_PROFILE: PesantrenProfile = {
   telepon: '0812-3456-7890',
   email: 'info@attaroqqy.com',
   website: 'https://attaroqqy.com',
+
+  // Pimpinan & Pengasuh Tunggal
   namaPengasuh: 'KH. Abdul Fattah bin Hasan',
-  namaWakilPengasuh: 'Nyai Hj. Nurul Hidayah',
   namaKetuaYayasan: 'H. Muhammad Thohir, M.Pd.',
+
+  // Pengurus Wilayah Putra
+  namaWakilPengasuhPutra: 'Ust. H. Nurul Huda',
+  namaKetuaPondokPutra: 'Ust. Ahmad Zaini, S.Pd.I.',
+  namaSekretarisPutra: 'Ust. Fathur Rozi',
+  namaBendaharaPutra: 'Ust. M. Ridwan',
+  namaKetuaKeamananPutra: 'Ust. M. Syukron',
+  namaKetuaPendidikanPutra: 'Ust. Abdul Halim, Lc.',
+  namaKetuaHumasyPutra: 'Ust. Ahmad Baihaqi',
+
+  // Pengurus Wilayah Putri
+  namaWakilPengasuhPutri: 'Nyai Hj. Nurul Hidayah',
+  namaKetuaPondokPutri: 'Usth. Siti Fatimah, S.Pd.',
+  namaSekretarisPutri: 'Usth. Maryam',
+  namaBendaharaPutri: 'Usth. Khadijah',
+  namaKetuaKeamananPutri: 'Usth. Aisyah',
+  namaKetuaPendidikanPutri: 'Usth. Zahra, Lc.',
+  namaKetuaHumasyPutri: 'Usth. Halimah',
+
+  // Kolom Kompatibilitas Legacy
+  namaWakilPengasuh: 'Nyai Hj. Nurul Hidayah',
   namaKetuaPondok: 'Ust. Ahmad Zaini, S.Pd.I.',
   namaSekretaris: 'Ust. Fathur Rozi',
   namaBendahara: 'Ust. M. Ridwan',
   namaKetuaKeamanan: 'Ust. M. Syukron',
   namaKetuaPendidikan: 'Ust. Abdul Halim, Lc.',
   namaKetuaHumasy: 'Ust. Ahmad Baihaqi',
+
   kotaTandaTangan: 'Probolinggo',
   logoStyle: 'classic',
   kopTambahan1: 'AKTA NOTARIS: No. 12 Tanggal 14 Juli 2018',
   kopTambahan2: 'SK KEMENKUMHAM RI: AHU-0012345.AH.01.04.Tahun 2018',
+  logoUrl: ''
 };
 
 const MODULE_INFOS = [
@@ -263,6 +264,20 @@ export default function SettingsModal({
   const [showHijriDate, setShowHijriDate] = useState<boolean>(() => {
     return localStorage.getItem('smartsantri_show_hijri') !== 'false';
   });
+  const [notifPermission, setNotifPermission] = useState<NotificationPermissionState>(() => getNotificationPermission());
+  const [showNotifPermissionModal, setShowNotifPermissionModal] = useState<boolean>(false);
+
+  const handleRequestNotifPermission = () => {
+    setShowNotifPermissionModal(true);
+  };
+
+  const handleTestNotification = () => {
+    sendDeviceNotification({
+      title: 'Uji Coba Notifikasi SmartSantri',
+      body: 'Sistem nada dering, getaran, dan notifikasi banner di perangkat Anda berjalan lancar!',
+      icon: '/logo.svg',
+    });
+  };
 
   // Profile Settings State
   const [displayName, setDisplayName] = useState('');
@@ -396,12 +411,6 @@ export default function SettingsModal({
   const [taNameInput, setTaNameInput] = useState('');
   const [editingTa, setEditingTa] = useState<{ id: string; name: string; isActive: boolean } | null>(null);
 
-  // Data & Database State
-  const [dbStatus, setDbStatus] = useState<'online' | 'offline' | 'checking'>('checking');
-  const [cacheSize, setCacheSize] = useState<string>('0 KB');
-  const [dataMessage, setDataMessage] = useState<string | null>(null);
-  const [isSyncingAll, setIsSyncingAll] = useState(false);
-
   // Feedback State
   const [feedbacks, setFeedbacks] = useState<any[]>([]);
   const [loadingFeedbacks, setLoadingFeedbacks] = useState(false);
@@ -430,7 +439,6 @@ export default function SettingsModal({
       // On mobile view: start with category list unless specifically opened to a non-general tab
       setMobileView('list');
       loadProfileData();
-      checkDbAndCache();
       loadCredentials();
       loadFeedbacks();
     }
@@ -453,13 +461,35 @@ export default function SettingsModal({
     setProfileErrorMsg(null);
   };
 
+  const isSuperadminAccount = (c?: { id?: string; username?: string; role?: string } | null) => {
+    if (!c) return false;
+    const u = (c.username || '').toLowerCase();
+    const r = (c.role || '').toLowerCase();
+    return c.id === 'superadmin' || r === 'superadmin' || u === 'superadmin@attaroqqy.com' || u === 'superadmin';
+  };
+
   const loadCredentials = async () => {
     setLoadingCreds(true);
     try {
-      const data = await fetchTableData<AppCredentials>('app_credentials', 'smartsantri_app_credentials');
-      if (data && Array.isArray(data)) {
-        setCredentials(data);
+      let data = await fetchTableData<AppCredentials>('app_credentials', 'smartsantri_app_credentials');
+      if (!data || !Array.isArray(data)) {
+        data = [];
       }
+      const hasSuper = data.some(c => isSuperadminAccount(c));
+      if (!hasSuper) {
+        data = [
+          {
+            id: 'superadmin',
+            username: 'superadmin@attaroqqy.com',
+            displayName: 'Super Admin',
+            role: 'superadmin',
+            status: 'approved',
+            createdAt: '2026-01-01T00:00:00.000Z'
+          },
+          ...data
+        ];
+      }
+      setCredentials(data);
     } catch (e) {
       console.warn('Could not load credentials:', e);
     } finally {
@@ -525,24 +555,6 @@ export default function SettingsModal({
         setSelectedFeedback(null);
       }
     }
-  };
-
-  const checkDbAndCache = async () => {
-    try {
-      const isOnline = await getSupabaseStatus();
-      setDbStatus(isOnline ? 'online' : 'offline');
-    } catch {
-      setDbStatus('offline');
-    }
-
-    let total = 0;
-    for (let x in localStorage) {
-      if (localStorage.hasOwnProperty(x)) {
-        total += ((localStorage[x].length + x.length) * 2);
-      }
-    }
-    const kb = (total / 1024).toFixed(1);
-    setCacheSize(`${kb} KB`);
   };
 
   // General theme handler
@@ -676,12 +688,6 @@ export default function SettingsModal({
       // Jika kata sandi lama salah
       if (currentPassword !== expectedPassword) {
         setIsOldPasswordWrong(true);
-        setPasswordAlertPopup({
-          isOpen: true,
-          type: 'error',
-          title: 'Kata Sandi Lama Salah',
-          message: 'Kata sandi lama yang Anda masukkan tidak sesuai dengan kata sandi saat ini. Jika Anda lupa kata sandi lama, silakan gunakan tombol "Lupa Kata Sandi" untuk meminta akses reset kata sandi kepada Superadmin.'
-        });
         return;
       }
 
@@ -741,16 +747,16 @@ export default function SettingsModal({
     }
   };
 
-  // Minta Akses Reset Sandi Handler
-  const handleSendResetRequest = async () => {
+  // Minta Akses Reset Sandi Langsung Handler (Dipicu saat klik "Lupa Sandi? Minta Akses Reset")
+  const handleDirectResetRequest = async () => {
     setResetRequestSubmitting(true);
     try {
       if (role === 'superadmin' || username.toLowerCase() === 'superadmin@attaroqqy.com') {
         setPasswordAlertPopup({
           isOpen: true,
           type: 'warning',
-          title: 'Akun Superadmin',
-          message: 'Akun Superadmin adalah akun utama sistem dan tidak dapat mengajukan reset mandiri ke superadmin.'
+          title: 'Akun Super Admin',
+          message: 'Akun Super Admin adalah akun utama sistem dan tidak memerlukan pengajuan reset sandi.'
         });
         return;
       }
@@ -783,7 +789,6 @@ export default function SettingsModal({
       window.dispatchEvent(new Event('smartsantri_activity_updated'));
       window.dispatchEvent(new Event('storage'));
 
-      setIsResetRequestModalOpen(false);
       setIsPasswordModalOpen(false);
       setCurrentPassword('');
       setNewPassword('');
@@ -793,8 +798,8 @@ export default function SettingsModal({
       setPasswordAlertPopup({
         isOpen: true,
         type: 'success',
-        title: 'Permintaan Reset Sandi Terkirim',
-        message: 'Permintaan akses reset kata sandi telah berhasil diajukan ke Superadmin. Status akun Anda kini menjadi "Minta Reset Sandi". Silakan konfirmasi ke Superadmin untuk menyetujui dan mereset kata sandi Anda ke default (1234).'
+        title: 'Permintaan Akses Reset Sandi Telah Dikirim',
+        message: 'Permintaan akses reset sandi telah dikirim ke Admin. Silakan hubungi Admin untuk mendapatkan kata sandi sementara akun Anda.'
       });
     } catch (err: any) {
       setPasswordAlertPopup({
@@ -806,6 +811,11 @@ export default function SettingsModal({
     } finally {
       setResetRequestSubmitting(false);
     }
+  };
+
+  // Minta Akses Reset Sandi Handler
+  const handleSendResetRequest = async () => {
+    await handleDirectResetRequest();
   };
 
   // Save Pondok Profile
@@ -895,13 +905,32 @@ export default function SettingsModal({
     isOpen: false,
     user: null
   });
-  const [credResetConfirm, setCredResetConfirm] = useState<{ isOpen: boolean; user: AppCredentials | null }>({
+  const [credResetConfirm, setCredResetConfirm] = useState<{ 
+    isOpen: boolean; 
+    user: AppCredentials | null;
+    tempPassword: string;
+    showTempPassword: boolean;
+  }>({
     isOpen: false,
-    user: null
+    user: null,
+    tempPassword: '1234',
+    showTempPassword: false
+  });
+  const [tempPasswordSuccessModal, setTempPasswordSuccessModal] = useState<{
+    isOpen: boolean;
+    user: AppCredentials | null;
+    tempPassword: string;
+    copied: boolean;
+  }>({
+    isOpen: false,
+    user: null,
+    tempPassword: '',
+    copied: false
   });
 
   // Approve / Reject / Block Credential
   const handleUpdateCredStatus = async (user: AppCredentials, newStatus: 'approved' | 'rejected' | 'pending') => {
+    if (isSuperadminAccount(user)) return;
     try {
       const updated = { ...user, status: newStatus };
       await updateTableRow('app_credentials', 'smartsantri_app_credentials', user.id || user.username, updated);
@@ -913,6 +942,7 @@ export default function SettingsModal({
   };
 
   const handleDeleteCred = async (user: AppCredentials) => {
+    if (isSuperadminAccount(user)) return;
     try {
       await deleteTableRow('app_credentials', 'smartsantri_app_credentials', user.id || user.username);
       setCredentials(prev => prev.filter(c => (c.id ? c.id !== user.id : c.username !== user.username)));
@@ -924,21 +954,47 @@ export default function SettingsModal({
     }
   };
 
-  const handleGrantResetAccess = async (user: AppCredentials) => {
-    const defaultPassword = "1234";
+  const handleGrantResetAccess = async (user: AppCredentials, customTempPass?: string) => {
+    if (isSuperadminAccount(user)) return;
+    const finalPassword = (customTempPass !== undefined ? customTempPass.trim() : credResetConfirm.tempPassword.trim()) || '1234';
     try {
       const updated: AppCredentials = {
         ...user,
-        password: defaultPassword,
+        password: finalPassword,
         status: 'approved'
       };
       await updateTableRow('app_credentials', 'smartsantri_app_credentials', user.id || user.username, updated);
       setCredentials(prev => prev.map(c => (c.username === user.username ? updated : c)));
+
+      const localCredsStr = localStorage.getItem('smartsantri_app_credentials');
+      if (localCredsStr) {
+        try {
+          const parsed = JSON.parse(localCredsStr);
+          if (Array.isArray(parsed)) {
+            const updatedList = parsed.map((c: any) => c.username && c.username.toLowerCase() === user.username.toLowerCase() ? { ...c, password: finalPassword, status: 'approved' } : c);
+            localStorage.setItem('smartsantri_app_credentials', JSON.stringify(updatedList));
+          }
+        } catch (e) {}
+      }
+
       window.dispatchEvent(new Event('smartsantri_activity_updated'));
-    } catch (e) {
+      window.dispatchEvent(new Event('storage'));
+
+      setCredResetConfirm({ isOpen: false, user: null, tempPassword: '1234', showTempPassword: false });
+      setTempPasswordSuccessModal({
+        isOpen: true,
+        user: user,
+        tempPassword: finalPassword,
+        copied: false
+      });
+    } catch (e: any) {
       console.error(e);
-    } finally {
-      setCredResetConfirm({ isOpen: false, user: null });
+      setPasswordAlertPopup({
+        isOpen: true,
+        type: 'error',
+        title: 'Gagal Memberikan Akses',
+        message: e.message || 'Terjadi kesalahan saat menyetel kata sandi sementara.'
+      });
     }
   };
 
@@ -977,42 +1033,6 @@ export default function SettingsModal({
     }
   };
 
-  // Export JSON Backup
-  const handleExportBackup = () => {
-    try {
-      const backupData: Record<string, any> = {};
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('smartsantri_')) {
-          backupData[key] = localStorage.getItem(key);
-        }
-      }
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
-      const downloadAnchor = document.createElement('a');
-      downloadAnchor.setAttribute("href", dataStr);
-      downloadAnchor.setAttribute("download", `smartsantri_backup_${new Date().toISOString().slice(0,10)}.json`);
-      document.body.appendChild(downloadAnchor);
-      downloadAnchor.click();
-      downloadAnchor.remove();
-      setDataMessage('Cadangan data berhasil diunduh ke format JSON.');
-    } catch (e: any) {
-      setDataMessage('Gagal mengekspor: ' + e.message);
-    }
-  };
-
-  // Clear Local Cache
-  const handleClearCache = () => {
-    if (window.confirm('Bersihkan seluruh cache lokal? Data akun aktif dan pengaturan inti akan tetap terjaga.')) {
-      Object.keys(localStorage).forEach(k => {
-        if (k.startsWith('smartsantri_cache_') || k.startsWith('smartsantri_temp_')) {
-          localStorage.removeItem(k);
-        }
-      });
-      checkDbAndCache();
-      setDataMessage('Cache lokal berhasil dibersihkan.');
-    }
-  };
-
   if (!isOpen) return null;
 
   const mobileGroups = [
@@ -1024,12 +1044,6 @@ export default function SettingsModal({
           label: 'Pengaturan Akun',
           value: displayName || 'Akun Aktif',
           icon: User,
-        },
-        {
-          id: 'data' as SettingsTab,
-          label: 'Kontrol Data',
-          value: dbStatus === 'online' ? 'Supabase Cloud' : 'Lokal Aktif',
-          icon: Database,
         },
       ],
     },
@@ -1050,7 +1064,7 @@ export default function SettingsModal({
         },
         {
           id: 'kelola_akun' as SettingsTab,
-          label: 'Kelola Akun',
+          label: 'Kelola Akun Pengguna',
           value: `${credentials.length || 1} Pengguna`,
           icon: Users,
         },
@@ -1074,7 +1088,7 @@ export default function SettingsModal({
       ],
     },
     {
-      title: 'Audio',
+      title: 'Audio & Notifikasi',
       caption: 'Pilih status suara notifikasi aplikasi untuk umpan balik interaksi yang lebih baik.',
       items: [
         {
@@ -1087,6 +1101,20 @@ export default function SettingsModal({
             const next = !soundEnabled;
             setSoundEnabled(next);
             localStorage.setItem('smartsantri_sound_enabled', String(next));
+            if (next) playNotificationSound();
+          },
+        },
+        {
+          id: 'general' as SettingsTab,
+          label: 'Notifikasi Perangkat',
+          icon: notifPermission === 'granted' ? Bell : notifPermission === 'denied' ? BellOff : BellRing,
+          value: notifPermission === 'granted' ? 'Diizinkan' : notifPermission === 'denied' ? 'Diblokir' : 'Minta Izin',
+          onClick: () => {
+            if (notifPermission === 'granted') {
+              handleTestNotification();
+            } else {
+              handleRequestNotifPermission();
+            }
           },
         },
       ],
@@ -1148,11 +1176,8 @@ export default function SettingsModal({
             </div>
             <div>
               <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight leading-tight">
-                Settings &amp; Preferences
+                Pengaturan
               </h2>
-              <p className="text-[11px] text-slate-500 font-medium">
-                Pusat Pengaturan Terpadu SmartSantri 4.0
-              </p>
             </div>
           </div>
           
@@ -1282,6 +1307,10 @@ export default function SettingsModal({
                         key={iIdx}
                         type="button"
                         onClick={() => {
+                          if (item.onClick) {
+                            item.onClick();
+                            return;
+                          }
                           setActiveTab(item.id);
                           setMobileView('detail');
                         }}
@@ -1433,6 +1462,101 @@ export default function SettingsModal({
                         }`}
                       />
                     </button>
+                  </div>
+
+                  {/* Audio & Notifikasi Perangkat */}
+                  <div className="pt-4 border-t border-slate-100 space-y-3">
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900">Suara &amp; Notifikasi Perangkat</h4>
+                      <p className="text-xs text-slate-500">Dapatkan nada dering dan pemberitahuan langsung di layar saat ada pesan masuk.</p>
+                    </div>
+
+                    {/* Suara Notifikasi */}
+                    <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-200/80">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-700 shrink-0">
+                          <Volume2 className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <p className="text-xs sm:text-sm font-semibold text-slate-900">Suara Dering Notifikasi</p>
+                          <p className="text-[11px] text-slate-500">Bunyikan nada dering khas setiap ada obrolan baru</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = !soundEnabled;
+                          setSoundEnabled(next);
+                          localStorage.setItem('smartsantri_sound_enabled', String(next));
+                          if (next) playNotificationSound();
+                        }}
+                        className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer ${
+                          soundEnabled ? 'bg-emerald-600' : 'bg-slate-200'
+                        }`}
+                      >
+                        <div
+                          className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                            soundEnabled ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Izin Notifikasi Perangkat */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-200/80">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 ${
+                          notifPermission === 'granted'
+                            ? 'bg-emerald-50 border-emerald-200 text-emerald-600'
+                            : notifPermission === 'denied'
+                            ? 'bg-rose-50 border-rose-200 text-rose-600'
+                            : 'bg-amber-50 border-amber-200 text-amber-600'
+                        }`}>
+                          <Bell className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs sm:text-sm font-semibold text-slate-900">Notifikasi Sistem Perangkat (HP/PC)</p>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                              notifPermission === 'granted'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : notifPermission === 'denied'
+                                ? 'bg-rose-100 text-rose-800'
+                                : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {notifPermission === 'granted' ? 'Diizinkan' : notifPermission === 'denied' ? 'Diblokir' : 'Perlu Izin'}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500">
+                            {notifPermission === 'granted'
+                              ? 'Notifikasi aktif. Anda akan menerima banner & getaran saat layar aktif maupun latar belakang.'
+                              : notifPermission === 'denied'
+                              ? 'Izin notifikasi diblokir di browser. Harap izinkan melalui pengaturan situs di bilah URL.'
+                              : 'Klik Izinkan agar ponsel atau komputer dapat menampilkan notifikasi pesan masuk.'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                        {notifPermission !== 'granted' ? (
+                          <button
+                            type="button"
+                            onClick={handleRequestNotifPermission}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors cursor-pointer"
+                          >
+                            Izinkan Notifikasi
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={handleTestNotification}
+                            className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold rounded-xl shadow-2xs transition-colors cursor-pointer flex items-center gap-1.5"
+                          >
+                            <BellRing className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Uji Coba Notifikasi</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1724,87 +1848,233 @@ export default function SettingsModal({
                         className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
                       />
                     </div>
+
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="block text-xs font-bold text-slate-700">Kota Penandatangan Dokumen &amp; Surat</label>
+                      <input
+                        type="text"
+                        value={pondokProfile.kotaTandaTangan || ''}
+                        onChange={(e) => setPondokProfile({ ...pondokProfile, kotaTandaTangan: e.target.value })}
+                        placeholder="Contoh: Jombang, Kediri, Probolinggo, dll."
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
+                      />
+                    </div>
                   </div>
                 </div>
 
-                {/* 2. Susunan Pengasuh & Pengurus */}
+                {/* 2. Struktur Kepengurusan Putra */}
                 <div className="space-y-4 pt-2">
-                  <div className="flex items-center gap-2.5 pb-2 border-b border-slate-100">
-                    <div className="w-6 h-6 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center shrink-0 border border-blue-100">
-                      <Users className="w-3.5 h-3.5 stroke-[2.2]" />
+                  <div className="flex items-center justify-between pb-2 border-b border-blue-100">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-800 flex items-center justify-center shrink-0 font-extrabold text-xs">
+                        PA
+                      </div>
+                      <h4 className="text-sm sm:text-base font-bold text-blue-900 tracking-tight">Struktur Kepengurusan Putra</h4>
                     </div>
-                    <h4 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight">Susunan Pengasuh &amp; Pengurus</h4>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <label className="block text-xs font-bold text-slate-700">Nama Pengasuh</label>
-                      <input
-                        type="text"
-                        value={pondokProfile.namaPengasuh || ''}
-                        onChange={(e) => setPondokProfile({ ...pondokProfile, namaPengasuh: e.target.value })}
-                        placeholder="Nama Pengasuh"
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-bold text-slate-700">Ketua Pondok / Direktur</label>
-                      <input
-                        type="text"
-                        value={pondokProfile.namaKetuaPondok || ''}
-                        onChange={(e) => setPondokProfile({ ...pondokProfile, namaKetuaPondok: e.target.value })}
-                        placeholder="Nama Ketua Pondok"
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-bold text-slate-700">Ketua Pendidikan</label>
-                      <input
-                        type="text"
-                        value={pondokProfile.namaKetuaPendidikan || ''}
-                        onChange={(e) => setPondokProfile({ ...pondokProfile, namaKetuaPendidikan: e.target.value })}
-                        placeholder="Nama Ketua Pendidikan"
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-bold text-slate-700">Ketua Keamanan</label>
-                      <input
-                        type="text"
-                        value={pondokProfile.namaKetuaKeamanan || ''}
-                        onChange={(e) => setPondokProfile({ ...pondokProfile, namaKetuaKeamanan: e.target.value })}
-                        placeholder="Nama Ketua Keamanan"
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-bold text-slate-700">Sekretaris</label>
-                      <input
-                        type="text"
-                        value={pondokProfile.namaSekretaris || ''}
-                        onChange={(e) => setPondokProfile({ ...pondokProfile, namaSekretaris: e.target.value })}
-                        placeholder="Nama Sekretaris"
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-bold text-slate-700">Bendahara</label>
-                      <input
-                        type="text"
-                        value={pondokProfile.namaBendahara || ''}
-                        onChange={(e) => setPondokProfile({ ...pondokProfile, namaBendahara: e.target.value })}
-                        placeholder="Nama Bendahara"
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
-                      />
-                    </div>
                     <div className="space-y-1 sm:col-span-2">
-                      <label className="block text-xs font-bold text-slate-700">Ketua Humasy</label>
+                      <label className="block text-xs font-bold text-slate-700">Pengasuh Putra</label>
                       <input
                         type="text"
-                        value={pondokProfile.namaKetuaHumasy || ''}
-                        onChange={(e) => setPondokProfile({ ...pondokProfile, namaKetuaHumasy: e.target.value })}
-                        placeholder="Nama Ketua Humasy"
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
+                        value={pondokProfile.namaPengasuhPutra ?? pondokProfile.namaPengasuh ?? ''}
+                        onChange={(e) => {
+                          setPondokProfile({ 
+                            ...pondokProfile, 
+                            namaPengasuhPutra: e.target.value,
+                            namaPengasuh: e.target.value 
+                          });
+                        }}
+                        placeholder="Contoh: KH. Muhammad Shodiq, M.Ag."
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 bg-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">Ketua Pondok Putra</label>
+                      <input
+                        type="text"
+                        value={pondokProfile.namaKetuaPondokPutra ?? pondokProfile.namaKetuaPondok ?? ''}
+                        onChange={(e) => {
+                          setPondokProfile({ 
+                            ...pondokProfile, 
+                            namaKetuaPondokPutra: e.target.value,
+                            namaKetuaPondok: e.target.value 
+                          });
+                        }}
+                        placeholder="Nama Ketua Pondok Putra"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 bg-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">Sekretaris Putra</label>
+                      <input
+                        type="text"
+                        value={pondokProfile.namaSekretarisPutra ?? pondokProfile.namaSekretaris ?? ''}
+                        onChange={(e) => {
+                          setPondokProfile({ 
+                            ...pondokProfile, 
+                            namaSekretarisPutra: e.target.value,
+                            namaSekretaris: e.target.value 
+                          });
+                        }}
+                        placeholder="Nama Sekretaris Putra"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 bg-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">Bendahara Putra</label>
+                      <input
+                        type="text"
+                        value={pondokProfile.namaBendaharaPutra ?? pondokProfile.namaBendahara ?? ''}
+                        onChange={(e) => {
+                          setPondokProfile({ 
+                            ...pondokProfile, 
+                            namaBendaharaPutra: e.target.value,
+                            namaBendahara: e.target.value 
+                          });
+                        }}
+                        placeholder="Nama Bendahara Putra"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 bg-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">Ketua Pendidikan Putra</label>
+                      <input
+                        type="text"
+                        value={pondokProfile.namaKetuaPendidikanPutra ?? pondokProfile.namaKetuaPendidikan ?? ''}
+                        onChange={(e) => {
+                          setPondokProfile({ 
+                            ...pondokProfile, 
+                            namaKetuaPendidikanPutra: e.target.value,
+                            namaKetuaPendidikan: e.target.value 
+                          });
+                        }}
+                        placeholder="Nama Ketua Pendidikan Putra"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 bg-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">Ketua Keamanan Putra</label>
+                      <input
+                        type="text"
+                        value={pondokProfile.namaKetuaKeamananPutra ?? pondokProfile.namaKetuaKeamanan ?? ''}
+                        onChange={(e) => {
+                          setPondokProfile({ 
+                            ...pondokProfile, 
+                            namaKetuaKeamananPutra: e.target.value,
+                            namaKetuaKeamanan: e.target.value 
+                          });
+                        }}
+                        placeholder="Nama Ketua Keamanan Putra"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 bg-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">Ketua Humasy Putra</label>
+                      <input
+                        type="text"
+                        value={pondokProfile.namaKetuaHumasyPutra ?? pondokProfile.namaKetuaHumasy ?? ''}
+                        onChange={(e) => {
+                          setPondokProfile({ 
+                            ...pondokProfile, 
+                            namaKetuaHumasyPutra: e.target.value,
+                            namaKetuaHumasy: e.target.value 
+                          });
+                        }}
+                        placeholder="Nama Ketua Humasy Putra"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 bg-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Struktur Kepengurusan Putri */}
+                <div className="space-y-4 pt-2">
+                  <div className="flex items-center justify-between pb-2 border-b border-pink-100">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-lg bg-pink-100 text-pink-800 flex items-center justify-center shrink-0 font-extrabold text-xs">
+                        PI
+                      </div>
+                      <h4 className="text-sm sm:text-base font-bold text-pink-900 tracking-tight">Struktur Kepengurusan Putri</h4>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="block text-xs font-bold text-slate-700">Pengasuh Putri</label>
+                      <input
+                        type="text"
+                        value={pondokProfile.namaPengasuhPutri ?? pondokProfile.namaWakilPengasuhPutri ?? ''}
+                        onChange={(e) => {
+                          setPondokProfile({ 
+                            ...pondokProfile, 
+                            namaPengasuhPutri: e.target.value,
+                            namaWakilPengasuhPutri: e.target.value 
+                          });
+                        }}
+                        placeholder="Contoh: Nyai Hj. Nurul Hidayah"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-pink-600 focus:ring-1 focus:ring-pink-600 bg-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">Ketua Pondok Putri</label>
+                      <input
+                        type="text"
+                        value={pondokProfile.namaKetuaPondokPutri ?? ''}
+                        onChange={(e) => setPondokProfile({ ...pondokProfile, namaKetuaPondokPutri: e.target.value })}
+                        placeholder="Nama Ketua Pondok Putri"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-pink-600 focus:ring-1 focus:ring-pink-600 bg-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">Sekretaris Putri</label>
+                      <input
+                        type="text"
+                        value={pondokProfile.namaSekretarisPutri ?? ''}
+                        onChange={(e) => setPondokProfile({ ...pondokProfile, namaSekretarisPutri: e.target.value })}
+                        placeholder="Nama Sekretaris Putri"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-pink-600 focus:ring-1 focus:ring-pink-600 bg-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">Bendahara Putri</label>
+                      <input
+                        type="text"
+                        value={pondokProfile.namaBendaharaPutri ?? ''}
+                        onChange={(e) => setPondokProfile({ ...pondokProfile, namaBendaharaPutri: e.target.value })}
+                        placeholder="Nama Bendahara Putri"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-pink-600 focus:ring-1 focus:ring-pink-600 bg-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">Ketua Pendidikan Putri</label>
+                      <input
+                        type="text"
+                        value={pondokProfile.namaKetuaPendidikanPutri ?? ''}
+                        onChange={(e) => setPondokProfile({ ...pondokProfile, namaKetuaPendidikanPutri: e.target.value })}
+                        placeholder="Nama Ketua Pendidikan Putri"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-pink-600 focus:ring-1 focus:ring-pink-600 bg-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">Ketua Keamanan Putri</label>
+                      <input
+                        type="text"
+                        value={pondokProfile.namaKetuaKeamananPutri ?? ''}
+                        onChange={(e) => setPondokProfile({ ...pondokProfile, namaKetuaKeamananPutri: e.target.value })}
+                        placeholder="Nama Ketua Keamanan Putri"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-pink-600 focus:ring-1 focus:ring-pink-600 bg-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">Ketua Humasy Putri</label>
+                      <input
+                        type="text"
+                        value={pondokProfile.namaKetuaHumasyPutri ?? ''}
+                        onChange={(e) => setPondokProfile({ ...pondokProfile, namaKetuaHumasyPutri: e.target.value })}
+                        placeholder="Nama Ketua Humasy Putri"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-pink-600 focus:ring-1 focus:ring-pink-600 bg-white"
                       />
                     </div>
                   </div>
@@ -1819,36 +2089,40 @@ export default function SettingsModal({
                     <h4 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight">Kontak &amp; Alamat Lembaga</h4>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="space-y-3">
                     <div className="space-y-1">
                       <label className="block text-xs font-bold text-slate-700">Alamat Lengkap</label>
-                      <input
-                        type="text"
+                      <textarea
+                        rows={3}
                         value={pondokProfile.alamat || ''}
                         onChange={(e) => setPondokProfile({ ...pondokProfile, alamat: e.target.value })}
-                        placeholder="Alamat Lengkap"
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
+                        placeholder="Masukkan alamat lengkap pesantren (Jalan, RT/RW, Dusun, Desa/Kelurahan, Kecamatan, Kab/Kota, Provinsi, Kode Pos)"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white resize-none leading-relaxed"
                       />
                     </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-bold text-slate-700">Telepon / WhatsApp</label>
-                      <input
-                        type="text"
-                        value={pondokProfile.telepon || ''}
-                        onChange={(e) => setPondokProfile({ ...pondokProfile, telepon: e.target.value })}
-                        placeholder="Nomor Telepon"
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="block text-xs font-bold text-slate-700">Email Resmi</label>
-                      <input
-                        type="text"
-                        value={pondokProfile.email || ''}
-                        onChange={(e) => setPondokProfile({ ...pondokProfile, email: e.target.value })}
-                        placeholder="Email Resmi"
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
-                      />
+
+                    {/* Telepon & Email */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      <div className="space-y-1">
+                        <label className="block text-xs font-bold text-slate-700">Telepon / WhatsApp</label>
+                        <input
+                          type="text"
+                          value={pondokProfile.telepon || ''}
+                          onChange={(e) => setPondokProfile({ ...pondokProfile, telepon: e.target.value })}
+                          placeholder="Nomor Telepon / WhatsApp"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-xs font-bold text-slate-700">Email Resmi</label>
+                        <input
+                          type="text"
+                          value={pondokProfile.email || ''}
+                          onChange={(e) => setPondokProfile({ ...pondokProfile, email: e.target.value })}
+                          placeholder="Email Resmi"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2029,31 +2303,56 @@ export default function SettingsModal({
             )}
 
             {/* 5. KELOLA AKUN TAB */}
-            {activeTab === 'kelola_akun' && (
-              <div className="space-y-4 animate-in fade-in duration-150">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-100">
-                  <div>
-                    <h3 className="text-base font-bold text-slate-900">Kelola Akun Pengurus</h3>
-                    <p className="text-xs text-slate-500 font-medium">Verifikasi dan kelola status akun terdaftar domain @attaroqqy.com</p>
-                  </div>
-                  <div className="relative w-full sm:w-56">
-                    <input
-                      type="text"
-                      placeholder="Cari pengurus..."
-                      value={credSearch}
-                      onChange={(e) => setCredSearch(e.target.value)}
-                      className="w-full pl-8 pr-3 py-2 sm:py-1.5 rounded-xl border border-slate-200 text-xs font-medium focus:outline-none focus:border-emerald-600 bg-slate-50/50 sm:bg-white"
-                    />
-                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                  </div>
-                </div>
+            {activeTab === 'kelola_akun' && (() => {
+              const hasSuper = credentials.some(c => isSuperadminAccount(c));
+              const allList = hasSuper 
+                ? credentials 
+                : [
+                    {
+                      id: 'superadmin',
+                      username: 'superadmin@attaroqqy.com',
+                      displayName: 'Super Admin',
+                      role: 'superadmin' as const,
+                      status: 'approved' as const,
+                      createdAt: '2026-01-01T00:00:00.000Z'
+                    } as AppCredentials,
+                    ...credentials
+                  ];
 
-                {/* Mobile View: Card List (khusus layar HP) */}
-                <div className="block sm:hidden space-y-3">
-                  {credentials
-                    .filter(c => !credSearch || (c.displayName || c.username).toLowerCase().includes(credSearch.toLowerCase()))
-                    .map((c) => {
-                      const displayName = c.displayName || 'Pengurus';
+              const sortedList = [...allList].sort((a, b) => {
+                const isSuperA = isSuperadminAccount(a);
+                const isSuperB = isSuperadminAccount(b);
+                if (isSuperA) return -1;
+                if (isSuperB) return 1;
+                return 0;
+              });
+
+              const displayList = sortedList.filter(c => !credSearch || (c.displayName || c.username).toLowerCase().includes(credSearch.toLowerCase()));
+
+              return (
+                <div className="space-y-4 animate-in fade-in duration-150">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-100">
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">Kelola Akun Pengguna</h3>
+                      <p className="text-xs text-slate-500 font-medium">Verifikasi dan kelola status akun terdaftar domain @attaroqqy.com</p>
+                    </div>
+                    <div className="relative w-full sm:w-56">
+                      <input
+                        type="text"
+                        placeholder="Cari pengguna..."
+                        value={credSearch}
+                        onChange={(e) => setCredSearch(e.target.value)}
+                        className="w-full pl-8 pr-3 py-2 sm:py-1.5 rounded-xl border border-slate-200 text-xs font-medium focus:outline-none focus:border-emerald-600 bg-slate-50/50 sm:bg-white"
+                      />
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                    </div>
+                  </div>
+
+                  {/* Mobile View: Card List (khusus layar HP) */}
+                  <div className="block sm:hidden space-y-3">
+                    {displayList.map((c) => {
+                      const isSuper = isSuperadminAccount(c);
+                      const displayName = isSuper ? (c.displayName || 'Super Admin') : (c.displayName || 'Pengguna');
                       const initial = displayName.charAt(0).toUpperCase() || 'P';
                       return (
                         <div 
@@ -2078,30 +2377,38 @@ export default function SettingsModal({
 
                             {/* Status Badge */}
                             <div className="flex flex-col items-end gap-1 shrink-0">
-                              {c.status === 'approved' && (
+                              {isSuper ? (
                                 <span className="inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
                                   Aktif
                                 </span>
-                              )}
-                              {c.status === 'minta_reset' && (
+                              ) : (
                                 <>
-                                  <span className="inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                                    Aktif
-                                  </span>
-                                  <span className="inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                                    Lupa Sandi
-                                  </span>
+                                  {c.status === 'approved' && (
+                                    <span className="inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                      Aktif
+                                    </span>
+                                  )}
+                                  {c.status === 'minta_reset' && (
+                                    <>
+                                      <span className="inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                        Aktif
+                                      </span>
+                                      <span className="inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                        Lupa Sandi
+                                      </span>
+                                    </>
+                                  )}
+                                  {c.status === 'rejected' && (
+                                    <span className="inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">
+                                      Diblokir
+                                    </span>
+                                  )}
+                                  {c.status === 'pending' && (
+                                    <span className="inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800">
+                                      Menunggu
+                                    </span>
+                                  )}
                                 </>
-                              )}
-                              {c.status === 'rejected' && (
-                                <span className="inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">
-                                  Diblokir
-                                </span>
-                              )}
-                              {c.status === 'pending' && (
-                                <span className="inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800">
-                                  Menunggu
-                                </span>
                               )}
                             </div>
                           </div>
@@ -2111,304 +2418,333 @@ export default function SettingsModal({
                             <span className="text-slate-400 font-medium">Hak Akses:</span>
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-700 font-bold capitalize">
                               <Shield className="w-3 h-3 text-slate-500" />
-                              {c.role}
+                              {isSuper ? 'Superadmin' : c.role}
                             </span>
                           </div>
 
                           {/* Action Buttons for Mobile (Touch-Friendly) */}
-                          <div className="pt-2 flex items-center gap-2 flex-wrap">
-                            {/* Status Approved: Blokir & Hapus */}
-                            {c.status === 'approved' && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateCredStatus(c, 'rejected')}
-                                  className="flex-1 py-2.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 active:bg-amber-200 text-amber-800 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-amber-200/80 transition-colors"
-                                >
-                                  <Ban className="w-3.5 h-3.5 text-amber-700" />
-                                  <span>Blokir</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
-                                  className="py-2.5 px-3.5 rounded-xl bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-rose-200/80 transition-colors"
-                                  title="Hapus Akun"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                  <span>Hapus</span>
-                                </button>
-                              </>
-                            )}
+                          {isSuper ? (
+                            <div className="pt-2 flex items-center justify-end">
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold select-none cursor-default">
+                                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>Akun Utama (Permanen)</span>
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="pt-2 flex items-center gap-2 flex-wrap">
+                              {/* Status Approved: Blokir & Hapus */}
+                              {c.status === 'approved' && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateCredStatus(c, 'rejected')}
+                                    className="flex-1 py-2.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 active:bg-amber-200 text-amber-800 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-amber-200/80 transition-colors"
+                                  >
+                                    <Ban className="w-3.5 h-3.5 text-amber-700" />
+                                    <span>Blokir Akun</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
+                                    className="py-2.5 px-3.5 rounded-xl bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-rose-200/80 transition-colors"
+                                    title="Hapus Akun"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <span>Hapus</span>
+                                  </button>
+                                </>
+                              )}
 
-                            {/* Status Minta Reset: Beri Akses, Blokir, Hapus */}
-                            {c.status === 'minta_reset' && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => setCredResetConfirm({ isOpen: true, user: c })}
-                                  className="flex-1 py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
-                                >
-                                  <KeyRound className="w-3.5 h-3.5" />
-                                  <span>Beri Akses</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateCredStatus(c, 'rejected')}
-                                  className="py-2.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 active:bg-amber-200 text-amber-800 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-amber-200/80 transition-colors"
-                                >
-                                  <Ban className="w-3.5 h-3.5 text-amber-700" />
-                                  <span>Blokir</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
-                                  className="py-2.5 px-3.5 rounded-xl bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-rose-200/80 transition-colors"
-                                  title="Hapus Akun"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                  <span>Hapus</span>
-                                </button>
-                              </>
-                            )}
+                              {/* Status Minta Reset: Beri Akses, Blokir, Hapus */}
+                              {c.status === 'minta_reset' && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => setCredResetConfirm({ isOpen: true, user: c, tempPassword: '1234', showTempPassword: false })}
+                                    className="flex-1 py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+                                  >
+                                    <KeyRound className="w-3.5 h-3.5" />
+                                    <span>Beri Akses</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateCredStatus(c, 'rejected')}
+                                    className="py-2.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 active:bg-amber-200 text-amber-800 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-amber-200/80 transition-colors"
+                                  >
+                                    <Ban className="w-3.5 h-3.5 text-amber-700" />
+                                    <span>Blokir</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
+                                    className="py-2.5 px-3.5 rounded-xl bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-rose-200/80 transition-colors"
+                                    title="Hapus Akun"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <span>Hapus</span>
+                                  </button>
+                                </>
+                              )}
 
-                            {/* Status Diblokir: Unblock & Hapus */}
-                            {c.status === 'rejected' && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateCredStatus(c, 'approved')}
-                                  className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
-                                >
-                                  <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                                  <span>Unblock</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
-                                  className="py-2.5 px-3.5 rounded-xl bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-rose-200/80 transition-colors"
-                                  title="Hapus Akun"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                  <span>Hapus</span>
-                                </button>
-                              </>
-                            )}
+                              {/* Status Diblokir: Unblock & Hapus */}
+                              {c.status === 'rejected' && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateCredStatus(c, 'approved')}
+                                    className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+                                  >
+                                    <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                                    <span>Unblock</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
+                                    className="py-2.5 px-3.5 rounded-xl bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-rose-200/80 transition-colors"
+                                    title="Hapus Akun"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <span>Hapus</span>
+                                  </button>
+                                </>
+                              )}
 
-                            {/* Status Pending: Setujui, Blokir, Hapus */}
-                            {c.status === 'pending' && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateCredStatus(c, 'approved')}
-                                  className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
-                                >
-                                  <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                                  <span>Setujui</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateCredStatus(c, 'rejected')}
-                                  className="py-2.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 active:bg-amber-200 text-amber-800 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-amber-200/80 transition-colors"
-                                >
-                                  <Ban className="w-3.5 h-3.5 text-amber-700" />
-                                  <span>Blokir</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
-                                  className="py-2.5 px-3.5 rounded-xl bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-rose-200/80 transition-colors"
-                                  title="Hapus Akun"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                  <span>Hapus</span>
-                                </button>
-                              </>
-                            )}
-                          </div>
+                              {/* Status Pending: Setujui, Blokir, Hapus */}
+                              {c.status === 'pending' && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateCredStatus(c, 'approved')}
+                                    className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+                                  >
+                                    <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                                    <span>Setujui</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateCredStatus(c, 'rejected')}
+                                    className="py-2.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 active:bg-amber-200 text-amber-800 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-amber-200/80 transition-colors"
+                                  >
+                                    <Ban className="w-3.5 h-3.5 text-amber-700" />
+                                    <span>Blokir</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
+                                    className="py-2.5 px-3.5 rounded-xl bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer border border-rose-200/80 transition-colors"
+                                    title="Hapus Akun"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <span>Hapus</span>
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
 
-                  {credentials.filter(c => !credSearch || (c.displayName || c.username).toLowerCase().includes(credSearch.toLowerCase())).length === 0 && (
-                    <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                      <Users className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-                      <p className="text-xs font-bold text-slate-600">Tidak ada data pengurus ditemukan</p>
-                    </div>
-                  )}
-                </div>
+                    {displayList.length === 0 && (
+                      <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                        <Users className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                        <p className="text-xs font-bold text-slate-600">Tidak ada data pengguna ditemukan</p>
+                      </div>
+                    )}
+                  </div>
 
-                {/* Desktop View: Table Layout */}
-                <div className="hidden sm:block bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                        <tr>
-                          <th className="py-3 px-4">Nama &amp; Email</th>
-                          <th className="py-3 px-4">Hak Akses / Role</th>
-                          <th className="py-3 px-4 text-center">Status</th>
-                          <th className="py-3 px-4 text-right">Aksi</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {credentials
-                          .filter(c => !credSearch || (c.displayName || c.username).toLowerCase().includes(credSearch.toLowerCase()))
-                          .map((c) => (
-                            <tr key={c.id || c.username} className="hover:bg-slate-50/50">
-                              <td className="py-3 px-4">
-                                <span className="font-bold text-slate-900 block">{c.displayName || 'Pengurus'}</span>
-                                <span className="text-[11px] text-slate-500">{c.username}</span>
-                              </td>
-                              <td className="py-3 px-4 capitalize font-semibold text-slate-700">
-                                {c.role}
-                              </td>
-                              <td className="py-3 px-4 text-center">
-                                <div className="flex flex-col items-center justify-center gap-1">
-                                  {c.status === 'approved' && (
-                                    <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                                      Aktif
-                                    </span>
-                                  )}
-                                  {c.status === 'minta_reset' && (
-                                    <>
+                  {/* Desktop View: Table Layout */}
+                  <div className="hidden sm:block bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          <tr>
+                            <th className="py-3 px-4">Nama &amp; Email</th>
+                            <th className="py-3 px-4">Hak Akses / Role</th>
+                            <th className="py-3 px-4 text-center">Status</th>
+                            <th className="py-3 px-4 text-right">Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {displayList.map((c) => {
+                            const isSuper = isSuperadminAccount(c);
+                            const displayName = isSuper ? (c.displayName || 'Super Admin') : (c.displayName || 'Pengguna');
+                            return (
+                              <tr key={c.id || c.username} className="hover:bg-slate-50/50">
+                                <td className="py-3 px-4">
+                                  <span className="font-bold text-slate-900 block">{displayName}</span>
+                                  <span className="text-[11px] text-slate-500">{c.username}</span>
+                                </td>
+                                <td className="py-3 px-4 capitalize font-semibold text-slate-700">
+                                  {isSuper ? 'Superadmin' : c.role}
+                                </td>
+                                <td className="py-3 px-4 text-center">
+                                  <div className="flex flex-col items-center justify-center gap-1">
+                                    {isSuper ? (
                                       <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
                                         Aktif
                                       </span>
-                                      <span className="inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                                        Lupa Sandi
+                                    ) : (
+                                      <>
+                                        {c.status === 'approved' && (
+                                          <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                            Aktif
+                                          </span>
+                                        )}
+                                        {c.status === 'minta_reset' && (
+                                          <>
+                                            <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                              Aktif
+                                            </span>
+                                            <span className="inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                              Lupa Sandi
+                                            </span>
+                                          </>
+                                        )}
+                                        {c.status === 'rejected' && (
+                                          <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">
+                                            Diblokir
+                                          </span>
+                                        )}
+                                        {c.status === 'pending' && (
+                                          <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800">
+                                            Menunggu
+                                          </span>
+                                        )}
+                                      </>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4 text-right">
+                                  {isSuper ? (
+                                    <div className="inline-flex items-center justify-end">
+                                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold select-none cursor-default">
+                                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                        <span>Akun Utama (Permanen)</span>
                                       </span>
-                                    </>
-                                  )}
-                                  {c.status === 'rejected' && (
-                                    <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">
-                                      Diblokir
-                                    </span>
-                                  )}
-                                  {c.status === 'pending' && (
-                                    <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800">
-                                      Menunggu
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="py-3 px-4 text-right">
-                                <div className="inline-flex items-center justify-end gap-1.5">
-                                  {/* Status Approved: Blokir & Hapus */}
-                                  {c.status === 'approved' && (
-                                    <>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleUpdateCredStatus(c, 'rejected')}
-                                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-bold border border-amber-200/70 transition-colors cursor-pointer active:scale-95"
-                                        title="Blokir Akun"
-                                      >
-                                        <Ban className="w-3.5 h-3.5 text-amber-700" />
-                                        <span>Blokir</span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
-                                        className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-150 transition-colors cursor-pointer active:scale-95"
-                                        title="Hapus Akun"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </>
-                                  )}
+                                    </div>
+                                  ) : (
+                                    <div className="inline-flex items-center justify-end gap-1.5">
+                                      {/* Status Approved: Blokir & Hapus */}
+                                      {c.status === 'approved' && (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleUpdateCredStatus(c, 'rejected')}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-bold border border-amber-200/70 transition-colors cursor-pointer active:scale-95"
+                                            title="Blokir Akun"
+                                          >
+                                            <Ban className="w-3.5 h-3.5 text-amber-700" />
+                                            <span>Blokir</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
+                                            className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-150 transition-colors cursor-pointer active:scale-95"
+                                            title="Hapus Akun"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </>
+                                      )}
 
-                                  {/* Status Minta Reset: Beri Akses, Blokir, Hapus */}
-                                  {c.status === 'minta_reset' && (
-                                    <>
-                                      <button
-                                        type="button"
-                                        onClick={() => setCredResetConfirm({ isOpen: true, user: c })}
-                                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold shadow-xs transition-colors cursor-pointer active:scale-95"
-                                        title="Beri Akses / Setel Ulang Kata Sandi"
-                                      >
-                                        <KeyRound className="w-3.5 h-3.5" />
-                                        <span>Beri Akses</span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleUpdateCredStatus(c, 'rejected')}
-                                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-bold border border-amber-200/70 transition-colors cursor-pointer active:scale-95"
-                                        title="Blokir Akun"
-                                      >
-                                        <Ban className="w-3.5 h-3.5 text-amber-700" />
-                                        <span>Blokir</span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
-                                        className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-150 transition-colors cursor-pointer active:scale-95"
-                                        title="Hapus Akun"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </>
-                                  )}
+                                      {/* Status Minta Reset: Beri Akses, Blokir, Hapus */}
+                                      {c.status === 'minta_reset' && (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => setCredResetConfirm({ isOpen: true, user: c, tempPassword: '1234', showTempPassword: false })}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold shadow-xs transition-colors cursor-pointer active:scale-95"
+                                            title="Beri Akses / Setel Kata Sandi Sementara"
+                                          >
+                                            <KeyRound className="w-3.5 h-3.5" />
+                                            <span>Beri Akses</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleUpdateCredStatus(c, 'rejected')}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-bold border border-amber-200/70 transition-colors cursor-pointer active:scale-95"
+                                            title="Blokir Akun"
+                                          >
+                                            <Ban className="w-3.5 h-3.5 text-amber-700" />
+                                            <span>Blokir</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
+                                            className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-150 transition-colors cursor-pointer active:scale-95"
+                                            title="Hapus Akun"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </>
+                                      )}
 
-                                  {/* Status Diblokir: Unblock & Hapus */}
-                                  {c.status === 'rejected' && (
-                                    <>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleUpdateCredStatus(c, 'approved')}
-                                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold shadow-xs transition-colors cursor-pointer active:scale-95"
-                                        title="Buka Blokir Akun"
-                                      >
-                                        <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                                        <span>Unblock</span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
-                                        className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-150 transition-colors cursor-pointer active:scale-95"
-                                        title="Hapus Akun"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </>
-                                  )}
+                                      {/* Status Diblokir: Unblock & Hapus */}
+                                      {c.status === 'rejected' && (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleUpdateCredStatus(c, 'approved')}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold shadow-xs transition-colors cursor-pointer active:scale-95"
+                                            title="Buka Blokir Akun"
+                                          >
+                                            <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                                            <span>Unblock</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
+                                            className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-150 transition-colors cursor-pointer active:scale-95"
+                                            title="Hapus Akun"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </>
+                                      )}
 
-                                  {/* Status Pending: Setujui, Blokir, Hapus */}
-                                  {c.status === 'pending' && (
-                                    <>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleUpdateCredStatus(c, 'approved')}
-                                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold shadow-xs transition-colors cursor-pointer active:scale-95"
-                                      >
-                                        <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                                        <span>Setujui</span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleUpdateCredStatus(c, 'rejected')}
-                                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-bold border border-amber-200/70 transition-colors cursor-pointer active:scale-95"
-                                      >
-                                        <Ban className="w-3.5 h-3.5 text-amber-700" />
-                                        <span>Blokir</span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
-                                        className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-150 transition-colors cursor-pointer active:scale-95"
-                                        title="Hapus Akun"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </>
+                                      {/* Status Pending: Setujui, Blokir, Hapus */}
+                                      {c.status === 'pending' && (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleUpdateCredStatus(c, 'approved')}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold shadow-xs transition-colors cursor-pointer active:scale-95"
+                                          >
+                                            <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                                            <span>Setujui</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleUpdateCredStatus(c, 'rejected')}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-bold border border-amber-200/70 transition-colors cursor-pointer active:scale-95"
+                                          >
+                                            <Ban className="w-3.5 h-3.5 text-amber-700" />
+                                            <span>Blokir</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setCredDeleteConfirm({ isOpen: true, user: c })}
+                                            className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-150 transition-colors cursor-pointer active:scale-95"
+                                            title="Hapus Akun"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </>
+                                      )}
+                                    </div>
                                   )}
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* 6. TAHUN AJARAN TAB */}
             {activeTab === 'tahun_ajaran' && (
@@ -2496,72 +2832,7 @@ export default function SettingsModal({
               </div>
             )}
 
-            {/* 7. DATA & DATABASE TAB */}
-            {activeTab === 'data' && (
-              <div className="space-y-5 animate-in fade-in duration-150">
-                {dataMessage && (
-                  <div className="p-3.5 rounded-2xl bg-blue-50 border border-blue-100 text-blue-800 text-xs font-semibold flex items-center gap-2.5">
-                    <Info className="w-4.5 h-4.5 text-blue-600 shrink-0" />
-                    <span>{dataMessage}</span>
-                  </div>
-                )}
-
-                <div className="p-4 rounded-2xl border border-slate-200 flex items-center justify-between">
-                  <div className="flex items-center gap-3.5">
-                    <div className={`w-3.5 h-3.5 rounded-full ${dbStatus === 'online' ? 'bg-emerald-500 ring-4 ring-emerald-100' : 'bg-amber-500 ring-4 ring-amber-100'}`} />
-                    <div>
-                      <h4 className="text-xs sm:text-sm font-bold text-slate-900">Database Cloud &amp; Realtime</h4>
-                      <p className="text-[11px] text-slate-500 font-medium">
-                        {dbStatus === 'online' ? 'Terhubung sinkron otomatis dengan Supabase Backend' : 'Mode Offline / Penyimpanan Lokal Aktif'}
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={checkDbAndCache}
-                    className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
-                    title="Cek Koneksi Ulang"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <div className="space-y-2.5">
-                  <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Cadangan Data &amp; Pemeliharaan</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                    <button
-                      type="button"
-                      onClick={handleExportBackup}
-                      className="p-4 rounded-2xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/30 text-left transition-all flex items-center gap-3.5 cursor-pointer group"
-                    >
-                      <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
-                        <Download className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <p className="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-blue-600">Ekspor Cadangan JSON</p>
-                        <p className="text-[11px] text-slate-500">Unduh data sistem ke perangkat lokal</p>
-                      </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleClearCache}
-                      className="p-4 rounded-2xl border border-slate-200 hover:border-rose-400 hover:bg-rose-50/30 text-left transition-all flex items-center gap-3.5 cursor-pointer group"
-                    >
-                      <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
-                        <Trash2 className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <p className="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-rose-600">Bersihkan Cache Lokal</p>
-                        <p className="text-[11px] text-slate-500">Kapasitas terpakai: {cacheSize}</p>
-                      </div>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* 8. FEEDBACK TAB */}
+            {/* 7. FEEDBACK TAB */}
             {activeTab === 'feedback' && (
               <div className="space-y-4 animate-in fade-in duration-150">
                 {/* Sticky Header Container */}
@@ -2872,30 +3143,9 @@ export default function SettingsModal({
                 </button>
               </div>
 
-              {/* Banner Peringatan Kata Sandi Lama Salah + Tombol Lupa Kata Sandi */}
-              {isOldPasswordWrong && (
-                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 space-y-2 animate-in fade-in duration-150">
-                  <div className="flex items-start gap-2.5">
-                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                    <div className="text-xs text-rose-800 font-medium leading-relaxed">
-                      Kata sandi lama yang Anda masukkan tidak sesuai dengan kata sandi saat ini.
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsResetRequestModalOpen(true);
-                    }}
-                    className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs active:scale-98 transition-all cursor-pointer"
-                  >
-                    <KeyRound className="w-3.5 h-3.5" />
-                    <span>Lupa Kata Sandi? Minta Akses Reset Sandi</span>
-                  </button>
-                </div>
-              )}
-
-              <form onSubmit={handleSavePasswordModal} className="space-y-3.5">
-                <div className="space-y-1">
+              <form onSubmit={handleSavePasswordModal} className="space-y-4">
+                {/* Kotak Kata Sandi Lama */}
+                <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-slate-700">Kata Sandi Lama</label>
                   <div className="relative">
                     <input
@@ -2904,6 +3154,7 @@ export default function SettingsModal({
                       value={currentPassword}
                       onChange={(e) => {
                         setCurrentPassword(e.target.value);
+                        if (isOldPasswordWrong) setIsOldPasswordWrong(false);
                       }}
                       placeholder="Masukkan kata sandi lama saat ini"
                       className={`w-full pl-3.5 pr-10 py-2.5 rounded-xl border text-xs sm:text-sm font-medium focus:outline-none transition-colors ${
@@ -2921,9 +3172,28 @@ export default function SettingsModal({
                       {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
+                  {/* Tombol Lupa Sandi Rata Kiri Tepat di Bawah Kotak Input Sandi Lama */}
+                  <div className="flex flex-col items-start gap-1 pt-0.5 text-[11px]">
+                    {isOldPasswordWrong && (
+                      <span className="font-bold text-rose-600 flex items-center gap-1">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                        Kata sandi lama salah
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      disabled={resetRequestSubmitting}
+                      onClick={handleDirectResetRequest}
+                      className="font-bold text-rose-600 hover:text-rose-700 active:text-rose-800 hover:underline flex items-center gap-1 cursor-pointer transition-colors disabled:opacity-50 text-left"
+                    >
+                      <KeyRound className="w-3.5 h-3.5" />
+                      <span>{resetRequestSubmitting ? 'Mengirim Permintaan...' : 'Lupa kata sandi? Minta akses'}</span>
+                    </button>
+                  </div>
                 </div>
 
-                <div className="space-y-1">
+                {/* Kotak Kata Sandi Baru */}
+                <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-slate-700">Kata Sandi Baru</label>
                   <div className="relative">
                     <input
@@ -2931,8 +3201,12 @@ export default function SettingsModal({
                       required
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="Minimal 4 karakter"
-                      className="w-full pl-3.5 pr-10 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-medium focus:outline-none focus:border-blue-500"
+                      placeholder="Masukkan kata sandi baru"
+                      className={`w-full pl-3.5 pr-10 py-2.5 rounded-xl border text-xs sm:text-sm font-medium focus:outline-none transition-colors ${
+                        newPassword.length > 0 && newPassword.length < 4
+                          ? 'border-rose-400 bg-rose-50/20 text-rose-900 focus:border-rose-500'
+                          : 'border-slate-200 focus:border-blue-500'
+                      }`}
                     />
                     <button
                       type="button"
@@ -2943,9 +3217,19 @@ export default function SettingsModal({
                       {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
+                  {/* Peringatan Realtime Hanya Muncul Saat Ada Kesalahan */}
+                  {newPassword.length > 0 && newPassword.length < 4 && (
+                    <div className="text-[11px] pt-0.5">
+                      <span className="font-bold text-rose-600 flex items-center gap-1">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                        Kata sandi kurang dari 4 digit / karakter
+                      </span>
+                    </div>
+                  )}
                 </div>
 
-                <div className="space-y-1">
+                {/* Kotak Ulangi Kata Sandi Baru */}
+                <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-slate-700">Ulangi Kata Sandi Baru</label>
                   <div className="relative">
                     <input
@@ -2954,7 +3238,11 @@ export default function SettingsModal({
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       placeholder="Ulangi kata sandi baru"
-                      className="w-full pl-3.5 pr-10 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-medium focus:outline-none focus:border-blue-500"
+                      className={`w-full pl-3.5 pr-10 py-2.5 rounded-xl border text-xs sm:text-sm font-medium focus:outline-none transition-colors ${
+                        confirmPassword.length > 0 && !newPassword.startsWith(confirmPassword)
+                          ? 'border-rose-400 bg-rose-50/20 text-rose-900 focus:border-rose-500'
+                          : 'border-slate-200 focus:border-blue-500'
+                      }`}
                     />
                     <button
                       type="button"
@@ -2965,6 +3253,15 @@ export default function SettingsModal({
                       {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
+                  {/* Peringatan Realtime: Hanya Muncul Jika Ada Karakter yang Tidak Cocok / Menyimpang Sejak Awal Input */}
+                  {confirmPassword.length > 0 && !newPassword.startsWith(confirmPassword) && (
+                    <div className="text-[11px] pt-0.5 animate-in fade-in duration-150">
+                      <span className="font-bold text-rose-600 flex items-center gap-1">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                        Kata sandi baru tidak sesuai / tidak cocok
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
@@ -2980,8 +3277,13 @@ export default function SettingsModal({
                   </button>
                   <button
                     type="submit"
-                    disabled={passwordSaving}
-                    className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-600/20 active:scale-95 transition-all cursor-pointer disabled:opacity-60"
+                    disabled={
+                      passwordSaving ||
+                      newPassword.length < 4 ||
+                      confirmPassword !== newPassword ||
+                      !currentPassword
+                    }
+                    className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold shadow-md shadow-blue-600/20 active:scale-95 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {passwordSaving ? 'Menyimpan...' : 'Simpan Kata Sandi'}
                   </button>
@@ -3298,7 +3600,7 @@ export default function SettingsModal({
         )}
       </AnimatePresence>
 
-      {/* Modal Konfirmasi Beri Akses (Reset Sandi) */}
+      {/* Modal Beri Akses & Kata Sandi Sementara (Sisi Admin) */}
       <AnimatePresence>
         {credResetConfirm.isOpen && credResetConfirm.user && (
           <div className="fixed inset-0 z-[1000000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
@@ -3307,23 +3609,92 @@ export default function SettingsModal({
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.95, opacity: 0, y: 8 }}
               transition={{ duration: 0.15 }}
-              className="bg-white rounded-3xl max-w-sm w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4 text-center"
-              id="dialog-confirm-reset-cred"
+              className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4 text-left"
+              id="dialog-beri-akses-sandi-sementara"
             >
-              <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center mx-auto">
-                <KeyRound className="w-6 h-6 stroke-[2]" />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-base font-bold text-slate-900">Beri Akses / Reset Sandi?</h3>
-                <p className="text-xs text-slate-500 leading-relaxed">
-                  Kata sandi untuk <strong className="text-slate-800">{credResetConfirm.user.displayName || credResetConfirm.user.username}</strong> akan disetel ulang ke kata sandi sementara: <span className="font-mono font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">1234</span> dan status akun diaktifkan kembali.
-                </p>
-              </div>
-              <div className="flex items-center justify-center gap-2.5 pt-2">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
+                    <KeyRound className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm sm:text-base font-bold text-slate-900">Beri Akses &amp; Sandi Sementara</h3>
+                  </div>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setCredResetConfirm({ isOpen: false, user: null })}
-                  className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
+                  onClick={() => setCredResetConfirm({ isOpen: false, user: null, tempPassword: '1234', showTempPassword: false })}
+                  className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Box Info Pengguna */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2 text-xs">
+                <div className="flex justify-between items-center py-0.5">
+                  <span className="text-slate-500 font-medium">Nama Pengguna</span>
+                  <span className="font-bold text-slate-900">{credResetConfirm.user.displayName || credResetConfirm.user.username}</span>
+                </div>
+                <div className="flex justify-between items-center py-0.5">
+                  <span className="text-slate-500 font-medium">Username / Email</span>
+                  <span className="font-mono text-slate-800">{credResetConfirm.user.username}</span>
+                </div>
+                <div className="flex justify-between items-center py-0.5">
+                  <span className="text-slate-500 font-medium">Peran / Role</span>
+                  <span className="font-semibold text-slate-800 capitalize">{credResetConfirm.user.role}</span>
+                </div>
+              </div>
+
+              {/* Form Input Sandi Sementara */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-slate-700">Kata Sandi Sementara</label>
+                <div className="relative">
+                  <input
+                    type={credResetConfirm.showTempPassword ? 'text' : 'password'}
+                    required
+                    value={credResetConfirm.tempPassword}
+                    onChange={(e) => setCredResetConfirm(prev => ({ ...prev, tempPassword: e.target.value }))}
+                    placeholder="Contoh: 1234"
+                    className="w-full pl-3.5 pr-10 py-2.5 rounded-xl border border-slate-300 focus:border-blue-500 text-xs sm:text-sm font-mono font-bold focus:outline-none transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setCredResetConfirm(prev => ({ ...prev, showTempPassword: !prev.showTempPassword }))}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5"
+                    title={credResetConfirm.showTempPassword ? 'Sembunyikan' : 'Tampilkan'}
+                  >
+                    {credResetConfirm.showTempPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+
+                {/* Preset Chips */}
+                <div className="flex items-center gap-2 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setCredResetConfirm(prev => ({ ...prev, tempPassword: '1234' }))}
+                    className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
+                  >
+                    Gunakan 1234
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const pin = String(Math.floor(100000 + Math.random() * 900000));
+                      setCredResetConfirm(prev => ({ ...prev, tempPassword: pin, showTempPassword: true }));
+                    }}
+                    className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 transition-colors cursor-pointer"
+                  >
+                    Acak PIN 6-Digit
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setCredResetConfirm({ isOpen: false, user: null, tempPassword: '1234', showTempPassword: false })}
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
                 >
                   Batal
                 </button>
@@ -3331,12 +3702,66 @@ export default function SettingsModal({
                   type="button"
                   onClick={() => {
                     if (credResetConfirm.user) {
-                      handleGrantResetAccess(credResetConfirm.user);
+                      handleGrantResetAccess(credResetConfirm.user, credResetConfirm.tempPassword);
                     }
                   }}
-                  className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-600/20 active:scale-95 transition-all cursor-pointer"
+                  className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold shadow-md shadow-blue-600/20 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
                 >
-                  Beri Akses
+                  <Check className="w-4 h-4 stroke-[2.5]" />
+                  <span>Simpan &amp; Beri Akses</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal Sukses Beri Sandi Sementara (Siap Disalin & Diberikan ke Pengguna) */}
+      <AnimatePresence>
+        {tempPasswordSuccessModal.isOpen && tempPasswordSuccessModal.user && (
+          <div className="fixed inset-0 z-[1000000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 8 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 8 }}
+              transition={{ duration: 0.15 }}
+              className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4 text-center"
+              id="dialog-sukses-sandi-sementara"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
+                <CheckCircle2 className="w-6 h-6 stroke-[2.2]" />
+              </div>
+
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-slate-900">Akses &amp; Sandi Sementara Diberikan</h3>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Akun <strong className="text-slate-800">{tempPasswordSuccessModal.user.displayName || tempPasswordSuccessModal.user.username}</strong> telah aktif kembali dengan kata sandi sementara:
+                </p>
+              </div>
+
+              {/* Tampilan Sandi Sementara Bersih: Karakter Besar dengan Garis Bawah per Karakter */}
+              <div className="py-2 flex items-center justify-center gap-2.5 sm:gap-3 flex-wrap">
+                {tempPasswordSuccessModal.tempPassword.split('').map((char, index) => (
+                  <div
+                    key={index}
+                    className="flex flex-col items-center justify-center min-w-[32px] sm:min-w-[40px] pb-1 border-b-2 sm:border-b-3 border-slate-900 font-mono text-2xl sm:text-3xl font-extrabold text-slate-900 select-all"
+                  >
+                    {char}
+                  </div>
+                ))}
+              </div>
+
+              <p className="text-[11px] text-slate-600 text-left leading-relaxed bg-blue-50/70 p-3 rounded-xl border border-blue-100">
+                Silakan beritahukan kata sandi sementara di atas kepada pengguna agar dapat digunakan untuk login dan mengganti kata sandinya ke yang baru.
+              </p>
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => setTempPasswordSuccessModal({ isOpen: false, user: null, tempPassword: '', copied: false })}
+                  className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Tutup
                 </button>
               </div>
             </motion.div>
@@ -3404,6 +3829,13 @@ export default function SettingsModal({
           setRole(activeRole);
           setAvatarUrl(activeAvatar);
         }}
+      />
+
+      {/* Pop-up Modal Perizinan Notifikasi */}
+      <NotificationPermissionModal
+        isOpen={showNotifPermissionModal}
+        onClose={() => setShowNotifPermissionModal(false)}
+        onPermissionGranted={() => setNotifPermission('granted')}
       />
     </div>
   );

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { 
-  ChevronLeft, 
   Bell, 
   UserPlus, 
   ArrowRight, 
@@ -152,46 +151,66 @@ export default function NotificationsPage({
   if (!isOpen) return null;
 
   return (
-    <motion.div
-      id="notifications-panel"
-      initial={{ x: '100%' }}
-      animate={{ x: 0 }}
-      exit={{ x: '100%' }}
-      transition={{ type: 'tween', ease: [0.25, 1, 0.5, 1], duration: 0.32 }}
-      className={`fixed top-0 bottom-0 right-0 z-50 md:z-40 bg-white flex flex-col overflow-hidden select-none border-l border-slate-200/90 shadow-2xl ${
-        isMobile 
-          ? 'left-0 w-full h-full' 
-          : 'w-[380px] h-screen'
-      }`}
-    >
-      {/* Top Header */}
-      <div className={`p-4 ${isMobile ? 'pt-8' : 'pt-4 pb-3'} w-full border-b border-gray-100 bg-white shrink-0`}>
-        <div className={`flex items-center justify-between w-full ${isMobile ? 'mt-4' : 'mt-0'}`}>
-          <div className="flex items-center gap-2">
-            {/* Back Button matching search page on mobile, or back button on desktop */}
-            <button
-              id="btn-back-notifications"
-              type="button"
-              onClick={onClose}
-              className="p-2 -ml-2 text-gray-700 hover:text-gray-950 hover:bg-gray-100 active:bg-gray-200 rounded-full transition-colors shrink-0 cursor-pointer"
-              aria-label="Kembali"
-              title={isMobile ? "Kembali ke halaman sebelumnya" : "Tutup panel notifikasi"}
-            >
-              <ChevronLeft className="w-6 h-6 text-gray-800" />
-            </button>
+    <>
+      {/* Overlay Backdrop di desktop agar notifikasi berada di lapisan atas tanpa berbagi tempat */}
+      {!isMobile && (
+        <motion.div
+          key="notifications-backdrop"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          onClick={onClose}
+          className="fixed inset-0 z-50 bg-slate-900/20 backdrop-blur-[1px] cursor-pointer"
+          aria-hidden="true"
+        />
+      )}
 
-            {/* Page Title */}
+      <motion.div
+        id="notifications-panel"
+        initial={{ x: '100%' }}
+        animate={{ x: 0 }}
+        exit={{ x: '100%' }}
+        transition={{ type: 'tween', ease: [0.25, 1, 0.5, 1], duration: 0.28 }}
+        className={`fixed top-0 bottom-0 right-0 z-50 bg-white flex flex-col overflow-hidden select-none border-l border-slate-200/90 shadow-2xl ${
+          isMobile 
+            ? 'left-0 w-full h-full' 
+            : 'w-[380px] sm:w-[400px] h-screen'
+        }`}
+      >
+        {/* Top Header */}
+        <div className="px-4 py-3 w-full border-b border-gray-100 bg-white shrink-0">
+          <div className="flex items-center justify-between w-full">
             <div className="flex items-center gap-2">
-              <h1 className="text-lg sm:text-xl font-bold text-gray-900 tracking-tight">
-                Notifikasi
-              </h1>
-              {unreadCount > 0 && (
-                <span className="px-2 py-0.5 rounded-full text-xs font-extrabold bg-rose-50 text-rose-600 border border-rose-200">
-                  {unreadCount} Baru
-                </span>
-              )}
+              {/* Tombol lonceng (ukuran sama persis dengan tombol pembuka lonceng di header) */}
+              <button
+                id="btn-back-notifications"
+                type="button"
+                onClick={onClose}
+                className="relative flex items-center justify-center w-10 h-10 p-2 text-emerald-600 bg-emerald-50/90 hover:bg-emerald-100/90 active:bg-emerald-200/80 ring-1 ring-emerald-300 rounded-full transition-colors shrink-0 cursor-pointer focus:outline-none -ml-1"
+                aria-label="Tutup Notifikasi"
+                title="Tutup panel notifikasi"
+              >
+                <Bell className="h-5 w-5 sm:h-5.5 sm:w-5.5" strokeWidth={2} />
+                {pendingRegistrationsCount > 0 ? (
+                  <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-rose-600 text-white font-extrabold text-[10px] shadow-xs animate-pulse">
+                    {pendingRegistrationsCount > 99 ? '99+' : pendingRegistrationsCount}
+                  </span>
+                ) : null}
+              </button>
+
+              {/* Page Title */}
+              <div className="flex items-center gap-2">
+                <h1 className="text-lg sm:text-xl font-bold text-gray-900 tracking-tight">
+                  Notifikasi
+                </h1>
+                {unreadCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-xs font-extrabold bg-rose-50 text-rose-600 border border-rose-200">
+                    {unreadCount} Baru
+                  </span>
+                )}
+              </div>
             </div>
-          </div>
 
           <div className="flex items-center gap-1.5">
             {/* Mark all as read button */}
@@ -382,5 +401,6 @@ export default function NotificationsPage({
         </p>
       </div>
     </motion.div>
+    </>
   );
 }

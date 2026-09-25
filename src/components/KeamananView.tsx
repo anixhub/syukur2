@@ -2726,16 +2726,16 @@ export default function KeamananView({
       'Nama Santri',
       'NIS',
       'Alamat',
-      'Status Keaktifan',
-      'Jumlah Pelanggaran',
+      'Status',
+      'Jumlah Kasus',
       'Total Poin Sanksi',
-      'Indikator Kedisiplinan'
+      'Kedisiplinan'
     ];
 
     const rows = sortedSantriList.map((student, idx) => {
       const stats = getStudentStats(student.nama, student.id);
       const ind = getDisciplineIndicator(stats.points);
-      const alamatStr = [student.desa, student.kecamatan, student.kabupaten].filter(Boolean).join(', ') || '-';
+      const alamatStr = formatAlamatFormatUser(student);
       
       return [
         String(idx + 1),
@@ -3033,9 +3033,9 @@ export default function KeamananView({
    </Row>
    <Row ss:Height="20"/>
 
-   <!-- Section 2: Top 5 Santri Paling Melanggar -->
+   <!-- Section 2: Top 10 Santri Paling Melanggar -->
    <Row ss:Height="24">
-    <Cell ss:MergeAcross="6" ss:StyleID="SectionHeader"><Data ss:Type="String">II. TOP 5 SANTRI DENGAN PELANGGARAN TERTINGGI</Data></Cell>
+    <Cell ss:MergeAcross="6" ss:StyleID="SectionHeader"><Data ss:Type="String">II. TOP 10 SANTRI DENGAN PELANGGARAN TERTINGGI</Data></Cell>
    </Row>
    <Row ss:Height="26">
     <Cell ss:StyleID="Header"><Data ss:Type="String">Rank</Data></Cell>
@@ -3190,7 +3190,7 @@ export default function KeamananView({
     let reportContentHTML = '';
 
     if (displayTab === 'overview') {
-      // Top 5 violators rows
+      // Top 10 violators rows
       let violatorsRowsHTML = '';
       if (topViolators.length === 0) {
         violatorsRowsHTML = `
@@ -3265,9 +3265,9 @@ export default function KeamananView({
             </div>
           </div>
 
-          <!-- Section 2: Top 5 Violators -->
+          <!-- Section 2: Top 10 Violators -->
           <div class="space-y-3" style="margin-bottom: 24px;">
-            <h3 class="text-sm font-extrabold uppercase text-slate-800 border-b pb-1" style="font-size: 14px; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; margin-bottom: 12px;">II. TOP 5 SANTRI DENGAN PELANGGARAN TERTINGGI</h3>
+            <h3 class="text-sm font-extrabold uppercase text-slate-800 border-b pb-1" style="font-size: 14px; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; margin-bottom: 12px;">II. TOP 10 SANTRI DENGAN PELANGGARAN TERTINGGI</h3>
             <table class="w-full border-collapse border border-slate-300 text-left text-xs" style="width: 100%; border-collapse: collapse; border: 1px solid #cbd5e1; font-size: 12px;">
               <thead>
                 <tr class="bg-slate-100 font-bold text-slate-700" style="background-color: #f1f5f9; color: #334155;">
@@ -3310,7 +3310,7 @@ export default function KeamananView({
         sortedSantriList.forEach((student, idx) => {
           const stats = getStudentStats(student.nama, student.id);
           const ind = getDisciplineIndicator(stats.points);
-          const alamatStr = [student.desa, student.kecamatan, student.kabupaten].filter(Boolean).join(', ') || '-';
+          const alamatStr = formatAlamatFormatUser(student);
           santriRowsHTML += `
             <tr>
               <td class="p-1-5 text-center font-mono" style="border: 1px solid #cbd5e1; padding: 6px; text-align: center; font-family: monospace;">${idx + 1}</td>
@@ -5038,7 +5038,7 @@ export default function KeamananView({
         return !item.santri || item.santri.gender === filterGender;
       })
       .sort((a, b) => b.count - a.count || b.points - a.points)
-      .slice(0, 5);
+      .slice(0, 10);
   }, [activeKeamananList, santriList, filterGender]);
 
   const violationsChartData = useMemo(() => {
@@ -5056,7 +5056,7 @@ export default function KeamananView({
     
     return Object.values(counts)
       .sort((a, b) => b.count - a.count)
-      .slice(0, 8);
+      .slice(0, 10);
   }, [activeKeamananList, santriList, filterGender]);
 
   return (
@@ -5301,12 +5301,12 @@ export default function KeamananView({
 
             {/* Main Content Area */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Top 5 violators list */}
+              {/* Top 10 violators list */}
               <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col h-full justify-between">
                 <div>
                   <div className="flex items-center justify-between mb-5">
                     <div>
-                      <h3 className="font-display text-lg font-extrabold text-slate-800">Top 5 Santri Paling Melanggar</h3>
+                      <h3 className="font-display text-lg font-extrabold text-slate-800">Top 10 Santri Paling Melanggar</h3>
                       <p className="text-xs text-slate-400">Santri aktif dengan intensitas pelanggaran tertinggi</p>
                     </div>
                     <span className="text-xs px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 font-bold">
@@ -5409,7 +5409,7 @@ export default function KeamananView({
               {/* Chart of most frequent violations */}
               <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col h-full">
                 <div className="mb-5">
-                  <h3 className="font-display text-lg font-extrabold text-slate-800">Diagram Pelanggaran Paling Sering</h3>
+                  <h3 className="font-display text-lg font-extrabold text-slate-800">Top 10 Pelanggaran Paling Sering</h3>
                 </div>
 
                 <div className="flex-1 min-h-[160px] flex items-center justify-center">
@@ -8546,9 +8546,9 @@ export default function KeamananView({
                 </div>
               </div>
 
-              {/* Overview Section 2: Top 5 Violators */}
+              {/* Overview Section 2: Top 10 Violators */}
               <div className="space-y-3">
-                <h3 className="text-sm font-extrabold uppercase text-slate-800 border-b border-slate-200 pb-1">II. TOP 5 SANTRI DENGAN PELANGGARAN TERTINGGI</h3>
+                <h3 className="text-sm font-extrabold uppercase text-slate-800 border-b border-slate-200 pb-1">II. TOP 10 SANTRI DENGAN PELANGGARAN TERTINGGI</h3>
                 <table className="w-full border-collapse border border-slate-300 text-left text-xs">
                   <thead>
                     <tr className="bg-slate-100 font-extrabold text-slate-700">

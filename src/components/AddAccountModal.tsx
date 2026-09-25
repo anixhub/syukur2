@@ -77,6 +77,8 @@ export default function AddAccountModal({ isOpen, onClose, onAccountAdded }: Add
     setLoading(true);
 
     const normalizedEmail = loginEmail.trim().toLowerCase();
+    const usernameWithoutDomain = normalizedEmail.includes('@') ? normalizedEmail.split('@')[0].trim() : normalizedEmail;
+    const emailWithDomain = normalizedEmail.includes('@') ? normalizedEmail : `${normalizedEmail}@attaroqqy.com`;
     const defaultUser = 'superadmin@attaroqqy.com';
     const defaultPass = '1234';
 
@@ -89,7 +91,7 @@ export default function AddAccountModal({ isOpen, onClose, onAccountAdded }: Add
         const response = await fetch(getApiUrl("/api/auth/login"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username: normalizedEmail, password: loginPassword })
+          body: JSON.stringify({ username: loginEmail.trim(), password: loginPassword })
         });
         const text = await response.text();
         const result = JSON.parse(text);
@@ -118,42 +120,51 @@ export default function AddAccountModal({ isOpen, onClose, onAccountAdded }: Add
           creds = [];
         }
 
-        let found = creds.find((c: any) => 
-          (c.username && c.username.trim().toLowerCase() === normalizedEmail) ||
-          (c.id === 'superadmin' && normalizedEmail === defaultUser.toLowerCase())
-        );
+        let found = creds.find((c: any) => {
+          const uName = String(c.username || "").trim().toLowerCase();
+          const uId = String(c.id || "").trim().toLowerCase();
+          return (
+            uName === normalizedEmail ||
+            uName === usernameWithoutDomain ||
+            uName === emailWithDomain ||
+            uId === normalizedEmail ||
+            uId === usernameWithoutDomain
+          );
+        });
 
-        if (!found && normalizedEmail === defaultUser.toLowerCase()) {
+        if (!found && (normalizedEmail === defaultUser.toLowerCase() || normalizedEmail === 'superadmin')) {
           found = {
             id: 'superadmin',
             username: defaultUser,
             password: defaultPass,
             role: 'superadmin',
             status: 'approved',
-            displayName: 'Mang Daud'
+            displayName: 'Super Admin'
           };
         }
 
         if (!found) {
-          setErrorMsg('Email atau Kata Sandi salah atau akun belum terdaftar.');
+          setErrorMsg(`Akun '${loginEmail.trim()}' tidak ditemukan. Pastikan Username atau Email Anda sesuai.`);
           setLoading(false);
           return;
         }
 
-        const storedPassword = found.password || (found.id === 'superadmin' ? defaultPass : '');
-        if (storedPassword && storedPassword !== loginPassword) {
-          setErrorMsg('Email atau Kata Sandi salah.');
+        const storedPassword = String(found.password || (found.id === 'superadmin' ? defaultPass : '')).trim();
+        const inputPassword = String(loginPassword || "").trim();
+        if (storedPassword && storedPassword !== inputPassword) {
+          setErrorMsg('Kata Sandi salah. Harap periksa kembali huruf besar dan kecil kata sandi Anda.');
           setLoading(false);
           return;
         }
 
-        if (found.status === 'pending') {
+        const statusLower = String(found.status || "").trim().toLowerCase();
+        if (statusLower === 'pending' || statusLower === 'menunggu') {
           setErrorMsg('Akun masih menunggu persetujuan pendaftaran dari Super Admin.');
           setLoading(false);
           return;
         }
 
-        if (found.status === 'rejected') {
+        if (statusLower === 'rejected' || statusLower === 'ditolak') {
           setErrorMsg('Pendaftaran akun ini telah ditolak oleh Super Admin.');
           setLoading(false);
           return;

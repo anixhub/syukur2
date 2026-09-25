@@ -8,6 +8,7 @@ import {
   Users, 
   Shield, 
   MessageSquare,
+  MessageCircle,
   ChevronDown,
   ChevronLeft,
   Search,
@@ -32,6 +33,7 @@ interface DrawerProps {
   onLogout?: () => void;
   onOpenHelp?: () => void;
   onOpenChat?: () => void;
+  isChatOpen?: boolean;
   unreadChatCount?: number;
   hasMentionNotification?: boolean;
   onSearchModeChange?: (isSearching: boolean) => void;
@@ -51,9 +53,13 @@ const MENU_ITEMS: MenuItemDef[] = [
     id: 'home', 
     label: 'Home', 
     icon: Home,
-    submenus: [
-      { id: 'dashboard', label: 'Dashboard Utama' }
-    ]
+    submenus: []
+  },
+  { 
+    id: 'group_chat', 
+    label: 'Group Chat', 
+    icon: MessageCircle,
+    submenus: []
   },
   { 
     id: 'sekretaris', 
@@ -68,7 +74,10 @@ const MENU_ITEMS: MenuItemDef[] = [
     id: 'bendahara', 
     label: 'Bendahara', 
     icon: Wallet,
-    submenus: []
+    submenus: [
+      { id: 'wallet', label: 'Wallet' },
+      { id: 'syahriah', label: 'Syahriah' }
+    ]
   },
   { 
     id: 'pendidikan', 
@@ -112,6 +121,7 @@ export default function Drawer({
   onLogout,
   onOpenHelp,
   onOpenChat,
+  isChatOpen = false,
   unreadChatCount = 0,
   hasMentionNotification = false,
   onSearchModeChange,
@@ -530,7 +540,8 @@ export default function Drawer({
           <nav className="flex-1 overflow-y-auto px-4 py-2 space-y-1 w-[80%]">
             {searchedItems.map((item) => {
               const Icon = item.icon;
-              const isActive = activeModule === item.id;
+              const isChat = item.id === 'group_chat';
+              const isActive = isChatOpen ? isChat : (!isChat && activeModule === item.id);
               const isExpanded = (openAccordion === item.id) || (searchQuery.trim().length > 0 && item.submenus && item.submenus.length > 0);
               const hasSubmenus = item.submenus && item.submenus.length > 0;
 
@@ -554,6 +565,11 @@ export default function Drawer({
                         <span className={isActive ? 'text-blue-600' : 'text-gray-800'}>
                           {item.label}
                         </span>
+                        {item.id === 'group_chat' && (unreadChatCount > 0 || hasMentionNotification) && (
+                          <span className="ml-auto flex h-5 min-w-[20px] px-1.5 items-center justify-center rounded-full bg-emerald-500 text-white font-bold text-xs shadow-xs animate-pulse">
+                            {hasMentionNotification ? '@' : (unreadChatCount > 99 ? '99+' : unreadChatCount)}
+                          </span>
+                        )}
                         {hasSubmenus && (
                           <span 
                             className={`text-gray-400 text-sm ml-auto transition-transform duration-200 ${

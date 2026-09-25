@@ -120,6 +120,15 @@ export default function LembagaKelasSub({
   const [selectedKelas, setSelectedKelas] = useState<any | null>(null);
   const detailKelasRef = useRef<HTMLDivElement>(null);
   
+  // Horizontal scroll state & refs for Daftar Kelas
+  const classPillsContainerRef = useRef<HTMLDivElement>(null);
+  const [canScrollPillsLeft, setCanScrollPillsLeft] = useState(false);
+  const [canScrollPillsRight, setCanScrollPillsRight] = useState(false);
+  const isMouseDownPillsRef = useRef(false);
+  const startXPillsPosRef = useRef(0);
+  const startPillsScrollLeftRef = useRef(0);
+  const hasDraggedPillsRef = useRef(false);
+  
   const [isExportLembagaModalOpen, setIsExportLembagaModalOpen] = useState<boolean>(false);
 
   // Keep selectedLembaga in sync with the latest lembagasList or categoriesList when parent updates
@@ -997,7 +1006,7 @@ export default function LembagaKelasSub({
           for (const entry of formalParts) {
             const dashParts = entry.split('-');
             const prefix = dashParts[0].trim();
-            if (isMatchLembagaStrict(l, prefix) || isMatchLembagaStrict(l, entry)) {
+            if (isMatchLembagaStrict(l, prefix, s.gender) || isMatchLembagaStrict(l, entry, s.gender)) {
               return true;
             }
           }
@@ -1006,7 +1015,7 @@ export default function LembagaKelasSub({
           const matchesOtherFormal = otherFormalLembagas.some(otherL => {
             return formalParts.some(entry => {
               const prefix = entry.split('-')[0].trim();
-              return isMatchLembagaStrict(otherL, prefix);
+              return isMatchLembagaStrict(otherL, prefix, s.gender);
             });
           });
           if (matchesOtherFormal) {
@@ -1028,7 +1037,7 @@ export default function LembagaKelasSub({
           const sClasses = s.kelas.split(',').map(x => norm(x)).filter(Boolean);
           
           const hasOtherFormalConflict = otherFormalLembagas.some(otherL => {
-            return sClasses.some(sc => isMatchLembagaStrict(otherL, sc));
+            return sClasses.some(sc => isMatchLembagaStrict(otherL, sc, s.gender));
           });
           if (hasOtherFormalConflict) return false;
 
@@ -1056,7 +1065,7 @@ export default function LembagaKelasSub({
           for (const entry of internalParts) {
             const dashParts = entry.split('-');
             const prefix = dashParts[0].trim();
-            if (isMatchLembagaStrict(l, prefix) || rawLower(prefix) === targetId || isMatchLembagaStrict(l, entry)) {
+            if (isMatchLembagaStrict(l, prefix, s.gender) || rawLower(prefix) === targetId || isMatchLembagaStrict(l, entry, s.gender)) {
               return true;
             }
           }
@@ -1136,7 +1145,7 @@ export default function LembagaKelasSub({
         for (const entry of formalEntries) {
           const dashParts = entry.split('-');
           const prefix = dashParts[0].trim();
-          if (isMatchLembagaStrict(l, prefix)) {
+          if (isMatchLembagaStrict(l, prefix, s.gender)) {
             if (dashParts.length > 1) {
               specificClassForThisLembaga = dashParts.slice(1).join('-').trim();
             } else {
@@ -1152,7 +1161,7 @@ export default function LembagaKelasSub({
         for (const entry of internalEntries) {
           const dashParts = entry.split('-');
           const prefix = dashParts[0].trim();
-          if (isMatchLembagaStrict(l, prefix)) {
+          if (isMatchLembagaStrict(l, prefix, s.gender)) {
             if (dashParts.length > 1) {
               specificClassForThisLembaga = dashParts.slice(1).join('-').trim();
             } else {
@@ -1476,6 +1485,99 @@ export default function LembagaKelasSub({
     }
     return classPillItems.length > 0 ? classPillItems[0] : null;
   }, [selectedKelas, classPillItems]);
+
+  // --- Horizontal Scroll Management for Daftar Kelas Pills ---
+  const checkPillsScroll = useCallback(() => {
+    const el = classPillsContainerRef.current;
+    if (!el) return;
+    const hasOverflow = el.scrollWidth > el.clientWidth + 4;
+    setCanScrollPillsLeft(el.scrollLeft > 6);
+    setCanScrollPillsRight(hasOverflow && el.scrollLeft < el.scrollWidth - el.clientWidth - 6);
+  }, []);
+
+  const scrollPills = useCallback((direction: 'left' | 'right') => {
+    const el = classPillsContainerRef.current;
+    if (!el) return;
+    const scrollAmount = Math.max(220, Math.floor(el.clientWidth * 0.65));
+    el.scrollBy({
+      left: direction === 'left' ? -scrollAmount : scrollAmount,
+      behavior: 'smooth'
+    });
+  }, []);
+
+  // Update pills scroll indicators on scroll, resize, or content changes
+  useEffect(() => {
+    const el = classPillsContainerRef.current;
+    if (!el) return;
+
+    checkPillsScroll();
+    const handleScroll = () => checkPillsScroll();
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('resize', handleScroll);
+
+    const timer = setTimeout(checkPillsScroll, 150);
+
+    return () => {
+      el.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleScroll);
+      clearTimeout(timer);
+    };
+  }, [checkPillsScroll, classPillItems, selectedLembaga]);
+
+  // Translate vertical wheel over pills container into smooth horizontal scroll
+  useEffect(() => {
+    const el = classPillsContainerRef.current;
+    if (!el) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      if (el.scrollWidth > el.clientWidth) {
+        if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+          e.preventDefault();
+          el.scrollLeft += e.deltaY;
+          checkPillsScroll();
+        }
+      }
+    };
+
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, [checkPillsScroll, classPillItems.length]);
+
+  // Auto-scroll selected pill into view smoothly
+  useEffect(() => {
+    if (!effectiveSelectedKelas || !classPillsContainerRef.current) return;
+    const activePill = classPillsContainerRef.current.querySelector<HTMLElement>(`[data-pill-id="${effectiveSelectedKelas.id}"]`);
+    if (activePill) {
+      activePill.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+  }, [effectiveSelectedKelas?.id]);
+
+  // Drag-to-scroll handlers for desktop mouse
+  const handlePillsMouseDown = (e: React.MouseEvent) => {
+    const el = classPillsContainerRef.current;
+    if (!el) return;
+    isMouseDownPillsRef.current = true;
+    startXPillsPosRef.current = e.pageX - el.offsetLeft;
+    startPillsScrollLeftRef.current = el.scrollLeft;
+    hasDraggedPillsRef.current = false;
+  };
+
+  const handlePillsMouseMove = (e: React.MouseEvent) => {
+    if (!isMouseDownPillsRef.current) return;
+    const el = classPillsContainerRef.current;
+    if (!el) return;
+    const x = e.pageX - el.offsetLeft;
+    const walk = (x - startXPillsPosRef.current) * 1.5;
+    if (Math.abs(walk) > 4) {
+      hasDraggedPillsRef.current = true;
+    }
+    el.scrollLeft = startPillsScrollLeftRef.current - walk;
+    checkPillsScroll();
+  };
+
+  const handlePillsMouseUpOrLeave = () => {
+    isMouseDownPillsRef.current = false;
+  };
 
   // --- Dynamic Unified Students Getter ---
   const currentClassStudents = useMemo(() => {
@@ -2592,6 +2694,83 @@ export default function LembagaKelasSub({
     }
   };
 
+  // Helper untuk mendapatkan kolom ekspor yang persis sesuai dengan tampilan tabel Lembaga / Kelas saat ini
+  const getActiveLembagaExportColumns = () => {
+    const isCalonPelajarPage = !isIndukPage && !!(effectiveSelectedKelas && (effectiveSelectedKelas.pillType === 'calon' || effectiveSelectedKelas.id === 'default-calon' || effectiveSelectedKelas.id === 'unassigned' || effectiveSelectedKelas.pillType === 'unassigned' || isCalonClass(effectiveSelectedKelas.nama)));
+
+    const shouldShowColumnLocal = (colKey: string): boolean => {
+      if (colKey === 'nama') return true;
+      if (colKey === 'statusEmis') {
+        if (isCalonPelajarPage) {
+          return visibleColumns['statusEmis'] ?? true;
+        }
+        if (isCurrentFormal) {
+          return visibleColumns['statusEmis'] ?? false;
+        }
+        return visibleColumns['statusEmis'] ?? true;
+      }
+      return visibleColumns[colKey] ?? false;
+    };
+
+    const allExportColumns = [
+      { id: 'nama', label: 'Nama Santri', isAlwaysVisible: true, isMono: false, isCenter: false, getValue: (s: Santri) => s.nama || '-' },
+      { id: 'nis', label: 'NIS', colKey: 'nis', isMono: true, isCenter: true, getValue: (s: Santri) => s.nis || '-' },
+      { id: 'nism', label: 'NISM', colKey: 'nism', isMono: true, isCenter: true, getValue: (s: Santri) => getSantriNismForLembaga(s, selectedLembaga) || '-' },
+      { id: 'nisn', label: 'NISN', colKey: 'nisn', isMono: true, isCenter: true, getValue: (s: Santri) => s.nisn || '-' },
+      { id: 'nik', label: 'NIK', colKey: 'nik', isMono: true, isCenter: true, getValue: (s: Santri) => s.nik || '-' },
+      { id: 'statusEmis', label: isCalonPelajarPage ? 'Keterangan EMIS' : 'EMIS', colKey: 'statusEmis', isMono: false, isCenter: true, getValue: (s: Santri) => s.statusEmis || 'Belum' },
+      { id: 'statusVerval', label: 'Verval', colKey: 'statusVerval', isMono: false, isCenter: true, getValue: (s: Santri) => s.statusVerval || (s.nisn && s.nisn.trim() !== '' ? 'Sukses' : 'Proses') },
+      { id: 'statusKeanggotaan', label: 'Status Keaktifan', colKey: 'statusKeanggotaan', isMono: false, isCenter: true, getValue: (s: Santri) => s.statusKeanggotaan || 'Aktif' },
+      { id: 'kelasMhd', label: 'Kelas MHD', colKey: 'kelasMhd', isMono: false, isCenter: false, getValue: (s: Santri) => s.kelasMhd || s.pendidikanInternal || s.indukMhd || '-' },
+      { id: 'indukMhd', label: 'Induk MHD', colKey: 'indukMhd', isMono: true, isCenter: true, getValue: (s: Santri) => s.indukMhd || '-' },
+      { id: 'indukWustho', label: 'Induk Wustho', colKey: 'indukWustho', isMono: true, isCenter: true, getValue: (s: Santri) => s.indukWustho || '-' },
+      { id: 'indukUlya', label: 'Induk Ulya', colKey: 'indukUlya', isMono: true, isCenter: true, getValue: (s: Santri) => s.indukUlya || '-' },
+      { id: 'noKk', label: 'No. KK', colKey: 'noKk', isMono: true, isCenter: true, getValue: (s: Santri) => s.noKk || '-' },
+      { id: 'tempatLahir', label: 'Tempat Lahir', colKey: 'tempatLahir', isMono: false, isCenter: false, getValue: (s: Santri) => s.tempatLahir || '-' },
+      { id: 'tanggalLahir', label: 'Tanggal Lahir', colKey: 'tanggalLahir', isMono: true, isCenter: true, getValue: (s: Santri) => formatTanggalIndo(s.tanggalLahir) },
+      { id: 'gender', label: 'Gender', colKey: 'gender', isMono: false, isCenter: true, getValue: (s: Santri) => s.gender === 'Putra' ? 'L' : s.gender === 'Putri' ? 'P' : (s.gender || '-') },
+      { id: 'pendidikanTerakhir', label: 'Pendidikan Terakhir', colKey: 'pendidikanTerakhir', isMono: false, isCenter: false, getValue: (s: Santri) => s.pendidikanTerakhir || '-' },
+      { id: 'pendidikanFormal', label: 'Pendidikan Formal', colKey: 'pendidikanFormal', isMono: false, isCenter: false, getValue: (s: Santri) => s.pendidikanFormal || '-' },
+      { id: 'kelas', label: 'Kelas', colKey: 'kelas', isMono: false, isCenter: false, getValue: (s: Santri) => s.kelas || '-' },
+      { id: 'kamar', label: 'Kamar', colKey: 'kamar', isMono: false, isCenter: false, getValue: (s: Santri) => s.kamar || '-' },
+      { id: 'asal', label: 'Asal Sekolah', colKey: 'asal', isMono: false, isCenter: false, getValue: (s: Santri) => s.asal || '-' },
+      { id: 'namaAyah', label: 'Nama Ayah', colKey: 'namaAyah', isMono: false, isCenter: false, getValue: (s: Santri) => s.namaAyah || '-' },
+      { id: 'nikAyah', label: 'NIK Ayah', colKey: 'nikAyah', isMono: true, isCenter: true, getValue: (s: Santri) => s.nikAyah || '-' },
+      { id: 'pekerjaanAyah', label: 'Pekerjaan Ayah', colKey: 'pekerjaanAyah', isMono: false, isCenter: false, getValue: (s: Santri) => s.pekerjaanAyah || '-' },
+      { id: 'pendidikanAyah', label: 'Pendidikan Ayah', colKey: 'pendidikanAyah', isMono: false, isCenter: false, getValue: (s: Santri) => s.pendidikanAyah || '-' },
+      { id: 'namaIbu', label: 'Nama Ibu', colKey: 'namaIbu', isMono: false, isCenter: false, getValue: (s: Santri) => s.namaIbu || '-' },
+      { id: 'nikIbu', label: 'NIK Ibu', colKey: 'nikIbu', isMono: true, isCenter: true, getValue: (s: Santri) => s.nikIbu || '-' },
+      { id: 'pekerjaanIbu', label: 'Pekerjaan Ibu', colKey: 'pekerjaanIbu', isMono: false, isCenter: false, getValue: (s: Santri) => s.pekerjaanIbu || '-' },
+      { id: 'pendidikanIbu', label: 'Pendidikan Ibu', colKey: 'pendidikanIbu', isMono: false, isCenter: false, getValue: (s: Santri) => s.pendidikanIbu || '-' },
+      { id: 'anakKe', label: 'Anak Ke', colKey: 'anakKe', isMono: false, isCenter: true, getValue: (s: Santri) => s.anakKe !== undefined ? String(s.anakKe) : '-' },
+      { id: 'dariBersaudara', label: 'Jumlah Saudara', colKey: 'dariBersaudara', isMono: false, isCenter: true, getValue: (s: Santri) => s.dariBersaudara !== undefined ? String(s.dariBersaudara) : '-' },
+      { id: 'alamat', label: 'Alamat', colKey: 'alamat', isMono: false, isCenter: false, getValue: (s: Santri) => s.alamat || '-' },
+      { id: 'rt', label: 'RT', colKey: 'rt', isMono: false, isCenter: true, getValue: (s: Santri) => s.rt || '-' },
+      { id: 'rw', label: 'RW', colKey: 'rw', isMono: false, isCenter: true, getValue: (s: Santri) => s.rw || '-' },
+      { id: 'desa', label: 'Desa', colKey: 'desa', isMono: false, isCenter: false, getValue: (s: Santri) => s.desa || '-' },
+      { id: 'kecamatan', label: 'Kecamatan', colKey: 'kecamatan', isMono: false, isCenter: false, getValue: (s: Santri) => s.kecamatan || '-' },
+      { id: 'kabupaten', label: 'Kabupaten', colKey: 'kabupaten', isMono: false, isCenter: false, getValue: (s: Santri) => s.kabupaten || '-' },
+      { id: 'provinsi', label: 'Provinsi', colKey: 'provinsi', isMono: false, isCenter: false, getValue: (s: Santri) => s.provinsi || '-' },
+      { id: 'jarakRumah', label: 'Jarak (km)', colKey: 'jarakRumah', isMono: false, isCenter: true, getValue: (s: Santri) => s.jarakRumah !== undefined ? String(s.jarakRumah) : '-' },
+      { id: 'noHp', label: 'No. HP', colKey: 'noHp', isMono: true, isCenter: true, getValue: (s: Santri) => s.noHp || '-' },
+      { id: 'statusDomisili', label: 'Status Domisili', colKey: 'statusDomisili', isMono: false, isCenter: true, getValue: (s: Santri) => s.statusDomisili || '-' },
+      { id: 'tahunMasuk', label: 'Tahun Masuk', colKey: 'tahunMasuk', isMono: true, isCenter: true, getValue: (s: Santri) => s.tahunMasuk || getSantriTahunMasuk(s) || '-' },
+      { id: 'tanggalMasuk', label: 'Tgl Masuk', colKey: 'tanggalMasuk', isMono: true, isCenter: true, getValue: (s: Santri) => formatTanggalIndo(s.tanggalMasuk) },
+      { id: 'tanggalKeluar', label: 'Tgl Keluar', colKey: 'tanggalKeluar', isMono: true, isCenter: true, getValue: (s: Santri) => formatTanggalIndo(s.tanggalKeluar) },
+      { id: 'nomorLemari', label: 'No. Lemari', colKey: 'nomorLemari', isMono: false, isCenter: false, getValue: (s: Santri) => s.nomorLemari || '-' },
+      { id: 'catatan', label: 'Catatan', colKey: 'catatan', isMono: false, isCenter: false, getValue: (s: Santri) => s.catatan || '-' }
+    ];
+
+    return allExportColumns.filter(col => col.isAlwaysVisible || (col.colKey && shouldShowColumnLocal(col.colKey)));
+  };
+
+  const escapeXml = (str: any) => String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+
   // Handle exporting XML-based Excel file for Lembaga (context-aware)
   const handleExportExcelLembaga = (customFileName?: string) => {
     if (!selectedLembaga) return;
@@ -2606,69 +2785,24 @@ export default function LembagaKelasSub({
     const npsn = selectedLembaga.npsn || '-';
     const dateStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 
-    const headers = [
-      'NO',
-      'NISM',
-      'THN MASUK',
-      'NISN',
-      'NAMA',
-      'TEMPAT LAHIR',
-      'TANGGAL LAHIR',
-      'UMUR',
-      'JENIS KELAMIN',
-      'NAMA AYAH',
-      'NAMA IBU',
-      'EMIS',
-      'VERVAL',
-      'STATUS KEAKTIFAN',
-      'KELAS MHD',
-      'SEMESTER'
-    ];
+    const activeCols = getActiveLembagaExportColumns();
+    const headers = ['NO', ...activeCols.map(c => c.label)];
 
     const rows = studentsToExport.map((s, idx) => [
       idx + 1,
-      getSantriNismForLembaga(s, selectedLembaga) || '-',
-      s.tahunMasuk || getSantriTahunMasuk(s) || '-',
-      s.nisn || '-',
-      s.nama || '-',
-      s.tempatLahir || '-',
-      formatTanggalIndo(s.tanggalLahir),
-      getSantriAgeDisplay(s.tanggalLahir),
-      s.gender === 'Putra' ? 'L' : s.gender === 'Putri' ? 'P' : (s.gender || '-'),
-      s.namaAyah || '-',
-      s.namaIbu || '-',
-      s.statusEmis || 'Belum',
-      s.statusVerval || (s.nisn && s.nisn.trim() !== '' ? 'Sukses' : 'Proses'),
-      s.statusKeanggotaan || 'Aktif',
-      s.kelasMhd || s.pendidikanInternal || s.indukMhd || '-',
-      s.semester || 'Semester 1'
+      ...activeCols.map(c => c.getValue(s))
     ]);
 
     const colWidths = [
       35,  // NO
-      110, // NISM
-      65,  // THN MASUK
-      85,  // NISN
-      160, // NAMA
-      100, // TEMPAT LAHIR
-      90,  // TANGGAL LAHIR
-      55,  // UMUR
-      75,  // JENIS KELAMIN
-      120, // NAMA AYAH
-      120, // NAMA IBU
-      75,  // EMIS
-      75,  // VERVAL
-      100, // STATUS KEAKTIFAN
-      95,  // KELAS MHD
-      85   // SEMESTER
+      ...activeCols.map(c => {
+        if (c.id === 'nama') return 160;
+        if (c.id === 'nism' || c.id === 'nik' || c.id === 'noKk' || c.id === 'nikAyah' || c.id === 'nikIbu') return 120;
+        if (c.id === 'tempatLahir' || c.id === 'namaAyah' || c.id === 'namaIbu' || c.id === 'alamat') return 130;
+        if (c.id === 'tanggalLahir' || c.id === 'tanggalMasuk' || c.id === 'tanggalKeluar') return 95;
+        return 85;
+      })
     ];
-
-    const escapeXml = (str: any) => String(str || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&apos;');
 
     let xml = `<?xml version="1.0"?>
 <?mso-application progid="Excel.Sheet"?>
@@ -2799,24 +2933,18 @@ export default function LembagaKelasSub({
       year: 'numeric'
     });
 
+    const activeCols = getActiveLembagaExportColumns();
+
     const rowsHtml = studentsToPrint.map((s, idx) => `
       <tr>
         <td style="text-align: center;">${idx + 1}</td>
-        <td style="font-family: monospace; font-size: 8.5px;">${getSantriNismForLembaga(s, selectedLembaga) || '-'}</td>
-        <td style="font-family: monospace; font-size: 8.5px; text-align: center;">${s.tahunMasuk || getSantriTahunMasuk(s) || '-'}</td>
-        <td style="font-family: monospace; font-size: 8.5px;">${s.nisn || '-'}</td>
-        <td><strong>${s.nama}</strong></td>
-        <td>${s.tempatLahir || '-'}</td>
-        <td style="font-family: monospace; font-size: 8.5px;">${formatTanggalIndo(s.tanggalLahir)}</td>
-        <td style="text-align: center;">${getSantriAgeDisplay(s.tanggalLahir)}</td>
-        <td style="text-align: center; font-weight: bold;">${s.gender === 'Putra' ? 'L' : s.gender === 'Putri' ? 'P' : (s.gender || '-')}</td>
-        <td>${s.namaAyah || '-'}</td>
-        <td>${s.namaIbu || '-'}</td>
-        <td style="text-align: center;">${s.statusEmis || 'Belum'}</td>
-        <td style="text-align: center;">${s.statusVerval || (s.nisn && s.nisn.trim() !== '' ? 'Sukses' : 'Proses')}</td>
-        <td style="text-align: center;">${s.statusKeanggotaan || 'Aktif'}</td>
-        <td>${s.kelasMhd || s.pendidikanInternal || s.indukMhd || '-'}</td>
-        <td style="text-align: center;">${s.semester || 'Semester 1'}</td>
+        ${activeCols.map(c => {
+          const val = c.getValue(s);
+          const isMono = c.isMono ? 'font-family: monospace; font-size: 8.5px;' : '';
+          const isCenter = c.isCenter ? 'text-align: center;' : '';
+          const isBold = c.id === 'nama' ? 'font-weight: bold;' : '';
+          return `<td style="${isMono} ${isCenter} ${isBold}">${escapeXml(val)}</td>`;
+        }).join('')}
       </tr>
     `).join('');
 
@@ -2863,22 +2991,8 @@ export default function LembagaKelasSub({
         <table>
           <thead>
             <tr>
-              <th style="width: 22px;">NO</th>
-              <th style="width: 80px;">NISM</th>
-              <th style="width: 45px;">THN MASUK</th>
-              <th style="width: 65px;">NISN</th>
-              <th>NAMA</th>
-              <th style="width: 75px;">TEMPAT LAHIR</th>
-              <th style="width: 60px;">TGL LAHIR</th>
-              <th style="width: 35px;">UMUR</th>
-              <th style="width: 25px;">L/P</th>
-              <th style="width: 75px;">NAMA AYAH</th>
-              <th style="width: 75px;">NAMA IBU</th>
-              <th style="width: 50px;">EMIS</th>
-              <th style="width: 50px;">VERVAL</th>
-              <th style="width: 50px;">STATUS</th>
-              <th style="width: 65px;">KELAS MHD</th>
-              <th style="width: 55px;">SEMESTER</th>
+              <th style="width: 25px; text-align: center;">NO</th>
+              ${activeCols.map(c => `<th>${escapeXml(c.label)}</th>`).join('')}
             </tr>
           </thead>
           <tbody>
@@ -3511,13 +3625,39 @@ export default function LembagaKelasSub({
 
               {/* HORIZONTAL DAFTAR KELAS PILLS */}
               <div className="mt-5">
-                <div className="flex items-center justify-between gap-4 mb-3.5">
-                  <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between gap-4 mb-3.5 flex-wrap sm:flex-nowrap">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider">
                       Daftar {activeTab === 'Rombel' ? 'Rombel' : 'Kelas'}
                     </h3>
                     <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-black">
                       {classPillItems.length}
+                    </span>
+
+                    {/* Scroll buttons in header */}
+                    <div className="flex items-center gap-1 ml-1 sm:ml-2 bg-slate-100/90 p-0.5 rounded-xl border border-slate-200/70">
+                      <button
+                        type="button"
+                        onClick={() => scrollPills('left')}
+                        disabled={!canScrollPillsLeft}
+                        className="inline-flex items-center justify-center h-6 w-6 rounded-lg text-slate-600 hover:text-emerald-700 hover:bg-white disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer active:scale-90"
+                        title="Geser daftar kelas ke kiri"
+                      >
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => scrollPills('right')}
+                        disabled={!canScrollPillsRight}
+                        className="inline-flex items-center justify-center h-6 w-6 rounded-lg text-slate-600 hover:text-emerald-700 hover:bg-white disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer active:scale-90"
+                        title="Geser daftar kelas ke kanan"
+                      >
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+
+                    <span className="hidden sm:inline-block text-[11px] font-medium text-slate-400">
+                      (Geser ke samping untuk kelas lainnya)
                     </span>
                   </div>
 
@@ -3541,89 +3681,131 @@ export default function LembagaKelasSub({
                   )}
                 </div>
 
-                {/* Horizontal Scrollable Pills */}
-                <div className="flex items-center gap-2.5 overflow-x-auto pb-2 pt-1 no-scrollbar">
-                  {classPillItems.map((item) => {
-                    const isSelected = effectiveSelectedKelas?.id === item.id;
-                    const isRegular = item.pillType === 'kelas';
-                    const isAll = item.pillType === 'all';
-                    const isUnassigned = item.pillType === 'unassigned';
-
-                    return (
-                      <div
-                        key={item.id}
-                        onClick={() => {
-                          setSelectedKelas(item);
-                          setTimeout(() => {
-                            detailKelasRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                          }, 50);
-                        }}
-                        className={`group inline-flex items-center gap-2 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer select-none shrink-0 shadow-2xs ${
-                          isSelected
-                            ? 'bg-[#00693E] text-white shadow-md'
-                            : isUnassigned
-                            ? 'bg-amber-50/70 text-amber-800 hover:bg-amber-100/80 border border-amber-200/80'
-                            : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200/80 hover:border-emerald-500/50'
-                        }`}
+                {/* Horizontal Scrollable Pills with floating edge arrows & drag-to-scroll */}
+                <div className="relative group/pills w-full">
+                  {/* Left floating navigation button with soft gradient */}
+                  {canScrollPillsLeft && (
+                    <div className="absolute left-0 top-0 bottom-2.5 z-10 flex items-center pr-4 pl-0.5 bg-gradient-to-r from-white via-white/95 to-transparent pointer-events-none rounded-l-2xl">
+                      <button
+                        type="button"
+                        onClick={() => scrollPills('left')}
+                        className="pointer-events-auto h-8 w-8 rounded-full bg-white shadow-md border border-slate-200 text-slate-700 hover:text-emerald-700 hover:bg-emerald-50 hover:border-emerald-300 flex items-center justify-center transition-all cursor-pointer active:scale-90"
+                        title="Geser ke kiri"
                       >
-                        {isAll ? (
-                          <Users className={`h-4 w-4 shrink-0 ${isSelected ? 'text-white' : 'text-emerald-600'}`} />
-                        ) : isUnassigned ? (
-                          <Folder className={`h-4 w-4 shrink-0 ${isSelected ? 'text-white' : 'text-amber-600'}`} />
-                        ) : (
-                          <Folder className={`h-4 w-4 shrink-0 ${isSelected ? 'text-white' : 'text-emerald-600'}`} />
-                        )}
-                        <span className="tracking-tight uppercase">{item.displayName || item.nama}</span>
-                        
-                        {/* Student Count Badge */}
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
-                          isSelected
-                            ? 'bg-white/20 text-white'
-                            : isUnassigned
-                            ? 'bg-amber-200/60 text-amber-900'
-                            : 'bg-slate-100 text-slate-600'
-                        }`}>
-                          {item.count ?? 0}
-                        </span>
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
 
-                        {/* 3 dots menu for regular classes */}
-                        {isRegular && canWriteCurrent && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (activeActionKelasId === item.id) {
-                                setActiveActionKelasId(null);
-                                setKelasDropdownPos(null);
-                              } else {
-                                const rect = e.currentTarget.getBoundingClientRect();
-                                const dropdownWidth = 140;
-                                const dropdownHeight = 110;
-                                let top = rect.bottom + 4;
-                                if (top + dropdownHeight > window.innerHeight) {
-                                  top = rect.top - dropdownHeight - 4;
+                  {/* Right floating navigation button with soft gradient */}
+                  {canScrollPillsRight && (
+                    <div className="absolute right-0 top-0 bottom-2.5 z-10 flex items-center pl-4 pr-0.5 bg-gradient-to-l from-white via-white/95 to-transparent pointer-events-none rounded-r-2xl">
+                      <button
+                        type="button"
+                        onClick={() => scrollPills('right')}
+                        className="pointer-events-auto h-8 w-8 rounded-full bg-white shadow-md border border-slate-200 text-slate-700 hover:text-emerald-700 hover:bg-emerald-50 hover:border-emerald-300 flex items-center justify-center transition-all cursor-pointer active:scale-90"
+                        title="Geser ke kanan"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+
+                  <div 
+                    ref={classPillsContainerRef}
+                    onMouseDown={handlePillsMouseDown}
+                    onMouseMove={handlePillsMouseMove}
+                    onMouseUp={handlePillsMouseUpOrLeave}
+                    onMouseLeave={handlePillsMouseUpOrLeave}
+                    className="flex items-center gap-2.5 overflow-x-auto pb-2.5 pt-1 pills-scrollbar scroll-smooth cursor-grab active:cursor-grabbing select-none"
+                  >
+                    {classPillItems.map((item) => {
+                      const isSelected = effectiveSelectedKelas?.id === item.id;
+                      const isRegular = item.pillType === 'kelas';
+                      const isAll = item.pillType === 'all';
+                      const isUnassigned = item.pillType === 'unassigned';
+
+                      return (
+                        <div
+                          key={item.id}
+                          data-pill-id={item.id}
+                          onClick={() => {
+                            if (hasDraggedPillsRef.current) {
+                              hasDraggedPillsRef.current = false;
+                              return;
+                            }
+                            setSelectedKelas(item);
+                            setTimeout(() => {
+                              detailKelasRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }, 50);
+                          }}
+                          className={`group inline-flex items-center gap-2 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer select-none shrink-0 shadow-2xs ${
+                            isSelected
+                              ? 'bg-[#00693E] text-white shadow-md ring-2 ring-emerald-600/30'
+                              : isUnassigned
+                              ? 'bg-amber-50/70 text-amber-800 hover:bg-amber-100/80 border border-amber-200/80'
+                              : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200/80 hover:border-emerald-500/50'
+                          }`}
+                        >
+                          {isAll ? (
+                            <Users className={`h-4 w-4 shrink-0 ${isSelected ? 'text-white' : 'text-emerald-600'}`} />
+                          ) : isUnassigned ? (
+                            <Folder className={`h-4 w-4 shrink-0 ${isSelected ? 'text-white' : 'text-amber-600'}`} />
+                          ) : (
+                            <Folder className={`h-4 w-4 shrink-0 ${isSelected ? 'text-white' : 'text-emerald-600'}`} />
+                          )}
+                          <span className="tracking-tight uppercase whitespace-nowrap">{item.displayName || item.nama}</span>
+                          
+                          {/* Student Count Badge */}
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
+                            isSelected
+                              ? 'bg-white/20 text-white'
+                              : isUnassigned
+                              ? 'bg-amber-200/60 text-amber-900'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            {item.count ?? 0}
+                          </span>
+
+                          {/* 3 dots menu for regular classes */}
+                          {isRegular && canWriteCurrent && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (activeActionKelasId === item.id) {
+                                  setActiveActionKelasId(null);
+                                  setKelasDropdownPos(null);
+                                } else {
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  const dropdownWidth = 140;
+                                  const dropdownHeight = 110;
+                                  let top = rect.bottom + 4;
+                                  if (top + dropdownHeight > window.innerHeight) {
+                                    top = rect.top - dropdownHeight - 4;
+                                  }
+                                  let left = rect.right - dropdownWidth;
+                                  if (left < 8) left = 8;
+                                  if (left + dropdownWidth > window.innerWidth - 8) {
+                                    left = window.innerWidth - dropdownWidth - 8;
+                                  }
+                                  setKelasDropdownPos({ top, left });
+                                  setActiveActionKelasId(item.id);
                                 }
-                                let left = rect.right - dropdownWidth;
-                                if (left < 8) left = 8;
-                                if (left + dropdownWidth > window.innerWidth - 8) {
-                                  left = window.innerWidth - dropdownWidth - 8;
-                                }
-                                setKelasDropdownPos({ top, left });
-                                setActiveActionKelasId(item.id);
-                              }
-                            }}
-                            className={`p-1 rounded-lg transition-colors cursor-pointer ${
-                              isSelected
-                                ? 'text-emerald-100 hover:text-white hover:bg-emerald-700/60'
-                                : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
-                            }`}
-                            title="Menu Kelas"
-                          >
-                            <MoreVertical className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
+                              }}
+                              className={`p-1 rounded-lg transition-colors cursor-pointer ${
+                                isSelected
+                                  ? 'text-emerald-100 hover:text-white hover:bg-emerald-700/60'
+                                  : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                              }`}
+                              title="Menu Kelas"
+                            >
+                              <MoreVertical className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             </div>
@@ -5919,6 +6101,8 @@ export default function LembagaKelasSub({
         <SantriDetailModal
           selectedSantri={selectedSantriForDetail}
           onClose={() => setSelectedSantriForDetail(null)}
+          lembagasList={lembagasList}
+          kelasList={kelasList}
         />
       )}
 
