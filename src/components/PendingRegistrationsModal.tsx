@@ -101,7 +101,7 @@ export default function PendingRegistrationsModal({
             <div>
               <p className="font-bold text-amber-900">Pemberitahuan Pendaftar Akun</p>
               <p className="text-amber-800 text-[11px] mt-0.5 leading-relaxed">
-                Anda dapat menyetujui atau menolak pendaftaran di bawah ini secara langsung, atau menutup modal ini untuk memprosesnya nanti dari menu <b>Pengaturan &gt; Kelola Akun Pengguna</b>.
+                Anda dapat menyetujui atau menolak pendaftaran di bawah ini secara langsung, atau menutup modal ini untuk memprosesnya nanti dari menu <b>Pengaturan &gt; Kelola Akun Pengurus</b>.
               </p>
             </div>
           </div>

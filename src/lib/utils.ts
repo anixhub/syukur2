@@ -1,6 +1,4 @@
-import { Santri, Lembaga, Kelas, isCalonClass, isGenderMatch, isClassGenderMatch, isDefaultClass } from '../types';
-
-export { isCalonClass, isGenderMatch, isClassGenderMatch, isDefaultClass };
+import { Santri, Lembaga, Kelas, isCalonClass, isGenderMatch, isDefaultClass } from '../types';
 
 export function formatBigDigit(val: any): string {
   if (val === undefined || val === null || val === '') return '';
@@ -298,21 +296,8 @@ export function getDefaultCalonClassName(lembaga?: Lembaga | null, gender?: stri
   if (!lembaga) return 'CALON PESERTA DIDIK';
   const rawNama = (lembaga.nama || '').trim().toLowerCase();
   const rawKode = (lembaga.kode || '').trim().toLowerCase();
-  
-  // Strict Gender Resolution: If student's gender is provided, ALWAYS respect it!
-  const sGender = (gender || '').trim().toLowerCase();
-  const isStudentMale = sGender === 'putra' || sGender === 'laki-laki' || sGender === 'l';
-  const isStudentFemale = sGender === 'putri' || sGender === 'perempuan' || sGender === 'p';
-
-  let isPutri = false;
-  if (isStudentFemale) {
-    isPutri = true;
-  } else if (isStudentMale) {
-    isPutri = false;
-  } else {
-    const lemGender = (lembaga.gender || '').trim().toLowerCase();
-    isPutri = lemGender === 'putri' || lemGender === 'perempuan' || lemGender === 'p' || rawKode.endsWith('pi') || rawNama.includes('putri');
-  }
+  const lemGender = (gender || lembaga.gender || '').trim().toLowerCase();
+  const isPutri = lemGender === 'putri' || lemGender === 'perempuan' || lemGender === 'p' || rawKode.includes('pi') || rawNama.includes('putri');
   const suffix = isPutri ? 'PI' : 'PA';
 
   // 1. Formal Non Pondok (user specified: CALON FORMAL NON PONDOK)
@@ -351,22 +336,20 @@ export function getDefaultCalonClassName(lembaga?: Lembaga | null, gender?: stri
 
   // 4. Internal institutions or generic
   const shortName = (lembaga.kode ? lembaga.kode.toUpperCase() : lembaga.nama.toUpperCase().slice(0, 15)).trim();
-  return `CALON ${shortName} ${suffix}`.trim();
+  if (lemGender) {
+    return `CALON ${shortName} ${suffix}`.trim();
+  }
+  return `CALON ${shortName}`.trim();
 }
 
 /**
  * Rigorous helper to match an institution against a text string (e.g. from pendidikanFormal or pendidikanInternal prefix).
  * Guarantees strict isolation across tiers (Wustho vs Ulya vs Ula) so candidates of one tier NEVER leak into another.
  */
-export function isMatchLembagaStrict(l: Lembaga, text?: string | null, santriGender?: string | null): boolean {
+export function isMatchLembagaStrict(l: Lembaga, text?: string | null): boolean {
   if (!text || !l) return false;
   const raw = (text || '').trim().toLowerCase();
   if (!raw || raw === 'tidak terdaftar' || raw === 'belum / non-formal' || raw === 'belum / non-madin' || raw === '-') return false;
-
-  // Strict Gender Constraint: If santri gender is provided, lembaga MUST match santri gender!
-  if (santriGender && !isGenderMatch(l.gender, santriGender)) {
-    return false;
-  }
 
   const normalizeSpelling = (str: string) => {
     return str
@@ -386,15 +369,13 @@ export function isMatchLembagaStrict(l: Lembaga, text?: string | null, santriGen
   // Check gender markers in text (PA vs PI)
   const isMale = (g: string) => g === 'putra' || g === 'laki-laki' || g === 'l';
   const isFemale = (g: string) => g === 'putri' || g === 'perempuan' || g === 'p';
-  const isTextPa = /\b(pa|putra)\b/i.test(raw) || raw.endsWith(' pa') || raw.endsWith('-pa');
-  const isTextPi = /\b(pi|putri)\b/i.test(raw) || raw.endsWith(' pi') || raw.endsWith('-pi');
-  const lG = (l.gender || '').trim().toLowerCase();
-  const lK = (l.kode || '').trim().toLowerCase();
-
-  if (isFemale(lG) && (isTextPa || lK.endsWith('pa') || lK === 'spmw' || lK === 'spmu' || lK === 'fnpa')) return false;
-  if (isMale(lG) && (isTextPi || lK.endsWith('pi') || lK === 'wupi' || lK === 'ulpi' || lK === 'fnpi')) return false;
-  if (isTextPa && (lK.endsWith('pi') || lK === 'wupi' || lK === 'ulpi' || lK === 'fnpi')) return false;
-  if (isTextPi && (lK.endsWith('pa') || lK === 'spmw' || lK === 'spmu' || lK === 'fnpa')) return false;
+  const isTextPa = /\b(pa|putra)\b/i.test(raw);
+  const isTextPi = /\b(pi|putri)\b/i.test(raw);
+  if (l.gender) {
+    const lG = l.gender.trim().toLowerCase();
+    if (isTextPa && isFemale(lG)) return false;
+    if (isTextPi && isMale(lG)) return false;
+  }
 
   // 1. Direct exact matches
   if (raw === targetId || n === targetNama) return true;
@@ -409,7 +390,7 @@ export function isMatchLembagaStrict(l: Lembaga, text?: string | null, santriGen
 
   // Check candidate class matches
   if (isCalonClass(raw)) {
-    const defaultCalon = getDefaultCalonClassName(l, santriGender).toLowerCase();
+    const defaultCalon = getDefaultCalonClassName(l).toLowerCase();
     const defaultCalonAlt = defaultCalon.replace('wustho', 'wushto');
     const defaultCalonAlt2 = defaultCalon.replace('wushto', 'wustho');
     if (raw === defaultCalon || raw === defaultCalonAlt || raw === defaultCalonAlt2) return true;
@@ -682,424 +663,6 @@ export function getSantriFormalEducationInfo(
     filterDisplay,
     fullDisplay,
     isFormal
-  };
-}
-
-/**
- * Helper to get a student's active class in a specific Lembaga
- * Evaluates s.pendidikanFormal, s.pendidikanInternal, s.kelasMhd, and s.kelas matching against database classes.
- */
-export function getStudentClassInLembaga(
-  s: Santri,
-  l: Lembaga,
-  lembagasList: Lembaga[] = [],
-  kelasList: Kelas[] = []
-): string | null {
-  if (!s || !l) return null;
-
-  // STRICT GENDER CONSTRAINT:
-  // A student can NEVER belong to an institution whose gender contradicts their gender!
-  if (!isGenderMatch(l.gender, s.gender)) {
-    return null;
-  }
-
-  let lems = lembagasList;
-  if (!lems || lems.length === 0) {
-    try {
-      const lStr = typeof window !== 'undefined' ? localStorage.getItem('smartsantri_lembagas') : null;
-      if (lStr) lems = JSON.parse(lStr);
-    } catch {}
-  }
-  lems = lems || [];
-
-  let kls = kelasList;
-  if (!kls || kls.length === 0) {
-    try {
-      const kStr = typeof window !== 'undefined' ? localStorage.getItem('smartsantri_kelas') : null;
-      if (kStr) kls = JSON.parse(kStr);
-    } catch {}
-  }
-  kls = kls || [];
-
-  const isFormal = getLembagaJenis(l) === 'Formal';
-  const norm = (str?: string | null) => (str || '').trim().toLowerCase();
-  const targetId = norm(l.id);
-
-  const cleanClassName = (raw: string): string => {
-    let str = raw.trim();
-    if (str.includes(' - ')) {
-      const parts = str.split(' - ').map(p => p.trim()).filter(Boolean);
-      if (parts.length >= 3 && /^(?:at[- ]?taroqqy|taroqqy)$/i.test(parts[1])) {
-        str = parts.slice(2).join(' - ').trim();
-      } else {
-        str = parts.slice(1).join(' - ').trim();
-      }
-    } else if (str.includes('-')) {
-      const parts = str.split('-').map(p => p.trim()).filter(Boolean);
-      if (parts.length >= 3 && /^(?:at[- ]?taroqqy|taroqqy)$/i.test(parts[1])) {
-        str = parts.slice(2).join('-').trim();
-      } else {
-        const candidate = parts.slice(1).join('-').trim();
-        if (candidate && !/^\d{6,}$/.test(candidate)) {
-          str = candidate;
-        }
-      }
-    }
-    str = str.replace(/^(?:at[- ]?taroqqy|taroqqy)\s*[-:]\s*/i, '').trim();
-    return str || raw;
-  };
-
-  const cleanClassStr = (str?: string | null) => {
-    if (!str) return '';
-    return str.trim().toLowerCase()
-      .replace(/[-_]/g, ' ')
-      .replace(/^(kelas|kls)\s+/, '')
-      .replace(/\s+(pa|pi|putra|putri)$/i, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-  };
-  const compactClassStr = (str?: string | null) => cleanClassStr(str).replace(/\s+/g, '');
-
-  if (isFormal) {
-    // 1. Check s.pendidikanFormal
-    if (
-      s.pendidikanFormal &&
-      s.pendidikanFormal.trim() !== '' &&
-      s.pendidikanFormal !== 'TIDAK TERDAFTAR' &&
-      s.pendidikanFormal !== 'Belum / Non-Formal' &&
-      s.pendidikanFormal !== '-'
-    ) {
-      const formalParts = s.pendidikanFormal.split(',').map(x => x.trim()).filter(Boolean);
-      for (const entry of formalParts) {
-        const dashParts = entry.split('-');
-        const prefix = dashParts[0].trim();
-        if (isMatchLembagaStrict(l, prefix, s.gender) || isMatchLembagaStrict(l, entry, s.gender)) {
-          if (dashParts.length > 1) {
-            const clsPart = dashParts.slice(1).join('-').trim();
-            if (clsPart && !/^\d{6,}$/.test(clsPart) && isClassGenderMatch(clsPart, s.gender)) {
-              const clsPartClean = cleanClassStr(clsPart);
-              const clsPartCompact = compactClassStr(clsPart);
-              const matched = kls.find(k => {
-                if (String(k.lembagaId || (k as any).lembaga_id) !== String(l.id)) return false;
-                if (!isClassGenderMatch(k.nama, s.gender)) return false;
-                const kClean = cleanClassStr(k.nama);
-                const kCompact = compactClassStr(k.nama);
-                return (
-                  k.nama.trim().toLowerCase() === clsPart.toLowerCase() ||
-                  kClean === clsPartClean ||
-                  (clsPartCompact && kCompact === clsPartCompact)
-                );
-              });
-              return cleanClassName(matched ? matched.nama : clsPart);
-            }
-          }
-          return getDefaultCalonClassName(l, s.gender);
-        }
-      }
-      // If s.pendidikanFormal is set to another formal institution strictly, return null
-      const otherFormalLembagas = lems.filter(otherL => getLembagaJenis(otherL) === 'Formal' && String(otherL.id) !== String(l.id));
-      const hasOtherFormalConflict = otherFormalLembagas.some(otherL => {
-        return formalParts.some(ep => isMatchLembagaStrict(otherL, ep.split('-')[0].trim(), s.gender));
-      });
-      if (hasOtherFormalConflict) {
-        return null;
-      }
-    }
-
-    // 2. Fallback check on s.kelas if s.pendidikanFormal is empty
-    if (s.kelas) {
-      const sClasses = s.kelas.split(',').map(x => norm(x)).filter(Boolean);
-      const otherFormalLembagas = lems.filter(otherL => getLembagaJenis(otherL) === 'Formal' && String(otherL.id) !== String(l.id));
-      const hasOtherFormalConflict = otherFormalLembagas.some(otherL => {
-        return sClasses.some(sc => isMatchLembagaStrict(otherL, sc, s.gender));
-      });
-      if (hasOtherFormalConflict) {
-        return null;
-      }
-
-      const classesOfL = kls.filter(k => {
-        const lemId = norm((k as any).lembagaId || (k as any).lembaga_id);
-        return lemId === targetId && !norm(k.nama).includes('calon') && !norm(k.nama).includes('tanpa kelas') && isClassGenderMatch(k.nama, s.gender);
-      });
-      for (const k of classesOfL) {
-        const kClean = cleanClassStr(k.nama);
-        const kCompact = compactClassStr(k.nama);
-        const hasMatch = sClasses.some(sc => {
-          const scClean = cleanClassStr(sc);
-          const scCompact = compactClassStr(sc);
-          return sc === norm(k.nama) || scClean === kClean || (kCompact && scCompact === kCompact);
-        });
-        if (k.nama && hasMatch && !/^\d{6,}$/.test(k.nama)) {
-          return cleanClassName(k.nama);
-        }
-      }
-    }
-    return null;
-  } else {
-    // 1. Check s.pendidikanInternal
-    if (
-      s.pendidikanInternal &&
-      s.pendidikanInternal.trim() !== '' &&
-      s.pendidikanInternal !== 'Belum / Non-Madin' &&
-      s.pendidikanInternal !== '-'
-    ) {
-      const internalParts = s.pendidikanInternal.split(',').map(x => x.trim()).filter(Boolean);
-      for (const entry of internalParts) {
-        const dashParts = entry.split('-');
-        const prefix = dashParts[0].trim();
-        if (isMatchLembagaStrict(l, prefix, s.gender) || norm(prefix) === targetId) {
-          if (dashParts.length > 1) {
-            const clsPart = dashParts.slice(1).join('-').trim();
-            if (clsPart && !/^\d{6,}$/.test(clsPart) && isClassGenderMatch(clsPart, s.gender)) {
-              const clsPartClean = cleanClassStr(clsPart);
-              const clsPartCompact = compactClassStr(clsPart);
-              const matched = kls.find(k => {
-                if (String(k.lembagaId || (k as any).lembaga_id) !== String(l.id)) return false;
-                if (!isClassGenderMatch(k.nama, s.gender)) return false;
-                const kClean = cleanClassStr(k.nama);
-                const kCompact = compactClassStr(k.nama);
-                return (
-                  k.nama.trim().toLowerCase() === clsPart.toLowerCase() ||
-                  kClean === clsPartClean ||
-                  (clsPartCompact && kCompact === clsPartCompact)
-                );
-              });
-              return cleanClassName(matched ? matched.nama : clsPart);
-            }
-          }
-          return getDefaultCalonClassName(l, s.gender);
-        }
-      }
-    }
-
-    // 2. Check s.kelasMhd if this is MHD / Diniyyah
-    const isMhd = norm(l.nama).includes('muhadloroh') || norm(l.nama).includes('mhd') || norm(l.kode) === 'mhd';
-    if (isMhd && s.kelasMhd && s.kelasMhd.trim() !== '' && s.kelasMhd !== '-' && !/^\d{6,}$/.test(s.kelasMhd)) {
-      const clsPart = s.kelasMhd.includes('-') ? s.kelasMhd.split('-').slice(1).join('-').trim() : s.kelasMhd.trim();
-      if (clsPart && !/^\d{6,}$/.test(clsPart) && isClassGenderMatch(clsPart, s.gender)) {
-        const matched = kls.find(k => String(k.lembagaId || (k as any).lembaga_id) === String(l.id) && isClassGenderMatch(k.nama, s.gender) && k.nama.toLowerCase() === clsPart.toLowerCase());
-        return cleanClassName(matched ? matched.nama : clsPart);
-      }
-    }
-
-    // 3. Check s.kelas matching only non-default specific classes belonging to this internal lembaga
-    if (s.kelas) {
-      const sClasses = s.kelas.split(',').map(x => norm(x)).filter(Boolean);
-      const classesOfL = kls.filter(k => {
-        const lemId = norm((k as any).lembagaId || (k as any).lembaga_id);
-        return lemId === targetId && !norm(k.nama).includes('calon') && !norm(k.nama).includes('tanpa kelas') && isClassGenderMatch(k.nama, s.gender);
-      });
-      for (const k of classesOfL) {
-        const kClean = cleanClassStr(k.nama);
-        const kCompact = compactClassStr(k.nama);
-        const hasMatch = sClasses.some(sc => {
-          const scClean = cleanClassStr(sc);
-          const scCompact = compactClassStr(sc);
-          return sc === norm(k.nama) || scClean === kClean || (kCompact && scCompact === kCompact);
-        });
-        if (k.nama && hasMatch && !/^\d{6,}$/.test(k.nama)) {
-          return cleanClassName(k.nama);
-        }
-      }
-    }
-    return null;
-  }
-}
-
-export interface SantriClassPlacement {
-  lembagaId: string;
-  lembagaNama: string;
-  lembagaKode: string;
-  jenis: 'Formal' | 'Internal';
-  jenjang: string;
-  deskripsi: string;
-  kelas: string;
-  isCalon: boolean;
-  isRegistered: boolean;
-  nism: string;
-}
-
-export interface SantriAcademicDataResult {
-  placements: SantriClassPlacement[];
-  registeredClasses: {
-    lembaga: string;
-    lembagaKode: string;
-    jenis: 'Formal' | 'Internal';
-    kelas: string;
-    isCalon: boolean;
-  }[];
-  formalInfo: ReturnType<typeof getSantriFormalEducationInfo>;
-  kelasMhd: string;
-}
-
-/**
- * Resolves full academic placement data for a Santri, exactly matching Modul Pendidikan logic.
- */
-export function getSantriAcademicPlacements(
-  s: Santri,
-  lembagasList: Lembaga[] = [],
-  kelasList: Kelas[] = []
-): SantriAcademicDataResult {
-  let lems = lembagasList;
-  if (!lems || lems.length === 0) {
-    try {
-      const lStr = typeof window !== 'undefined' ? localStorage.getItem('smartsantri_lembagas') : null;
-      if (lStr) lems = JSON.parse(lStr);
-    } catch {}
-  }
-  lems = lems || [];
-
-  let kls = kelasList;
-  if (!kls || kls.length === 0) {
-    try {
-      const kStr = typeof window !== 'undefined' ? localStorage.getItem('smartsantri_kelas') : null;
-      if (kStr) kls = JSON.parse(kStr);
-    } catch {}
-  }
-  kls = kls || [];
-
-  const formalInfo = getSantriFormalEducationInfo(s, lems, kls);
-
-  // Filter relevant institutions: strictly matching student gender
-  const relevantLembagas = lems.filter(l => {
-    if (!isGenderMatch(l.gender, s.gender)) return false;
-    return true;
-  });
-
-  const placements: SantriClassPlacement[] = [];
-  const registeredClasses: {
-    lembagaId?: string;
-    lembaga: string;
-    lembagaKode: string;
-    jenis: 'Formal' | 'Internal';
-    kelas: string;
-    isCalon: boolean;
-  }[] = [];
-
-  let mhdClassResolved = '';
-
-  relevantLembagas.forEach(l => {
-    let clsName = getStudentClassInLembaga(s, l, lems, kls);
-    const isFormal = getLembagaJenis(l) === 'Formal';
-
-    // If formal and getSantriFormalEducationInfo resolved this exact lembaga, sync the display
-    if (isFormal && formalInfo.isFormal && formalInfo.lembaga && String(formalInfo.lembaga.id) === String(l.id)) {
-      if (!clsName || clsName === 'Tanpa Kelas' || clsName === '-') {
-        clsName = formalInfo.display;
-      }
-    }
-
-    const isCalon = clsName ? isCalonClass(clsName) : false;
-    const isRegistered = Boolean(
-      clsName &&
-      clsName !== '-' &&
-      clsName.toLowerCase() !== 'tanpa kelas' &&
-      clsName.toLowerCase() !== 'tidak terdaftar'
-    );
-
-    // Get NISM for this lembaga
-    let nismVal = '';
-    const lemName = (l.nama || '').toLowerCase();
-    if (lemName.includes('wustho') || lemName.includes('wustha')) {
-      nismVal = s.indukWustho || '';
-    } else if (lemName.includes('ulya')) {
-      nismVal = s.indukUlya || '';
-    } else if (lemName.includes('mhd') || lemName.includes('diniyyah') || lemName.includes('muhadloroh')) {
-      nismVal = s.indukMhd || '';
-    } else {
-      nismVal = s.nism || '';
-    }
-    if (!nismVal && isFormal) {
-      nismVal = s.nism || s.indukWustho || s.indukUlya || '';
-    }
-
-    const jenjang = l.jenjang || (
-      lemName.includes('wustho') ? 'Wustho' :
-      lemName.includes('ulya') ? 'Ulya' :
-      (lemName.includes('mhd') || lemName.includes('muhadloroh') || lemName.includes('diniyyah')) ? 'MHD' :
-      (isFormal ? 'Formal' : 'Internal')
-    );
-
-    const deskripsi = l.deskripsi || (
-      lemName.includes('wustho') ? "Pendidikan Mu'adalah Tingkat Pertama (Setara SMP/MTs)" :
-      lemName.includes('ulya') ? "Pendidikan Mu'adalah Tingkat Atas (Setara SMA/MA)" :
-      !isFormal ? 'Pendidikan Diniyyah & Kitab Kuning Pesantren' :
-      'Pendidikan Formal & Umum Pesantren'
-    );
-
-    const placement: SantriClassPlacement = {
-      lembagaId: String(l.id),
-      lembagaNama: l.nama,
-      lembagaKode: l.kode || l.nama,
-      jenis: isFormal ? 'Formal' : 'Internal',
-      jenjang,
-      deskripsi,
-      kelas: clsName || '-',
-      isCalon,
-      isRegistered,
-      nism: nismVal
-    };
-
-    placements.push(placement);
-
-    if (isRegistered && clsName) {
-      registeredClasses.push({
-        lembagaId: String(l.id),
-        lembaga: l.nama,
-        lembagaKode: l.kode || l.nama,
-        jenis: isFormal ? 'Formal' : 'Internal',
-        kelas: clsName,
-        isCalon
-      });
-    }
-
-    if (!isFormal && (lemName.includes('mhd') || lemName.includes('muhadloroh') || lemName.includes('diniyyah'))) {
-      if (clsName && clsName !== '-' && !isCalon) {
-        mhdClassResolved = clsName;
-      }
-    }
-  });
-
-  // Also check if any raw class in s.kelas from database hasn't been added
-  if (s.kelas) {
-    const rawClassList = s.kelas.split(',').map(x => x.trim()).filter(Boolean);
-    rawClassList.forEach(rc => {
-      const rcLower = rc.toLowerCase();
-      if (rcLower === 'tanpa kelas' || isCalonClass(rcLower)) return;
-      const alreadyAdded = registeredClasses.some(
-        rg => rg.kelas.toLowerCase() === rcLower || rg.kelas.toLowerCase().includes(rcLower) || rcLower.includes(rg.kelas.toLowerCase())
-      );
-      if (!alreadyAdded) {
-        const foundKls = kls.find(k => k.nama.toLowerCase() === rcLower && isClassGenderMatch(k.nama, s.gender));
-        if (foundKls) {
-          const foundLem = lems.find(l => String(l.id) === String((foundKls as any).lembagaId || (foundKls as any).lembaga_id) && isGenderMatch(l.gender, s.gender));
-          if (foundLem) {
-            registeredClasses.push({
-              lembagaId: String(foundLem.id),
-              lembaga: foundLem.nama,
-              lembagaKode: foundLem.kode || foundLem.nama,
-              jenis: getLembagaJenis(foundLem) === 'Formal' ? 'Formal' : 'Internal',
-              kelas: foundKls.nama,
-              isCalon: false
-            });
-          }
-        }
-      }
-    });
-  }
-
-  // Determine clean MHD class (not 18 digit indukMhd)
-  if (!mhdClassResolved) {
-    if (s.kelasMhd && !/^\d{6,}$/.test(s.kelasMhd) && s.kelasMhd !== '-') {
-      mhdClassResolved = s.kelasMhd;
-    }
-  }
-
-  return {
-    placements,
-    registeredClasses,
-    formalInfo,
-    kelasMhd: mhdClassResolved
   };
 }
 
@@ -1393,66 +956,3 @@ export function cleanWaliKelas(val?: string | null): string {
     .trim();
   return cleaned || '-';
 }
-
-// Convert camelCase string/object to snake_case
-export function camelToSnake(obj: any): any {
-  if (obj === null || obj === undefined) return obj;
-  if (typeof obj !== 'object' || obj instanceof Date || obj instanceof File || obj instanceof Blob) return obj;
-  if (Array.isArray(obj)) return obj.map(camelToSnake);
-  
-  const result: any = {};
-  for (const key of Object.keys(obj)) {
-    const snakeKey = key
-      .replace(/([A-Z])/g, "_$1")
-      .replace(/([0-9]+)/g, "_$1")
-      .replace(/_+/g, "_")
-      .toLowerCase();
-    result[snakeKey] = camelToSnake(obj[key]);
-  }
-  return result;
-}
-
-// Convert snake_case string/object to camelCase
-export function snakeToCamel(obj: any): any {
-  if (obj === null || obj === undefined) return obj;
-  if (typeof obj !== 'object' || obj instanceof Date || obj instanceof File || obj instanceof Blob) return obj;
-  if (Array.isArray(obj)) return obj.map(snakeToCamel);
-  
-  const result: any = {};
-  for (const key of Object.keys(obj)) {
-    const camelKey = key.replace(/_([a-z0-9])/g, (g) => g[1].toUpperCase());
-    result[camelKey] = snakeToCamel(obj[key]);
-  }
-  return result;
-}
-
-// Helper to resolve dynamic API URLs supporting subpath hosting and absolute origin for cross-device compatibility
-export function getApiUrl(endpoint: string): string {
-  if (!endpoint) return '';
-  const trimmed = endpoint.trim();
-  
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    try {
-      const urlObj = new URL(trimmed);
-      let p = urlObj.pathname + urlObj.search;
-      if (p.startsWith('/uploads/')) {
-        p = p.replace('/uploads/', '/api/uploads/');
-      }
-      return p;
-    } catch (e) {
-      return trimmed;
-    }
-  }
-
-  if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
-    return trimmed;
-  }
-
-  let cleanEndpoint = trimmed.startsWith('/') ? trimmed : '/' + trimmed;
-  if (cleanEndpoint.startsWith('/uploads/')) {
-    cleanEndpoint = cleanEndpoint.replace('/uploads/', '/api/uploads/');
-  }
-  
-  return cleanEndpoint;
-}
-

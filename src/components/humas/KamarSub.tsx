@@ -202,10 +202,8 @@ export default function KamarSub({
   const [menuDropdown, setMenuDropdown] = useState<{
     type: 'kompleks' | 'kamar' | 'santri';
     id: string;
-    top?: number;
-    bottom?: number;
+    top: number;
     right: number;
-    openUpward: boolean;
     data?: any;
   } | null>(null);
 
@@ -222,36 +220,15 @@ export default function KamarSub({
       return;
     }
     const rect = e.currentTarget.getBoundingClientRect();
-    const right = Math.max(10, window.innerWidth - rect.right);
-    
-    // Estimate menu height depending on menu type
-    const estimatedHeight = type === 'santri' ? 240 : 120;
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const spaceAbove = rect.top;
-    
-    // Open upward if near bottom of screen and more space above
-    const openUpward = spaceBelow < estimatedHeight && spaceAbove > 140;
-    
-    let top: number | undefined;
-    let bottom: number | undefined;
-
-    if (openUpward) {
-      bottom = Math.max(10, window.innerHeight - rect.top + 4);
-    } else {
-      top = Math.max(10, Math.min(window.innerHeight - estimatedHeight - 10, rect.bottom + 4));
-    }
-
-    setMenuDropdown({ type, id, top, bottom, right, openUpward, data });
+    const right = Math.max(8, window.innerWidth - rect.right);
+    const top = rect.bottom + 4;
+    setMenuDropdown({ type, id, top, right, data });
   };
 
-  // Close dropdown menu automatically on outer window scroll, but allow scrolling inside menu
+  // Close dropdown menu automatically on any scroll event
   useEffect(() => {
     if (!menuDropdown) return;
-    const handleScroll = (e: Event) => {
-      const target = e.target as HTMLElement;
-      if (target && target.closest && target.closest('.fixed.z-50')) {
-        return;
-      }
+    const handleScroll = () => {
       setMenuDropdown(null);
     };
     window.addEventListener('scroll', handleScroll, true);
@@ -372,35 +349,14 @@ export default function KamarSub({
     });
   };
 
-  // Searched & Sorted Rooms for grid (searches across all complexes of current gender when searching)
-  const roomsPool = roomSearchQuery.trim()
-    ? kamarList.filter(r => currentGenderKompleks.some(k => k.id === r.kompleksId))
-    : activeRooms;
-
-  const searchedRooms = roomsPool.filter(r => {
-    if (!roomSearchQuery.trim()) return true;
-    const tokens = roomSearchQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    const roomName = (r.nama || '').toLowerCase();
-    const ketua = (r.ketuaKamar || '').toLowerCase();
-    const complex = kompleksList.find(k => k.id === r.kompleksId);
-    const complexName = (complex?.nama || '').toLowerCase();
-
-    // Check if room metadata or room occupants match ALL search tokens
-    return tokens.every(token => {
-      if (roomName.includes(token) || ketua.includes(token) || complexName.includes(token)) {
-        return true;
-      }
-      return santriList.some(s => 
-        (s.kamar || '').trim().toLowerCase() === roomName &&
-        isGenderMatch(selectedGender, s.gender) &&
-        (
-          (s.nama || (s as any).namaLengkap || (s as any).nama_lengkap || '').toLowerCase().includes(token) || 
-          (s.nis || (s as any).nism || '').toLowerCase().includes(token) ||
-          (s.nomorLemari || '').toLowerCase().includes(token) ||
-          `${s.desa || ''} ${s.kecamatan || ''} ${s.kabupaten || ''} ${s.asal || ''}`.toLowerCase().includes(token)
-        )
-      );
-    });
+  // Searched & Sorted Rooms for grid
+  const searchedRooms = activeRooms.filter(r => {
+    if (!roomSearchQuery) return true;
+    const q = roomSearchQuery.toLowerCase();
+    return (
+      (r.nama || '').toLowerCase().includes(q) ||
+      (r.ketuaKamar || '').toLowerCase().includes(q)
+    );
   });
 
   const sortedRooms = [...searchedRooms].sort((a, b) => {
@@ -434,15 +390,12 @@ export default function KamarSub({
   // Filtered members for detail view
   const filteredStudents = currentRoomMembers.filter(s => {
     // Search query
-    if (studentSearchQuery.trim()) {
-      const tokens = studentSearchQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
-      const sNama = (s.nama || (s as any).namaLengkap || (s as any).nama_lengkap || '').toLowerCase();
-      const sNis = (s.nis || (s as any).nism || '').toLowerCase();
-      const sLemari = (s.nomorLemari || '').toLowerCase();
-      const sAlamat = `${s.desa || ''} ${s.kecamatan || ''} ${s.kabupaten || ''} ${s.alamat || ''} ${s.asal || ''}`.toLowerCase();
-      const sStatus = (s.statusDomisili || s.status || 'Muqim').toLowerCase();
-      const combined = `${sNama} ${sNis} ${sLemari} ${sAlamat} ${sStatus}`;
-      if (!tokens.every(token => combined.includes(token))) return false;
+    if (studentSearchQuery) {
+      const q = studentSearchQuery.toLowerCase();
+      const matchName = (s.nama || '').toLowerCase().includes(q);
+      const matchNis = (s.nis || '').toLowerCase().includes(q);
+      const matchLemari = (s.nomorLemari || '').toLowerCase().includes(q);
+      if (!matchName && !matchNis && !matchLemari) return false;
     }
 
     // Status filter (Muqim vs Kampung)
@@ -865,13 +818,12 @@ export default function KamarSub({
 
     // Filter by search query
     if (addMemberSearch) {
-      const q = addMemberSearch.trim().toLowerCase();
-      const mName = (s.nama || (s as any).namaLengkap || (s as any).nama_lengkap || '').toLowerCase().includes(q);
-      const mNis = (s.nis || (s as any).nism || '').toLowerCase().includes(q);
+      const q = addMemberSearch.toLowerCase();
+      const mName = (s.nama || '').toLowerCase().includes(q);
+      const mNis = (s.nis || '').toLowerCase().includes(q);
       const mKamar = (s.kamar || '').toLowerCase().includes(q);
       const mLemari = (s.nomorLemari || '').toLowerCase().includes(q);
-      const mAlamat = `${s.desa || ''} ${s.kecamatan || ''} ${s.kabupaten || ''}`.toLowerCase().includes(q);
-      if (!mName && !mNis && !mKamar && !mLemari && !mAlamat) return false;
+      if (!mName && !mNis && !mKamar && !mLemari) return false;
     }
 
     return true;
@@ -3022,17 +2974,12 @@ export default function KamarSub({
               onClick={() => setMenuDropdown(null)}
             />
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: menuDropdown.openUpward ? 6 : -6 }}
+              initial={{ opacity: 0, scale: 0.95, y: -4 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: menuDropdown.openUpward ? 6 : -6 }}
-              transition={{ duration: 0.12 }}
-              style={{ 
-                top: menuDropdown.top, 
-                bottom: menuDropdown.bottom, 
-                right: menuDropdown.right,
-                maxHeight: 'calc(100vh - 20px)'
-              }}
-              className="fixed w-44 max-w-[calc(100vw-24px)] bg-white border border-slate-200/90 rounded-2xl shadow-2xl z-50 py-1.5 text-xs font-bold text-slate-700 overflow-y-auto"
+              exit={{ opacity: 0, scale: 0.95, y: -4 }}
+              transition={{ duration: 0.1 }}
+              style={{ top: menuDropdown.top, right: menuDropdown.right }}
+              className="fixed w-36 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1.5 text-xs font-bold text-slate-700"
               onClick={e => e.stopPropagation()}
             >
               {menuDropdown.type === 'kompleks' && (

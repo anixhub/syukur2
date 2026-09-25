@@ -454,27 +454,19 @@ export default function SekretarisView({
     document.body.removeChild(link);
   };
 
-  // Helper untuk mendapatkan kolom ekspor yang persis sama dengan kolom yang sedang ditampilkan di tabel
-  const getActiveTableExportColumns = () => {
-    const isColumnDisplayed = (colKey: string): boolean => {
-      if (colKey === 'nama') return true;
-      if (colKey === 'umur') return !!ageFilterConfig.enabled;
-      if (isMonitoringMode) {
-        const isWajib = mandatoryKeys.includes(colKey as keyof Santri);
-        return monitoringActiveTab === 'wajib' ? isWajib : !isWajib;
-      }
-      return visibleColumns[colKey] ?? false;
-    };
-
-    const allTableColumns = [
-      { id: 'nama', label: 'Nama Lengkap', colKey: 'nama', isAlwaysVisible: true, getValue: (s: Santri) => s.nama || '' },
-      { id: 'nis', label: 'NIS', colKey: 'nis', isAlwaysVisible: false, getValue: (s: Santri) => s.nis || '' },
-      { id: 'nisn', label: 'NISN', colKey: 'nisn', isAlwaysVisible: false, getValue: (s: Santri) => s.nisn || '' },
-      { id: 'nik', label: 'NIK', colKey: 'nik', isAlwaysVisible: false, getValue: (s: Santri) => s.nik || '' },
+  const handleExportExcelSantri = (customFileName?: string) => {
+    // Definisi kolom ekspor yang sesuai urutan data
+    const exportColumns = [
+      { id: 'nis', label: 'NIS', isAlwaysVisible: true, getValue: (s: Santri) => s.nis || '' },
+      { id: 'nama', label: 'Nama Lengkap', isAlwaysVisible: true, getValue: (s: Santri) => s.nama || '' },
+      { id: 'nisn', label: 'NISN', isAlwaysVisible: false, colKey: 'nisn', getValue: (s: Santri) => s.nisn || '' },
+      { id: 'indukMhd', label: 'INDUK MHD', isAlwaysVisible: false, colKey: 'indukMhd', getValue: (s: Santri) => s.indukMhd || '' },
+      { id: 'indukWustho', label: 'INDUK WUSTHO', isAlwaysVisible: false, colKey: 'indukWustho', getValue: (s: Santri) => s.indukWustho || '' },
+      { id: 'indukUlya', label: 'INDUK ULYA', isAlwaysVisible: false, colKey: 'indukUlya', getValue: (s: Santri) => s.indukUlya || '' },
+      { id: 'nik', label: 'NIK', isAlwaysVisible: false, colKey: 'nik', getValue: (s: Santri) => s.nik || '' },
       ...(ageFilterConfig.enabled ? [{
         id: 'umur',
         label: `Umur ${ageFilterConfig.refType === 'custom' && ageFilterConfig.customDate ? `(Per ${new Date(ageFilterConfig.customDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })})` : '(Hari ini)'}`,
-        colKey: 'umur',
         isAlwaysVisible: true,
         getValue: (s: Santri) => {
           const refDate = ageFilterConfig.refType === 'custom' && ageFilterConfig.customDate
@@ -484,57 +476,43 @@ export default function SekretarisView({
           return age !== null ? `${age} Tahun` : '';
         }
       }] : []),
-      { id: 'indukMhd', label: 'INDUK MHD', colKey: 'indukMhd', isAlwaysVisible: false, getValue: (s: Santri) => s.indukMhd || '' },
-      { id: 'indukWustho', label: 'INDUK WUSTHO', colKey: 'indukWustho', isAlwaysVisible: false, getValue: (s: Santri) => s.indukWustho || '' },
-      { id: 'indukUlya', label: 'INDUK ULYA', colKey: 'indukUlya', isAlwaysVisible: false, getValue: (s: Santri) => s.indukUlya || '' },
-      { id: 'noKk', label: 'No. KK', colKey: 'noKk', isAlwaysVisible: false, getValue: (s: Santri) => s.noKk || '' },
-      { id: 'tempatLahir', label: 'Tempat Lahir', colKey: 'tempatLahir', isAlwaysVisible: false, getValue: (s: Santri) => s.tempatLahir || '' },
-      { id: 'tanggalLahir', label: 'Tanggal Lahir', colKey: 'tanggalLahir', isAlwaysVisible: false, getValue: (s: Santri) => s.tanggalLahir || '' },
-      { id: 'gender', label: 'Gender', colKey: 'gender', isAlwaysVisible: false, getValue: (s: Santri) => s.gender || '' },
-      { id: 'pendidikanTerakhir', label: 'Pendidikan Terakhir', colKey: 'pendidikanTerakhir', isAlwaysVisible: false, getValue: (s: Santri) => s.pendidikanTerakhir || '' },
-      { id: 'pendidikanFormal', label: 'Pendidikan Formal', colKey: 'pendidikanFormal', isAlwaysVisible: false, getValue: (s: Santri) => {
-        const formalInfo = getSantriFormalEducationInfo(s, lembagasList, kelasList);
-        return formalInfo.filterDisplay || (formalInfo.isFormal && formalInfo.lembaga 
-          ? `${(formalInfo.lembaga.kode?.trim() || formalInfo.lembaga.nama.trim())} - ${formalInfo.display}` 
-          : formalInfo.display);
-      }},
-      { id: 'anakKe', label: 'Anak Ke', colKey: 'anakKe', isAlwaysVisible: false, getValue: (s: Santri) => s.anakKe !== undefined ? String(s.anakKe) : '' },
-      { id: 'dariBersaudara', label: 'Jumlah Saudara', colKey: 'dariBersaudara', isAlwaysVisible: false, getValue: (s: Santri) => s.dariBersaudara !== undefined ? String(s.dariBersaudara) : '' },
-      { id: 'namaAyah', label: 'Nama Ayah', colKey: 'namaAyah', isAlwaysVisible: false, getValue: (s: Santri) => s.namaAyah || '' },
-      { id: 'nikAyah', label: 'NIK Ayah', colKey: 'nikAyah', isAlwaysVisible: false, getValue: (s: Santri) => s.nikAyah || '' },
-      { id: 'pekerjaanAyah', label: 'Pekerjaan Ayah', colKey: 'pekerjaanAyah', isAlwaysVisible: false, getValue: (s: Santri) => s.pekerjaanAyah || '' },
-      { id: 'pendidikanAyah', label: 'Pendidikan Ayah', colKey: 'pendidikanAyah', isAlwaysVisible: false, getValue: (s: Santri) => s.pendidikanAyah || '' },
-      { id: 'namaIbu', label: 'Nama Ibu', colKey: 'namaIbu', isAlwaysVisible: false, getValue: (s: Santri) => s.namaIbu || '' },
-      { id: 'nikIbu', label: 'NIK Ibu', colKey: 'nikIbu', isAlwaysVisible: false, getValue: (s: Santri) => s.nikIbu || '' },
-      { id: 'pekerjaanIbu', label: 'Pekerjaan Ibu', colKey: 'pekerjaanIbu', isAlwaysVisible: false, getValue: (s: Santri) => s.pekerjaanIbu || '' },
-      { id: 'pendidikanIbu', label: 'Pendidikan Ibu', colKey: 'pendidikanIbu', isAlwaysVisible: false, getValue: (s: Santri) => s.pendidikanIbu || '' },
-      { id: 'alamat', label: 'Alamat', colKey: 'alamat', isAlwaysVisible: false, getValue: (s: Santri) => s.alamat || '' },
-      { id: 'rt', label: 'RT', colKey: 'rt', isAlwaysVisible: false, getValue: (s: Santri) => s.rt || '' },
-      { id: 'rw', label: 'RW', colKey: 'rw', isAlwaysVisible: false, getValue: (s: Santri) => s.rw || '' },
-      { id: 'desa', label: 'Desa / Kelurahan', colKey: 'desa', isAlwaysVisible: false, getValue: (s: Santri) => s.desa || '' },
-      { id: 'kecamatan', label: 'Kecamatan', colKey: 'kecamatan', isAlwaysVisible: false, getValue: (s: Santri) => s.kecamatan || '' },
-      { id: 'kabupaten', label: 'Kabupaten / Kota', colKey: 'kabupaten', isAlwaysVisible: false, getValue: (s: Santri) => s.kabupaten || '' },
-      { id: 'provinsi', label: 'Provinsi', colKey: 'provinsi', isAlwaysVisible: false, getValue: (s: Santri) => s.provinsi || '' },
-      { id: 'jarakRumah', label: 'Jarak (km)', colKey: 'jarakRumah', isAlwaysVisible: false, getValue: (s: Santri) => s.jarakRumah !== undefined ? String(s.jarakRumah) : '' },
-      { id: 'noHp', label: 'No. HP Wali', colKey: 'noHp', isAlwaysVisible: false, getValue: (s: Santri) => s.noHp || '' },
-      { id: 'statusDomisili', label: 'Status Domisili', colKey: 'statusDomisili', isAlwaysVisible: false, getValue: (s: Santri) => s.statusDomisili || '' },
-      { id: 'tanggalMasuk', label: 'Tgl Masuk', colKey: 'tanggalMasuk', isAlwaysVisible: false, getValue: (s: Santri) => s.tanggalMasuk || '' },
-      { id: 'tanggalKeluar', label: 'Tgl Keluar', colKey: 'tanggalKeluar', isAlwaysVisible: false, getValue: (s: Santri) => s.tanggalKeluar || '' },
-      { id: 'statusKeanggotaan', label: 'Status', colKey: 'statusKeanggotaan', isAlwaysVisible: false, getValue: (s: Santri) => s.statusKeanggotaan || 'Aktif' },
-      { id: 'statusEmis', label: 'Emis', colKey: 'statusEmis', isAlwaysVisible: false, getValue: (s: Santri) => s.statusEmis || 'Belum' },
-      { id: 'statusVerval', label: 'Verval', colKey: 'statusVerval', isAlwaysVisible: false, getValue: (s: Santri) => s.statusVerval || 'Proses' },
-      { id: 'catatan', label: 'Catatan', colKey: 'catatan', isAlwaysVisible: false, getValue: (s: Santri) => s.catatan || '' }
+      { id: 'noKk', label: 'No. KK', isAlwaysVisible: false, colKey: 'noKk', getValue: (s: Santri) => s.noKk || '' },
+      { id: 'tempatLahir', label: 'Tempat Lahir', isAlwaysVisible: true, getValue: (s: Santri) => s.tempatLahir || '' },
+      { id: 'tanggalLahir', label: 'Tanggal Lahir', isAlwaysVisible: true, getValue: (s: Santri) => s.tanggalLahir || '' },
+      { id: 'gender', label: 'Gender', isAlwaysVisible: false, colKey: 'gender', getValue: (s: Santri) => s.gender || '' },
+      { id: 'pendidikanTerakhir', label: 'Pendidikan Terakhir', isAlwaysVisible: false, colKey: 'pendidikanTerakhir', getValue: (s: Santri) => s.pendidikanTerakhir || '' },
+      { id: 'anakKe', label: 'Anak Ke', isAlwaysVisible: false, colKey: 'anakKe', getValue: (s: Santri) => s.anakKe !== undefined ? String(s.anakKe) : '' },
+      { id: 'dariBersaudara', label: 'Jumlah Saudara', isAlwaysVisible: false, colKey: 'dariBersaudara', getValue: (s: Santri) => s.dariBersaudara !== undefined ? String(s.dariBersaudara) : '' },
+      { id: 'namaAyah', label: 'Nama Ayah', isAlwaysVisible: false, colKey: 'namaAyah', getValue: (s: Santri) => s.namaAyah || '' },
+      { id: 'nikAyah', label: 'NIK Ayah', isAlwaysVisible: false, colKey: 'nikAyah', getValue: (s: Santri) => s.nikAyah || '' },
+      { id: 'pekerjaanAyah', label: 'Pekerjaan Ayah', isAlwaysVisible: false, colKey: 'pekerjaanAyah', getValue: (s: Santri) => s.pekerjaanAyah || '' },
+      { id: 'pendidikanAyah', label: 'Pendidikan Ayah', isAlwaysVisible: false, colKey: 'pendidikanAyah', getValue: (s: Santri) => s.pendidikanAyah || '' },
+      { id: 'namaIbu', label: 'Nama Ibu', isAlwaysVisible: false, colKey: 'namaIbu', getValue: (s: Santri) => s.namaIbu || '' },
+      { id: 'nikIbu', label: 'NIK Ibu', isAlwaysVisible: false, colKey: 'nikIbu', getValue: (s: Santri) => s.nikIbu || '' },
+      { id: 'pekerjaanIbu', label: 'Pekerjaan Ibu', isAlwaysVisible: false, colKey: 'pekerjaanIbu', getValue: (s: Santri) => s.pekerjaanIbu || '' },
+      { id: 'pendidikanIbu', label: 'Pendidikan Ibu', isAlwaysVisible: false, colKey: 'pendidikanIbu', getValue: (s: Santri) => s.pendidikanIbu || '' },
+      { id: 'alamat', label: 'Alamat', isAlwaysVisible: false, colKey: 'alamat', getValue: (s: Santri) => s.alamat || '' },
+      { id: 'rt', label: 'RT', isAlwaysVisible: false, colKey: 'rt', getValue: (s: Santri) => s.rt || '' },
+      { id: 'rw', label: 'RW', isAlwaysVisible: false, colKey: 'rw', getValue: (s: Santri) => s.rw || '' },
+      { id: 'desa', label: 'Desa / Kelurahan', isAlwaysVisible: true, getValue: (s: Santri) => s.desa || '' },
+      { id: 'kecamatan', label: 'Kecamatan', isAlwaysVisible: true, getValue: (s: Santri) => s.kecamatan || '' },
+      { id: 'kabupaten', label: 'Kabupaten / Kota', isAlwaysVisible: true, getValue: (s: Santri) => s.kabupaten || '' },
+      { id: 'provinsi', label: 'Provinsi', isAlwaysVisible: true, getValue: (s: Santri) => s.provinsi || '' },
+      { id: 'jarakRumah', label: 'Jarak Rumah (km)', isAlwaysVisible: false, colKey: 'jarakRumah', getValue: (s: Santri) => s.jarakRumah !== undefined ? String(s.jarakRumah) : '' },
+      { id: 'noHp', label: 'No. HP Wali', isAlwaysVisible: false, colKey: 'noHp', getValue: (s: Santri) => s.noHp || '' },
+      { id: 'statusDomisili', label: 'Status Domisili', isAlwaysVisible: false, colKey: 'statusDomisili', getValue: (s: Santri) => s.statusDomisili || '' },
+      { id: 'statusKeanggotaan', label: 'Status Keanggotaan', isAlwaysVisible: false, colKey: 'statusKeanggotaan', getValue: (s: Santri) => s.statusKeanggotaan || '' },
+      { id: 'tanggalMasuk', label: 'Tanggal Masuk', isAlwaysVisible: false, colKey: 'tanggalMasuk', getValue: (s: Santri) => s.tanggalMasuk || '' },
+      { id: 'tanggalKeluar', label: 'Tanggal Keluar', isAlwaysVisible: false, colKey: 'tanggalKeluar', getValue: (s: Santri) => s.tanggalKeluar || '' },
+      { id: 'statusVerval', label: 'Status Verval', isAlwaysVisible: false, colKey: 'statusVerval', getValue: (s: Santri) => s.statusVerval || 'Proses' },
+      { id: 'catatan', label: 'Catatan', isAlwaysVisible: true, getValue: (s: Santri) => s.catatan || '' }
     ];
 
-    return allTableColumns.filter(col => col.isAlwaysVisible || isColumnDisplayed(col.colKey));
-  };
+    // Filter columns that are visible
+    const activeColumns = exportColumns.filter(col => col.isAlwaysVisible || (col.colKey && visibleColumns[col.colKey]));
 
-  const handleExportExcelSantri = (customFileName?: string) => {
-    // Ambil kolom yang persis sesuai dengan tampilan tabel saat ini
-    const activeColumns = getActiveTableExportColumns();
-
-    const headers = ['No', ...activeColumns.map(col => col.label)];
-    const rows = sortedSantri.map((s, idx) => [String(idx + 1), ...activeColumns.map(col => col.getValue(s))]);
+    const headers = activeColumns.map(col => col.label);
+    const rows = sortedSantri.map(s => activeColumns.map(col => col.getValue(s)));
 
     const dateStr = new Date().toISOString().split('T')[0];
     const defaultName = `Data_Santri_${dateStr}.xls`;
@@ -974,8 +952,49 @@ export default function SekretarisView({
       return;
     }
 
-    // Ambil kolom yang persis sesuai dengan tampilan tabel saat ini
-    const activeColumns = getActiveTableExportColumns();
+    // Definisi kolom ekspor yang sesuai urutan data
+    const exportColumns = [
+      { id: 'nis', label: 'NIS', isAlwaysVisible: true, getValue: (s: Santri) => s.nis || '' },
+      { id: 'nama', label: 'Nama Lengkap', isAlwaysVisible: true, getValue: (s: Santri) => s.nama || '' },
+      { id: 'nisn', label: 'NISN', isAlwaysVisible: false, colKey: 'nisn', getValue: (s: Santri) => s.nisn || '' },
+      { id: 'indukMhd', label: 'INDUK MHD', isAlwaysVisible: false, colKey: 'indukMhd', getValue: (s: Santri) => s.indukMhd || '' },
+      { id: 'indukWustho', label: 'INDUK WUSTHO', isAlwaysVisible: false, colKey: 'indukWustho', getValue: (s: Santri) => s.indukWustho || '' },
+      { id: 'indukUlya', label: 'INDUK ULYA', isAlwaysVisible: false, colKey: 'indukUlya', getValue: (s: Santri) => s.indukUlya || '' },
+      { id: 'nik', label: 'NIK', isAlwaysVisible: false, colKey: 'nik', getValue: (s: Santri) => s.nik || '' },
+      { id: 'noKk', label: 'No. KK', isAlwaysVisible: false, colKey: 'noKk', getValue: (s: Santri) => s.noKk || '' },
+      { id: 'tempatLahir', label: 'Tempat Lahir', isAlwaysVisible: true, getValue: (s: Santri) => s.tempatLahir || '' },
+      { id: 'tanggalLahir', label: 'Tanggal Lahir', isAlwaysVisible: true, getValue: (s: Santri) => s.tanggalLahir || '' },
+      { id: 'gender', label: 'Gender', isAlwaysVisible: false, colKey: 'gender', getValue: (s: Santri) => s.gender || '' },
+      { id: 'pendidikanTerakhir', label: 'Pendidikan Terakhir', isAlwaysVisible: false, colKey: 'pendidikanTerakhir', getValue: (s: Santri) => s.pendidikanTerakhir || '' },
+      { id: 'pendidikanFormal', label: 'Pendidikan Formal', isAlwaysVisible: false, colKey: 'pendidikanFormal', getValue: (s: Santri) => getColumnValueString(s, 'pendidikanFormal', ageFilterConfig, lembagasList, kelasList) },
+      { id: 'anakKe', label: 'Anak Ke', isAlwaysVisible: false, colKey: 'anakKe', getValue: (s: Santri) => s.anakKe !== undefined ? String(s.anakKe) : '' },
+      { id: 'dariBersaudara', label: 'Jumlah Saudara', isAlwaysVisible: false, colKey: 'dariBersaudara', getValue: (s: Santri) => s.dariBersaudara !== undefined ? String(s.dariBersaudara) : '' },
+      { id: 'namaAyah', label: 'Nama Ayah', isAlwaysVisible: false, colKey: 'namaAyah', getValue: (s: Santri) => s.namaAyah || '' },
+      { id: 'nikAyah', label: 'NIK Ayah', isAlwaysVisible: false, colKey: 'nikAyah', getValue: (s: Santri) => s.nikAyah || '' },
+      { id: 'pekerjaanAyah', label: 'Pekerjaan Ayah', isAlwaysVisible: false, colKey: 'pekerjaanAyah', getValue: (s: Santri) => s.pekerjaanAyah || '' },
+      { id: 'pendidikanAyah', label: 'Pendidikan Ayah', isAlwaysVisible: false, colKey: 'pendidikanAyah', getValue: (s: Santri) => s.pendidikanAyah || '' },
+      { id: 'namaIbu', label: 'Nama Ibu', isAlwaysVisible: false, colKey: 'namaIbu', getValue: (s: Santri) => s.namaIbu || '' },
+      { id: 'nikIbu', label: 'NIK Ibu', isAlwaysVisible: false, colKey: 'nikIbu', getValue: (s: Santri) => s.nikIbu || '' },
+      { id: 'pekerjaanIbu', label: 'Pekerjaan Ibu', isAlwaysVisible: false, colKey: 'pekerjaanIbu', getValue: (s: Santri) => s.pekerjaanIbu || '' },
+      { id: 'pendidikanIbu', label: 'Pendidikan Ibu', isAlwaysVisible: false, colKey: 'pendidikanIbu', getValue: (s: Santri) => s.pendidikanIbu || '' },
+      { id: 'alamat', label: 'Alamat', isAlwaysVisible: false, colKey: 'alamat', getValue: (s: Santri) => s.alamat || '' },
+      { id: 'rt', label: 'RT', isAlwaysVisible: false, colKey: 'rt', getValue: (s: Santri) => s.rt || '' },
+      { id: 'rw', label: 'RW', isAlwaysVisible: false, colKey: 'rw', getValue: (s: Santri) => s.rw || '' },
+      { id: 'desa', label: 'Desa / Kelurahan', isAlwaysVisible: true, getValue: (s: Santri) => s.desa || '' },
+      { id: 'kecamatan', label: 'Kecamatan', isAlwaysVisible: true, getValue: (s: Santri) => s.kecamatan || '' },
+      { id: 'kabupaten', label: 'Kabupaten / Kota', isAlwaysVisible: true, getValue: (s: Santri) => s.kabupaten || '' },
+      { id: 'provinsi', label: 'Provinsi', isAlwaysVisible: true, getValue: (s: Santri) => s.provinsi || '' },
+      { id: 'jarakRumah', label: 'Jarak Rumah (km)', isAlwaysVisible: false, colKey: 'jarakRumah', getValue: (s: Santri) => s.jarakRumah !== undefined ? String(s.jarakRumah) : '' },
+      { id: 'noHp', label: 'No. HP Wali', isAlwaysVisible: false, colKey: 'noHp', getValue: (s: Santri) => s.noHp || '' },
+      { id: 'statusDomisili', label: 'Status Domisili', isAlwaysVisible: false, colKey: 'statusDomisili', getValue: (s: Santri) => s.statusDomisili || '' },
+      { id: 'statusKeanggotaan', label: 'Status Keanggotaan', isAlwaysVisible: false, colKey: 'statusKeanggotaan', getValue: (s: Santri) => s.statusKeanggotaan || '' },
+      { id: 'tanggalMasuk', label: 'Tanggal Masuk', isAlwaysVisible: false, colKey: 'tanggalMasuk', getValue: (s: Santri) => s.tanggalMasuk || '' },
+      { id: 'tanggalKeluar', label: 'Tanggal Keluar', isAlwaysVisible: false, colKey: 'tanggalKeluar', getValue: (s: Santri) => s.tanggalKeluar || '' },
+      { id: 'statusVerval', label: 'Status Verval', isAlwaysVisible: false, colKey: 'statusVerval', getValue: (s: Santri) => s.statusVerval || 'Proses' },
+      { id: 'catatan', label: 'Catatan', isAlwaysVisible: true, getValue: (s: Santri) => s.catatan || '' }
+    ];
+
+    const activeColumns = exportColumns.filter(col => col.isAlwaysVisible || (col.colKey && visibleColumns[col.colKey]));
 
     let html = `
       <html>
@@ -1567,9 +1586,37 @@ export default function SekretarisView({
 
           {/* Top Segmented Layout Tabs & Action Buttons */}
           {subTab !== 'overview' && (
-            <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-2">
-              {/* Tombol Lain (Monitoring, Ekspor, Tambah Santri Mobile) - Di kiri pada desktop, di kanan pada mobile */}
-              <div className="order-2 sm:order-1 flex items-center gap-2 justify-end">
+            <div className="flex items-center justify-between w-full sm:w-auto gap-2">
+              {/* Tombol Mode Tampilan (RATA KIRI - Sudut Lengkung Sempurna) */}
+              <div className="inline-flex rounded-full bg-slate-100 p-1 gap-1 shrink-0">
+                <button
+                  id="tab-view-table"
+                  onClick={() => setViewMode('table')}
+                  className={`flex h-9 w-9 items-center justify-center rounded-full font-display text-xs font-bold tracking-tight transition-all cursor-pointer ${
+                    viewMode === 'table'
+                      ? 'bg-white text-emerald-800 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                  title="Mode Tabel"
+                >
+                  <Table className="h-4 w-4" />
+                </button>
+                <button
+                  id="tab-view-card"
+                  onClick={() => setViewMode('card')}
+                  className={`flex h-9 w-9 items-center justify-center rounded-full font-display text-xs font-bold tracking-tight transition-all cursor-pointer ${
+                    viewMode === 'card'
+                      ? 'bg-white text-emerald-800 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                  title="Mode Kartu"
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Tombol Lain (RATA KANAN SEMUA - Sudut Lengkung Sempurna) */}
+              <div className="flex items-center gap-2 justify-end">
                 {/* Tombol Monitoring (jika mode tabel - rounded-full) */}
                 {viewMode === 'table' && (
                   <button
@@ -1604,40 +1651,12 @@ export default function SekretarisView({
                       setEditingSantri(null);
                       setIsAddSantriOpen(true);
                     }}
-                    className="flex sm:hidden h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all shadow-xs bg-emerald-700 text-white hover:bg-emerald-800 hover:scale-105 active:scale-95 cursor-pointer"
+                    className="flex md:hidden h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all shadow-xs bg-emerald-700 text-white hover:bg-emerald-800 hover:scale-105 active:scale-95 cursor-pointer"
                     title="Tambah Santri"
                   >
                     <Plus className="h-5 w-5" />
                   </button>
                 )}
-              </div>
-
-              {/* Tombol Mode Tampilan (Tabel / Kartu) - Di kiri pada mobile, PALING KANAN pada desktop */}
-              <div className="order-1 sm:order-2 sm:order-last inline-flex rounded-full bg-slate-100 p-1 gap-1 shrink-0">
-                <button
-                  id="tab-view-table"
-                  onClick={() => setViewMode('table')}
-                  className={`flex h-9 w-9 items-center justify-center rounded-full font-display text-xs font-bold tracking-tight transition-all cursor-pointer ${
-                    viewMode === 'table'
-                      ? 'bg-white text-emerald-800 shadow-sm'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                  title="Mode Tabel"
-                >
-                  <Table className="h-4 w-4" />
-                </button>
-                <button
-                  id="tab-view-card"
-                  onClick={() => setViewMode('card')}
-                  className={`flex h-9 w-9 items-center justify-center rounded-full font-display text-xs font-bold tracking-tight transition-all cursor-pointer ${
-                    viewMode === 'card'
-                      ? 'bg-white text-emerald-800 shadow-sm'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                  title="Mode Kartu"
-                >
-                  <LayoutGrid className="h-4 w-4" />
-                </button>
               </div>
             </div>
           )}
@@ -1984,17 +2003,17 @@ export default function SekretarisView({
                 </button>
               )}
 
-              {/* Mobile Sort Button (Santri subtab - Hanya Tampil di Mode Tampilan Kartu) */}
-              {subTab === 'santri' && viewMode === 'card' && (
-                <div className={`relative shrink-0 sm:hidden ${isSelectionMode ? 'hidden' : 'block'}`}>
+              {/* Mobile Sort Button (Card mode & Santri subtab) */}
+              {viewMode === 'card' && subTab === 'santri' && (
+                <div className={`relative shrink-0 md:hidden ${isSelectionMode ? 'hidden' : 'block'}`}>
                   <button
                     id="btn-sort-card-toggle-mobile"
                     type="button"
                     onClick={() => setShowSortDropdown(!showSortDropdown)}
-                    className={`h-11 w-11 flex items-center justify-center rounded-full border font-display text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95 ${
+                    className={`h-11 w-11 flex items-center justify-center rounded-full border font-display text-xs font-bold transition-all hover:bg-slate-50 shadow-2xs ${
                       showSortDropdown
-                        ? 'border-emerald-300 bg-emerald-50 text-emerald-800 ring-2 ring-emerald-500/20'
-                        : 'border-slate-200 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                        : 'border-slate-200 bg-white text-slate-600'
                     }`}
                     title="Urutkan"
                   >
@@ -2066,23 +2085,24 @@ export default function SekretarisView({
             </div>
           </div>
 
-          <div className={`${isSelectionMode ? 'flex' : 'hidden sm:flex'} items-center justify-between sm:justify-end gap-1.5 sm:gap-2.5 md:gap-3 w-full sm:w-auto flex-nowrap overflow-visible py-0.5`}>
+          <div className={`${isSelectionMode ? 'flex' : 'hidden md:flex'} items-center justify-between sm:justify-end gap-1.5 sm:gap-2.5 md:gap-3 w-full md:w-auto flex-nowrap overflow-visible py-0.5`}>
 
-            {/* Sort Button (Hanya Tampil di Mode Tampilan Kartu) */}
-            {subTab === 'santri' && viewMode === 'card' && (
-              <div className={`relative shrink-0 ${isSelectionMode ? 'hidden sm:block' : 'block'}`}>
+            {/* Sort Button (Only for Card mode & Santri subtab) */}
+            {viewMode === 'card' && subTab === 'santri' && (
+              <div className={`relative flex-1 sm:flex-none shrink-0 ${isSelectionMode ? 'hidden sm:block' : 'block'}`}>
                 <button
                   id="btn-sort-card-toggle"
                   type="button"
                   onClick={() => setShowSortDropdown(!showSortDropdown)}
-                  className={`h-11 w-11 shrink-0 flex items-center justify-center rounded-full border font-display text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95 ${
+                  className={`w-full flex flex-row h-11 items-center justify-center gap-1 sm:gap-1.5 rounded-xl border px-1.5 sm:px-3.5 font-display text-[10px] xs:text-[11px] sm:text-xs font-bold transition-all hover:bg-slate-50 whitespace-nowrap ${
                     showSortDropdown
-                      ? 'border-emerald-300 bg-emerald-50 text-emerald-800 ring-2 ring-emerald-500/20'
-                      : 'border-slate-200 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                      : 'border-slate-200 bg-white text-slate-600'
                   }`}
                   title="Urutkan"
                 >
-                  <ArrowUpDown className="h-5 w-5 text-current" />
+                  <ArrowUpDown className="h-4 w-4 text-current" />
+                  <span className="inline">Urutkan</span>
                 </button>
                 
                 {/* Sort Options Dropdown */}
@@ -2097,7 +2117,7 @@ export default function SekretarisView({
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: 10 }}
-                        className="absolute right-0 mt-2 w-52 sm:w-56 rounded-2xl border border-slate-100 bg-white p-3 shadow-xl z-50 text-slate-700 font-sans"
+                        className="absolute left-1/2 -translate-x-1/2 sm:left-auto sm:right-0 sm:translate-x-0 mt-2 w-52 sm:w-56 rounded-2xl border border-slate-100 bg-white p-3 shadow-xl z-50 text-slate-700 font-sans"
                       >
                         <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2.5 mb-2 pb-1 border-b border-slate-50">
                           Urutkan Berdasarkan
@@ -2138,18 +2158,20 @@ export default function SekretarisView({
                                     <ArrowDown className="h-3.5 w-3.5 text-emerald-700 shrink-0" />
                                   )
                                 )}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </motion.div>
-                      </>
-                    )}
-                  </AnimatePresence>
-                </div>
-              )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </motion.div>
+                    </>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
 
-            {/* Add Record Button - Lengkungan sudut lengkung sempurna */}
+
+
+            {/* Add Record Button */}
             {subTab === 'santri' && !isMonitoringMode && canWriteCurrentFilter && !isSelectionMode && (
               <button
                 id="btn-add-santri"
@@ -2157,11 +2179,12 @@ export default function SekretarisView({
                   setEditingSantri(null);
                   setIsAddSantriOpen(true);
                 }}
-                className="hidden sm:flex flex-row h-11 items-center justify-center gap-2 rounded-full px-5 font-display text-xs font-bold transition-all shrink-0 whitespace-nowrap bg-emerald-700 text-white shadow-sm hover:bg-emerald-800 active:scale-95 cursor-pointer"
-                title="Tambah Data Santri"
+                className="hidden md:flex flex-row flex-[2] sm:flex-none h-11 items-center justify-center gap-1 sm:gap-1.5 rounded-xl px-1.5 sm:px-4 font-display text-[10px] xs:text-[11px] sm:text-xs font-bold transition-all shrink-0 whitespace-nowrap bg-emerald-700 text-white shadow-sm hover:bg-emerald-800 active:scale-95 cursor-pointer"
+                title="Tambah data"
               >
                 <Plus className="h-4 w-4 shrink-0" />
-                <span>Tambah Data Santri</span>
+                <span className="hidden sm:inline">Tambah Data Santri</span>
+                <span className="sm:hidden">Data Santri</span>
               </button>
             )}
           </div>

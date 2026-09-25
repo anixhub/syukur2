@@ -19,8 +19,7 @@ import {
   ChevronRight,
   Check,
   Plus,
-  UserPlus,
-  MessageCircle
+  UserPlus
 } from 'lucide-react';
 import { getPermissionsForRole, normalizeRoleId } from '../lib/permissions';
 import { getSavedAccounts, switchAccount, logoutCurrentAccount, SavedAccount } from '../lib/accountManager';
@@ -39,10 +38,6 @@ interface SidebarProps {
   onOpenHelp?: () => void;
   santriList?: any[];
   onSelectSantri?: (santri: any) => void;
-  onOpenChat?: () => void;
-  isChatOpen?: boolean;
-  unreadChatCount?: number;
-  hasMentionNotification?: boolean;
 }
 
 export interface MenuItemDef {
@@ -57,13 +52,9 @@ const MENU_ITEMS: MenuItemDef[] = [
     id: 'home', 
     label: 'Home', 
     icon: Home,
-    submenus: []
-  },
-  { 
-    id: 'group_chat', 
-    label: 'Group Chat', 
-    icon: MessageCircle,
-    submenus: []
+    submenus: [
+      { id: 'dashboard', label: 'Dashboard Utama' }
+    ]
   },
   { 
     id: 'sekretaris', 
@@ -78,11 +69,7 @@ const MENU_ITEMS: MenuItemDef[] = [
     id: 'bendahara', 
     label: 'Bendahara', 
     icon: Wallet,
-    submenus: [
-      { id: 'wallet', label: 'Wallet' },
-      { id: 'pembayaran', label: 'Pembayaran' },
-      { id: 'syahriah', label: 'Syahriah' }
-    ]
+    submenus: []
   },
   { 
     id: 'pendidikan', 
@@ -127,11 +114,7 @@ export default function Sidebar({
   onLogout,
   onOpenHelp,
   santriList = [],
-  onSelectSantri,
-  onOpenChat,
-  isChatOpen = false,
-  unreadChatCount = 0,
-  hasMentionNotification = false
+  onSelectSantri
 }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchMode, setIsSearchMode] = useState<boolean>(false);
@@ -212,7 +195,7 @@ export default function Sidebar({
   const filteredMenuItems = useMemo(() => {
     if (normalizeRoleId(activeRole) === 'superadmin') return MENU_ITEMS;
     return MENU_ITEMS.filter(item => {
-      if (item.id === 'home' || item.id === 'group_chat') return true;
+      if (item.id === 'home') return true;
       if (!permissions) return false;
 
       if (item.id === 'sekretaris') {
@@ -309,11 +292,6 @@ export default function Sidebar({
 
   const handleMenuClick = (item: MenuItemDef) => {
     if (isSelectionMode) return;
-
-    if (item.id === 'group_chat') {
-      if (onOpenChat) onOpenChat();
-      return;
-    }
 
     if (item.submenus && item.submenus.length > 0) {
       if (openAccordion === item.id) {
@@ -486,13 +464,7 @@ export default function Sidebar({
                           key={`${item.module}-${item.subTab || idx}`}
                           type="button"
                           onClick={() => {
-                            if (item.module === 'group_chat') {
-                              if (onOpenChat) onOpenChat();
-                              setIsSearchMode(false);
-                              setSearchQuery('');
-                            } else {
-                              onChangeModule(item.module, item.subTab);
-                            }
+                            onChangeModule(item.module, item.subTab);
                           }}
                           className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left transition-all cursor-pointer group ${
                             isItemActive 
@@ -587,8 +559,7 @@ export default function Sidebar({
             <nav className={`flex-1 px-3 py-3 space-y-1 ${isOpen ? 'overflow-y-auto overflow-x-hidden' : 'overflow-visible'}`}>
               {searchedItems.map((item) => {
                 const Icon = item.icon;
-                const isChat = item.id === 'group_chat';
-                const isActive = isChat ? !!isChatOpen : activeModule === item.id;
+                const isActive = activeModule === item.id;
                 const isExpanded = (openAccordion === item.id) || (searchQuery.trim().length > 0 && item.submenus && item.submenus.length > 0);
                 const hasSubmenus = item.submenus && item.submenus.length > 0;
 
@@ -601,10 +572,6 @@ export default function Sidebar({
                       type="button"
                       onClick={() => {
                         if (isSelectionMode) return;
-                        if (isChat) {
-                          if (onOpenChat) onOpenChat();
-                          return;
-                        }
                         if (isOpen) {
                           handleMenuClick(item);
                         } else {
@@ -631,11 +598,8 @@ export default function Sidebar({
                       aria-label={item.label}
                     >
                       {/* Icon container - FIXED AT w-12 h-11, center=36px, NEVER moves */}
-                      <div className="w-12 h-11 flex items-center justify-center shrink-0 relative">
+                      <div className="w-12 h-11 flex items-center justify-center shrink-0">
                         <Icon className={`w-5 h-5 shrink-0 transition-colors ${isActive ? 'text-blue-600' : 'text-gray-600'}`} />
-                        {isChat && unreadChatCount > 0 && (
-                          <span className={`absolute top-2 right-2 flex h-2 w-2 rounded-full ${hasMentionNotification ? 'bg-amber-500 animate-ping' : 'bg-red-500'} ${isOpen ? 'hidden' : 'block'}`} />
-                        )}
                       </div>
 
                       {/* Module Label & Chevron - Sweeps left and fades out when narrowing */}
@@ -652,11 +616,6 @@ export default function Sidebar({
                         <span className={`text-sm font-medium truncate ${isActive ? 'text-blue-600 font-semibold' : 'text-gray-800'}`}>
                           {item.label}
                         </span>
-                        {isChat && unreadChatCount > 0 && (
-                          <span className={`ml-auto mr-2 px-1.5 py-0.5 text-[10px] font-bold rounded-full text-white ${hasMentionNotification ? 'bg-amber-500 animate-pulse' : 'bg-red-500'}`}>
-                            {unreadChatCount > 99 ? '99+' : unreadChatCount}
-                          </span>
-                        )}
                         {hasSubmenus && (
                           <span 
                             className={`text-gray-400 text-sm ml-2 shrink-0 transition-transform duration-200 ${
@@ -836,7 +795,7 @@ export default function Sidebar({
 
                     <div className="h-px bg-gray-150 my-1.5 mx-1" />
 
-                    {/* Options Group: Pengaturan, Masukan & Keluar */}
+                    {/* Options Group: Settings, Help & Keluar */}
                     <div className="space-y-0.5">
                       <button
                         type="button"
@@ -849,7 +808,7 @@ export default function Sidebar({
                         className="w-full flex items-center gap-3.5 px-3 py-2 rounded-xl text-[13.5px] font-normal text-gray-800 hover:bg-gray-100 transition-colors cursor-pointer text-left"
                       >
                         <Settings className="w-4.5 h-4.5 text-gray-700 shrink-0 stroke-[1.75]" />
-                        <span>Pengaturan</span>
+                        <span>Settings</span>
                       </button>
 
                       <button
@@ -863,10 +822,13 @@ export default function Sidebar({
                             onChangeModule('pengaturan', 'bantuan');
                           }
                         }}
-                        className="w-full flex items-center gap-3.5 px-3 py-2 rounded-xl text-[13.5px] font-normal text-gray-800 hover:bg-gray-100 transition-colors cursor-pointer group/help text-left"
+                        className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13.5px] font-normal text-gray-800 hover:bg-gray-100 transition-colors cursor-pointer group/help"
                       >
-                        <LifeBuoy className="w-4.5 h-4.5 text-gray-700 shrink-0 stroke-[1.75]" />
-                        <span>Masukan</span>
+                        <div className="flex items-center gap-3.5">
+                          <LifeBuoy className="w-4.5 h-4.5 text-gray-700 shrink-0 stroke-[1.75]" />
+                          <span>Help</span>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-gray-400 group-hover/help:translate-x-0.5 transition-transform shrink-0" />
                       </button>
 
                       <button

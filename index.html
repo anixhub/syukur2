@@ -23,15 +23,25 @@
     <!-- Service Worker Registration -->
     <script>
       if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js')
-            .then((registration) => {
-              console.log('SmartSantri Service Worker terdaftar dengan scope:', registration.scope);
-            })
-            .catch((error) => {
-              console.warn('Pendaftaran Service Worker opsional:', error);
-            });
-        });
+        // Clear SW & stale caches in dev/Cloud Run preview mode to avoid blank screen caused by cached Vite modules
+        const isDev = location.hostname === 'localhost' || location.hostname.includes('run.app') || location.port === '3000' || location.protocol === 'http:';
+        if (isDev) {
+          navigator.serviceWorker.getRegistrations().then((registrations) => {
+            for (let registration of registrations) {
+              registration.unregister();
+            }
+          });
+        } else {
+          window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js')
+              .then((registration) => {
+                console.log('Service Worker terdaftar dengan scope:', registration.scope);
+              })
+              .catch((error) => {
+                console.error('Pendaftaran Service Worker gagal:', error);
+              });
+          });
+        }
       }
 
       // Capture PWA Install Prompt Event

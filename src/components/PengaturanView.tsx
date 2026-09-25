@@ -46,14 +46,41 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { camelToSnake, snakeToCamel, getSupabaseStatus, updateTableRow, insertTableRow, fetchTableData, deleteTableRow, uploadFileToStorage, subscribeRealtimeChanges, getApiUrl } from '../lib/api';
-import { AppCredentials, Santri, KeamananRecord, RombelAssignment, KelompokRombel, Lembaga, Kelas, KategoriRombel, PesantrenProfile } from '../types';
+import { AppCredentials, Santri, KeamananRecord, RombelAssignment, KelompokRombel, Lembaga, Kelas, KategoriRombel } from '../types';
 import { compressImage } from '../lib/utils';
 import ProfilPesantrenSub from './ProfilPesantrenSub';
 import * as XLSX from 'xlsx';
 import { ModulePermission, AccountRole, buildPermissions, DEFAULT_ROLES, fetchAndSyncPermissionsFromSupabase } from '../lib/permissions';
 import { logAdminActivity } from '../lib/activityLogger';
 
-export type { PesantrenProfile };
+export interface PesantrenProfile {
+  namaPesantren: string;
+  namaYayasan: string;
+  nspp: string;
+  nomorNotaris: string;
+  alamat: string;
+  desa: string;
+  kecamatan: string;
+  kabupaten: string;
+  provinsi: string;
+  kodePos: string;
+  telepon: string;
+  email: string;
+  website: string;
+  namaPengasuh: string;
+  namaWakilPengasuh: string;
+  namaKetuaYayasan: string;
+  namaKetuaPondok: string;
+  namaSekretaris: string;
+  namaBendahara: string;
+  namaKetuaKeamanan: string;
+  namaKetuaPendidikan: string;
+  kotaTandaTangan: string;
+  logoStyle: 'classic' | 'elegant' | 'modern';
+  kopTambahan1: string;
+  kopTambahan2: string;
+  logoUrl?: string;
+}
 
 const DEFAULT_PROFILE: PesantrenProfile = {
   namaPesantren: '',
@@ -69,43 +96,18 @@ const DEFAULT_PROFILE: PesantrenProfile = {
   telepon: '',
   email: '',
   website: '',
-  
-  // Pengasuh & Pimpinan Tunggal
   namaPengasuh: '',
-  namaKetuaYayasan: '',
-  
-  // Susunan Pengurus Putra
-  namaWakilPengasuhPutra: '',
-  namaKetuaPondokPutra: '',
-  namaSekretarisPutra: '',
-  namaBendaharaPutra: '',
-  namaKetuaKeamananPutra: '',
-  namaKetuaPendidikanPutra: '',
-  namaKetuaHumasyPutra: '',
-
-  // Susunan Pengurus Putri
-  namaWakilPengasuhPutri: '',
-  namaKetuaPondokPutri: '',
-  namaSekretarisPutri: '',
-  namaBendaharaPutri: '',
-  namaKetuaKeamananPutri: '',
-  namaKetuaPendidikanPutri: '',
-  namaKetuaHumasyPutri: '',
-
-  // Legacy compatibility
   namaWakilPengasuh: '',
+  namaKetuaYayasan: '',
   namaKetuaPondok: '',
   namaSekretaris: '',
   namaBendahara: '',
   namaKetuaKeamanan: '',
   namaKetuaPendidikan: '',
-  namaKetuaHumasy: '',
-
   kotaTandaTangan: '',
   logoStyle: 'classic',
   kopTambahan1: '',
   kopTambahan2: '',
-  logoUrl: ''
 };
 
 const MODULE_INFOS = [
@@ -135,15 +137,15 @@ const formatBytes = (bytes: number) => {
 };
 
 interface PengaturanViewProps {
-  activeCategory?: 'akses' | 'profil' | 'kelola_akun' | 'keamanan' | 'feedback' | 'tahun_ajaran';
-  setActiveCategory?: (category: 'akses' | 'profil' | 'kelola_akun' | 'keamanan' | 'feedback' | 'tahun_ajaran') => void;
+  activeCategory?: 'akses' | 'profil' | 'database' | 'kelola_akun' | 'keamanan' | 'feedback' | 'tahun_ajaran';
+  setActiveCategory?: (category: 'akses' | 'profil' | 'database' | 'kelola_akun' | 'keamanan' | 'feedback' | 'tahun_ajaran') => void;
 }
 
 export default function PengaturanView({
   activeCategory: propCategory,
   setActiveCategory: propSetCategory,
 }: PengaturanViewProps = {}) {
-  const [localCategory, setLocalCategory] = useState<'akses' | 'profil' | 'kelola_akun' | 'keamanan' | 'feedback' | 'tahun_ajaran'>('keamanan');
+  const [localCategory, setLocalCategory] = useState<'akses' | 'profil' | 'database' | 'kelola_akun' | 'keamanan' | 'feedback' | 'tahun_ajaran'>('keamanan');
   const activeCategory = propCategory || localCategory;
   const setActiveCategory = propSetCategory || setLocalCategory;
   const [previewTab, setPreviewTab] = useState<'kop' | 'kuitansi' | 'kartu'>('kop');
@@ -960,35 +962,13 @@ export default function PengaturanView({
             email: mainProfile.email ?? DEFAULT_PROFILE.email,
             website: mainProfile.website ?? DEFAULT_PROFILE.website,
             namaPengasuh: mainProfile.namaPengasuh ?? DEFAULT_PROFILE.namaPengasuh,
+            namaWakilPengasuh: mainProfile.namaWakilPengasuh ?? DEFAULT_PROFILE.namaWakilPengasuh,
             namaKetuaYayasan: mainProfile.namaKetuaYayasan ?? DEFAULT_PROFILE.namaKetuaYayasan,
-            
-            // Pengurus Putra
-            namaWakilPengasuhPutra: mainProfile.namaWakilPengasuhPutra ?? mainProfile.namaWakilPengasuh ?? '',
-            namaKetuaPondokPutra: mainProfile.namaKetuaPondokPutra ?? mainProfile.namaKetuaPondok ?? '',
-            namaSekretarisPutra: mainProfile.namaSekretarisPutra ?? mainProfile.namaSekretaris ?? '',
-            namaBendaharaPutra: mainProfile.namaBendaharaPutra ?? mainProfile.namaBendahara ?? '',
-            namaKetuaKeamananPutra: mainProfile.namaKetuaKeamananPutra ?? mainProfile.namaKetuaKeamanan ?? '',
-            namaKetuaPendidikanPutra: mainProfile.namaKetuaPendidikanPutra ?? mainProfile.namaKetuaPendidikan ?? '',
-            namaKetuaHumasyPutra: mainProfile.namaKetuaHumasyPutra ?? mainProfile.namaKetuaHumasy ?? '',
-
-            // Pengurus Putri
-            namaWakilPengasuhPutri: mainProfile.namaWakilPengasuhPutri ?? '',
-            namaKetuaPondokPutri: mainProfile.namaKetuaPondokPutri ?? '',
-            namaSekretarisPutri: mainProfile.namaSekretarisPutri ?? '',
-            namaBendaharaPutri: mainProfile.namaBendaharaPutri ?? '',
-            namaKetuaKeamananPutri: mainProfile.namaKetuaKeamananPutri ?? '',
-            namaKetuaPendidikanPutri: mainProfile.namaKetuaPendidikanPutri ?? '',
-            namaKetuaHumasyPutri: mainProfile.namaKetuaHumasyPutri ?? '',
-
-            // Legacy
-            namaWakilPengasuh: mainProfile.namaWakilPengasuh ?? mainProfile.namaWakilPengasuhPutra ?? '',
-            namaKetuaPondok: mainProfile.namaKetuaPondok ?? mainProfile.namaKetuaPondokPutra ?? '',
-            namaSekretaris: mainProfile.namaSekretaris ?? mainProfile.namaSekretarisPutra ?? '',
-            namaBendahara: mainProfile.namaBendahara ?? mainProfile.namaBendaharaPutra ?? '',
-            namaKetuaKeamanan: mainProfile.namaKetuaKeamanan ?? mainProfile.namaKetuaKeamananPutra ?? '',
-            namaKetuaPendidikan: mainProfile.namaKetuaPendidikan ?? mainProfile.namaKetuaPendidikanPutra ?? '',
-            namaKetuaHumasy: mainProfile.namaKetuaHumasy ?? mainProfile.namaKetuaHumasyPutra ?? '',
-
+            namaKetuaPondok: mainProfile.namaKetuaPondok ?? DEFAULT_PROFILE.namaKetuaPondok,
+            namaSekretaris: mainProfile.namaSekretaris ?? DEFAULT_PROFILE.namaSekretaris,
+            namaBendahara: mainProfile.namaBendahara ?? DEFAULT_PROFILE.namaBendahara,
+            namaKetuaKeamanan: mainProfile.namaKetuaKeamanan ?? DEFAULT_PROFILE.namaKetuaKeamanan,
+            namaKetuaPendidikan: mainProfile.namaKetuaPendidikan ?? DEFAULT_PROFILE.namaKetuaPendidikan,
             kotaTandaTangan: mainProfile.kotaTandaTangan ?? DEFAULT_PROFILE.kotaTandaTangan,
             logoStyle: mainProfile.logoStyle ?? DEFAULT_PROFILE.logoStyle,
             kopTambahan1: mainProfile.kopTambahan1 ?? DEFAULT_PROFILE.kopTambahan1,
@@ -1277,13 +1257,7 @@ export default function PengaturanView({
     }
   };
 
-  const isSuperadminIdOrUsername = (idOrUsername?: string) => {
-    const s = (idOrUsername || '').toLowerCase();
-    return s === 'superadmin' || s === 'superadmin@attaroqqy.com';
-  };
-
   const handleApproveUser = async (id: string) => {
-    if (isSuperadminIdOrUsername(id)) return;
     try {
       await updateTableRow<AppCredentials>(
         'app_credentials',
@@ -1292,11 +1266,11 @@ export default function PengaturanView({
         { status: 'approved' }
       );
       setCredentials(prev => prev.map(c => c.id === id ? { ...c, status: 'approved' } : c));
-      logAdminActivity('Sistem', 'Persetujuan Akun Pengguna', 'Menyetujui pendaftaran akun pengguna baru');
+      logAdminActivity('Sistem', 'Persetujuan Akun Pengurus', 'Menyetujui pendaftaran akun pengurus baru');
       window.dispatchEvent(new Event('smartsantri_activity_updated'));
       setToastData({
         title: "Persetujuan Berhasil",
-        desc: "Akun pengguna telah berhasil disetujui."
+        desc: "Akun pengurus telah berhasil disetujui."
       });
       setShowToast(true);
     } catch (err: any) {
@@ -1305,7 +1279,6 @@ export default function PengaturanView({
   };
 
   const handleRejectUser = async (id: string) => {
-    if (isSuperadminIdOrUsername(id)) return;
     try {
       await updateTableRow<AppCredentials>(
         'app_credentials',
@@ -1314,11 +1287,11 @@ export default function PengaturanView({
         { status: 'rejected' }
       );
       setCredentials(prev => prev.map(c => c.id === id ? { ...c, status: 'rejected' } : c));
-      logAdminActivity('Sistem', 'Penolakan Akun Pengguna', 'Menolak pendaftaran akun pengguna');
+      logAdminActivity('Sistem', 'Penolakan Akun Pengurus', 'Menolak pendaftaran akun pengurus');
       window.dispatchEvent(new Event('smartsantri_activity_updated'));
       setToastData({
         title: "Penolakan Berhasil",
-        desc: "Akun pengguna telah ditolak."
+        desc: "Akun pengurus telah ditolak."
       });
       setShowToast(true);
     } catch (err: any) {
@@ -1327,7 +1300,6 @@ export default function PengaturanView({
   };
 
   const executeResetPasswordAdmin = async (id: string, username: string) => {
-    if (isSuperadminIdOrUsername(id) || isSuperadminIdOrUsername(username)) return;
     const defaultPassword = "1234";
 
     try {
@@ -1342,7 +1314,7 @@ export default function PengaturanView({
       );
       
       setCredentials(prev => prev.map(c => c.id === id ? { ...c, password: defaultPassword, status: 'approved' } : c));
-      logAdminActivity('Sistem', 'Reset Kata Sandi Pengguna', `Mereset kata sandi pengguna ${username}`);
+      logAdminActivity('Sistem', 'Reset Kata Sandi Pengurus', `Mereset kata sandi pengurus ${username}`);
       window.dispatchEvent(new Event('smartsantri_activity_updated'));
       
       setToastData({
@@ -1358,15 +1330,14 @@ export default function PengaturanView({
   };
 
   const executeDeleteUser = async (id: string) => {
-    if (isSuperadminIdOrUsername(id)) return;
     try {
       await deleteTableRow('app_credentials', 'smartsantri_app_credentials', id);
       setCredentials(prev => prev.filter(c => c.id !== id));
-      logAdminActivity('Sistem', 'Hapus Akun Pengguna', 'Menghapus akun pengguna dari sistem');
+      logAdminActivity('Sistem', 'Hapus Akun Pengurus', 'Menghapus akun pengurus dari sistem');
       window.dispatchEvent(new Event('smartsantri_activity_updated'));
       setToastData({
         title: "Penghapusan Berhasil",
-        desc: "Akun pengguna telah dihapus secara permanen dari sistem."
+        desc: "Akun pengurus telah dihapus secara permanen dari sistem."
       });
       setShowToast(true);
     } catch (err: any) {
@@ -1660,6 +1631,9 @@ export default function PengaturanView({
   };
 
   useEffect(() => {
+    if (activeCategory === 'database') {
+      fetchCounts();
+    }
     if (activeCategory === 'akses' || activeCategory === 'kelola_akun') {
       fetchCredentials();
     }
@@ -2041,6 +2015,22 @@ export default function PengaturanView({
                 <span>Tahun Ajaran</span>
               </button>
             )}
+
+            {/* Database & Backup */}
+            <button
+              onClick={() => setActiveCategory('database')}
+              className={`flex w-full items-center gap-3 px-3.5 py-2.5 rounded-xl text-left font-display text-xs font-bold transition-all ${
+                activeCategory === 'database'
+                  ? 'bg-emerald-50 text-emerald-800'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+              }`}
+            >
+              <Database className="h-4.5 w-4.5" />
+              <div className="flex items-center justify-between w-full">
+                <span>Database & Backup</span>
+                <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full font-mono font-medium scale-90">MOCK</span>
+              </div>
+            </button>
           </div>
         </div>
 
@@ -2445,35 +2435,10 @@ export default function PengaturanView({
 
             {/* Kelola Akun Pengguna View */}
             {activeCategory === 'kelola_akun' && (() => {
-              const isSuperadminAccount = (c: AppCredentials) => {
-                const u = (c.username || '').toLowerCase();
-                const r = (c.role || '').toLowerCase();
-                return c.id === 'superadmin' || r === 'superadmin' || u === 'superadmin@attaroqqy.com' || u === 'superadmin';
-              };
-
-              // Ensure superadmin is present in the list
-              const hasSuperadmin = credentials.some(c => isSuperadminAccount(c));
-              const allItems = hasSuperadmin 
-                ? [...credentials]
-                : [
-                    {
-                      id: 'superadmin',
-                      username: 'superadmin@attaroqqy.com',
-                      displayName: 'Super Admin',
-                      role: 'superadmin' as const,
-                      status: 'approved' as const,
-                      createdAt: '2026-01-01T00:00:00.000Z'
-                    } as AppCredentials,
-                    ...credentials
-                  ];
-
-              // Sort so superadmin is always AT THE VERY TOP
-              const sortedCredentials = [...allItems].sort((a, b) => {
-                const isSuperA = isSuperadminAccount(a);
-                const isSuperB = isSuperadminAccount(b);
-                if (isSuperA) return -1;
-                if (isSuperB) return 1;
-
+              const displayable = credentials.filter(c => c.username && c.username.toLowerCase() !== 'superadmin@attaroqqy.com' && c.username.toLowerCase() !== 'superadmin');
+              
+              // Sort so that the 5 specific accounts appear in exactly the screenshot's order at the very beginning
+              const sortedCredentials = [...displayable].sort((a, b) => {
                 const order = [
                   'david@attaroqqy.com',
                   'qowam@attaroqqy.com',
@@ -2497,9 +2462,9 @@ export default function PengaturanView({
               const paginatedItems = sortedCredentials.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
               // Summary Counts
-              const activeCount = sortedCredentials.filter(c => c.status === 'approved').length;
-              const pendingCount = sortedCredentials.filter(c => c.status === 'pending').length;
-              const blockedCount = sortedCredentials.filter(c => c.status === 'rejected').length;
+              const activeCount = credentials.filter(c => c.username && c.username.toLowerCase() !== 'superadmin@attaroqqy.com' && c.username.toLowerCase() !== 'superadmin' && c.status === 'approved').length;
+              const pendingCount = credentials.filter(c => c.username && c.username.toLowerCase() !== 'superadmin@attaroqqy.com' && c.username.toLowerCase() !== 'superadmin' && c.status === 'pending').length;
+              const blockedCount = credentials.filter(c => c.username && c.username.toLowerCase() !== 'superadmin@attaroqqy.com' && c.username.toLowerCase() !== 'superadmin' && c.status === 'rejected').length;
 
               const formatDate = (dateStr?: string) => {
                 if (!dateStr) return '-';
@@ -2597,93 +2562,44 @@ export default function PengaturanView({
                                         {formatDate(c.createdAt)}
                                       </td>
                                       <td className="py-5 px-6 text-center">
-                                        {isSuperadminAccount(c) ? (
+                                        {c.status === 'approved' && (
                                           <span className="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold bg-[#E2FBF6] text-[#0D9488]">
                                             Aktif
                                           </span>
-                                        ) : (
-                                          <>
-                                            {c.status === 'approved' && (
-                                              <span className="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold bg-[#E2FBF6] text-[#0D9488]">
-                                                Aktif
-                                              </span>
-                                            )}
-                                            {c.status === 'pending' && (
-                                              <span className="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold bg-[#E0F2FE] text-[#0284C7]">
-                                                Menunggu
-                                              </span>
-                                            )}
-                                            {c.status === 'rejected' && (
-                                              <span className="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold bg-[#FEE2E2] text-[#991B1B]">
-                                                Diblokir
-                                              </span>
-                                            )}
-                                            {c.status === 'minta_reset' && (
-                                              <div className="flex flex-col items-center justify-center gap-1">
-                                                <span className="inline-flex items-center px-3 py-0.5 rounded-full text-[11px] font-bold bg-[#E2FBF6] text-[#0D9488]">
-                                                  Aktif
-                                                </span>
-                                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                                                  Lupa Sandi
-                                                </span>
-                                              </div>
-                                            )}
-                                          </>
+                                        )}
+                                        {c.status === 'pending' && (
+                                          <span className="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold bg-[#E0F2FE] text-[#0284C7]">
+                                            Menunggu
+                                          </span>
+                                        )}
+                                        {c.status === 'rejected' && (
+                                          <span className="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold bg-[#FEE2E2] text-[#991B1B]">
+                                            Diblokir
+                                          </span>
+                                        )}
+                                        {c.status === 'minta_reset' && (
+                                          <div className="flex flex-col items-center justify-center gap-1">
+                                            <span className="inline-flex items-center px-3 py-0.5 rounded-full text-[11px] font-bold bg-[#E2FBF6] text-[#0D9488]">
+                                              Aktif
+                                            </span>
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                              Lupa Sandi
+                                            </span>
+                                          </div>
                                         )}
                                       </td>
                                       <td className="py-5 px-6 text-right">
-                                        {isSuperadminAccount(c) ? (
-                                          <div className="flex items-center justify-end">
-                                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-600 font-bold text-xs select-none cursor-default">
-                                              <ShieldCheck className="h-4 w-4 text-emerald-600" />
-                                              <span>Akun Utama (Permanen)</span>
-                                            </span>
-                                          </div>
-                                        ) : (
-                                          <div className="flex items-center justify-end gap-3">
-                                            {c.status === 'pending' && (
-                                              <>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => handleApproveUser(c.id)}
-                                                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition-all cursor-pointer active:scale-95"
-                                                >
-                                                  <Check className="h-4 w-4" />
-                                                  <span>Setujui</span>
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => handleRejectUser(c.id)}
-                                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-200 transition-colors cursor-pointer"
-                                                >
-                                                  <Ban className="h-4 w-4 text-rose-600" />
-                                                  <span>Blokir</span>
-                                                </button>
-                                              </>
-                                            )}
-
-                                            {c.status === 'minta_reset' && (
-                                              <>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => setResetConfirmUser({ id: c.id, username: c.username })}
-                                                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0284C7] hover:bg-[#0369A1] text-white font-bold text-xs shadow-sm transition-all cursor-pointer active:scale-95"
-                                                >
-                                                  <Lock className="h-4 w-4" />
-                                                  <span>Beri Akses</span>
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => handleRejectUser(c.id)}
-                                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-200 transition-colors cursor-pointer"
-                                                >
-                                                  <Ban className="h-4 w-4 text-rose-600" />
-                                                  <span>Blokir</span>
-                                                </button>
-                                              </>
-                                            )}
-
-                                            {c.status === 'approved' && (
+                                        <div className="flex items-center justify-end gap-3">
+                                          {c.status === 'pending' && (
+                                            <>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleApproveUser(c.id)}
+                                                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition-all cursor-pointer active:scale-95"
+                                              >
+                                                <Check className="h-4 w-4" />
+                                                <span>Setujui</span>
+                                              </button>
                                               <button
                                                 type="button"
                                                 onClick={() => handleRejectUser(c.id)}
@@ -2692,29 +2608,61 @@ export default function PengaturanView({
                                                 <Ban className="h-4 w-4 text-rose-600" />
                                                 <span>Blokir</span>
                                               </button>
-                                            )}
+                                            </>
+                                          )}
 
-                                            {c.status === 'rejected' && (
+                                          {c.status === 'minta_reset' && (
+                                            <>
                                               <button
                                                 type="button"
-                                                onClick={() => handleApproveUser(c.id)}
-                                                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition-all cursor-pointer active:scale-95"
+                                                onClick={() => setResetConfirmUser({ id: c.id, username: c.username })}
+                                                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0284C7] hover:bg-[#0369A1] text-white font-bold text-xs shadow-sm transition-all cursor-pointer active:scale-95"
                                               >
-                                                <Check className="h-4 w-4" />
-                                                <span>Unblock</span>
+                                                <Lock className="h-4 w-4" />
+                                                <span>Beri Akses</span>
                                               </button>
-                                            )}
+                                              <button
+                                                type="button"
+                                                onClick={() => handleRejectUser(c.id)}
+                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-200 transition-colors cursor-pointer"
+                                              >
+                                                <Ban className="h-4 w-4 text-rose-600" />
+                                                <span>Blokir</span>
+                                              </button>
+                                            </>
+                                          )}
 
+                                          {c.status === 'approved' && (
                                             <button
                                               type="button"
-                                              onClick={() => setDeleteConfirmUser({ id: c.id, username: c.username })}
-                                              title="Hapus Akun"
-                                              className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-100 transition-colors cursor-pointer active:scale-95"
+                                              onClick={() => handleRejectUser(c.id)}
+                                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-200 transition-colors cursor-pointer"
                                             >
-                                              <Trash2 className="h-4 w-4" />
+                                              <Ban className="h-4 w-4 text-rose-600" />
+                                              <span>Blokir</span>
                                             </button>
-                                          </div>
-                                        )}
+                                          )}
+
+                                          {c.status === 'rejected' && (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleApproveUser(c.id)}
+                                              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition-all cursor-pointer active:scale-95"
+                                            >
+                                              <Check className="h-4 w-4" />
+                                              <span>Unblock</span>
+                                            </button>
+                                          )}
+
+                                          <button
+                                            type="button"
+                                            onClick={() => setDeleteConfirmUser({ id: c.id, username: c.username })}
+                                            title="Hapus Akun"
+                                            className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-100 transition-colors cursor-pointer active:scale-95"
+                                          >
+                                            <Trash2 className="h-4 w-4" />
+                                          </button>
+                                        </div>
                                       </td>
                                     </tr>
                                   );
@@ -2780,6 +2728,108 @@ export default function PengaturanView({
                 </motion.div>
               );
             })()}
+
+            {/* Database View */}
+            {activeCategory === 'database' && (
+              <motion.div
+                initial={{ opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                transition={{ duration: 0.15 }}
+                className="space-y-6"
+              >
+                {/* Page Title */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <h1 className="font-display text-2xl font-black text-slate-800 tracking-tight">
+                      Database & Backup
+                    </h1>
+                  </div>
+                </div>
+
+                {/* Cadangan (Backup) Data Card */}
+                <div className="border border-slate-200/80 rounded-3xl p-7 bg-white shadow-xs flex flex-col space-y-6 text-left">
+                  <div className="flex items-start gap-4">
+                    <div className="h-12 w-12 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-700 shadow-xs shrink-0">
+                      <Download className="h-6 w-6" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <h3 className="font-display font-black text-xl text-slate-800 leading-tight">
+                        Unduh Cadangan (Backup) Data Lengkap Santri
+                      </h3>
+                      <p className="text-xs text-slate-500 leading-relaxed max-w-2xl">
+                        Unduh berkas cadangan data seluruh santri (aktif & alumni) beserta informasi kelas, kamar asrama, dan riwayat dalam format spreadsheet Excel (.xls) secara lengkap dan terstruktur.
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex flex-col sm:flex-row items-center gap-5 pt-2 border-t border-slate-100">
+                    <button
+                      onClick={handleDownloadBackup}
+                      disabled={downloadingBackup}
+                      className="w-full sm:w-auto inline-flex items-center justify-center gap-3 rounded-2xl bg-[#005b41] hover:bg-[#004d37] text-white px-7 py-4 text-xs font-black tracking-wide shadow-md shadow-emerald-800/10 active:scale-95 transition-all cursor-pointer shrink-0"
+                    >
+                      {downloadingBackup ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 animate-spin text-white" />
+                          <span>Memproses Data Backup...</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg className="h-5 w-5 text-white shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 2c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm6 12H6v-1.5c0-1.99 4-3 6-3s6 1.01 6 3V17z"/>
+                          </svg>
+                          <span className="text-left font-bold uppercase leading-normal tracking-wider">
+                            Unduh Backup Data Santri (Excel)
+                          </span>
+                        </>
+                      )}
+                    </button>
+                    
+                    <div className="flex items-center gap-2.5 text-slate-400 self-start sm:self-auto">
+                      <ShieldCheck className="h-7 w-7 text-emerald-600 shrink-0" />
+                      <span className="text-[10px] font-bold text-slate-500 leading-tight">
+                        Enkripsi data aman &amp; kompatibel dengan Excel / Spreadsheet
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Zona Bahaya / Danger Zone */}
+                <div className="border border-rose-200/60 rounded-3xl p-6 bg-rose-50/20 text-left mt-6">
+                  <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                    <div className="space-y-1.5 max-w-2xl">
+                      <div className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-rose-600 animate-pulse"></span>
+                        <span className="text-[10px] font-black tracking-widest text-rose-600 uppercase">
+                          ZONA BAHAYA (DANGER ZONE)
+                        </span>
+                      </div>
+                      <h4 className="font-display font-black text-lg text-slate-900 leading-tight">
+                        Hapus Semua Data
+                      </h4>
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        Tindakan ini akan menghapus seluruh data santri, lembaga, rombel, perizinan, sanksi keamanan, keuangan bendahara, surat, serta data dokumentasi secara permanen dari sistem. Tindakan ini tidak dapat dibatalkan.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDangerUsernameInput('');
+                        setDangerPhraseInput('');
+                        setIsDangerModalOpen(true);
+                      }}
+                      className="w-full md:w-auto inline-flex items-center justify-center gap-2 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white px-6 py-4 text-xs font-black tracking-wider uppercase active:scale-95 transition-all cursor-pointer shadow-sm shadow-rose-600/10 shrink-0"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span>Hapus Semua Data</span>
+                    </button>
+                  </div>
+                </div>
+
+              </motion.div>
+            )}
 
             {activeCategory === 'feedback' && (() => {
               const displayedFeedbacks = feedbacks.filter(f => {
@@ -3587,8 +3637,11 @@ export default function PengaturanView({
             
             <div className="space-y-2">
               <h3 className="font-display text-xl font-bold text-slate-900">
-                Beri Akses & Sandi Sementara
+                Konfirmasi Reset Sandi
               </h3>
+              <p className="text-sm text-slate-500 leading-relaxed font-semibold">
+                Apakah Anda yakin ingin menyetel ulang kata sandi akun <span className="text-slate-800 font-bold">{resetConfirmUser.username}</span>? Kata sandi akan diubah menjadi <strong className="text-blue-600">"1234"</strong> dan status akun akan diaktifkan kembali.
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3 mt-2">
@@ -3604,7 +3657,7 @@ export default function PengaturanView({
                 onClick={() => executeResetPasswordAdmin(resetConfirmUser.id, resetConfirmUser.username)}
                 className="px-4 py-3 rounded-xl bg-blue-600 text-white font-bold text-xs hover:bg-blue-700 transition-all cursor-pointer shadow-sm shadow-blue-600/20 active:scale-95"
               >
-                Beri Akses
+                Ya, Reset ke 1234
               </button>
             </div>
           </motion.div>
