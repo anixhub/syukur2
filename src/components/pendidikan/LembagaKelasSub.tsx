@@ -1,18 +1,24 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   School, Plus, Trash2, Edit, Users, BookOpen, ChevronRight, ChevronLeft,
+  ChevronsLeft, ChevronsRight,
   ArrowLeft, Search, GraduationCap, ArrowLeftRight, Check, CheckCircle2, CheckSquare, 
   UserCheck, AlertCircle, X, MoreVertical, Award, ShieldAlert, UserMinus, ArrowRightLeft,
   Folder, FolderOpen, User, ArrowUpDown, Pencil, Settings, UserPlus, ArrowUp, ArrowDown,
-  ChevronDown, ChevronsUpDown, Printer, Sparkles, Home, Loader2, Upload
+  ChevronDown, ChevronsUpDown, Printer, Sparkles, Home, Loader2, Upload, ArrowRight,
+  FileSpreadsheet, ClipboardList, Filter, RotateCcw, AlertTriangle, SlidersHorizontal
 } from 'lucide-react';
-import { Lembaga, Kelas, Santri, KategoriRombel, KelompokRombel, RombelAssignment, isDefaultClass, isEmisTerdaftar, getClsLembagaId, isGenderMatch } from '../../types';
-import { demoteSantriToCalonPesertaDidik, compressImage, parseCatatanInvalid, formatCatatanWithInvalid, cleanWaliKelas } from '../../lib/utils';
+import { Lembaga, Kelas, Santri, KategoriRombel, KelompokRombel, RombelAssignment, isDefaultClass, isCalonClass, isEmisTerdaftar, getClsLembagaId, isGenderMatch } from '../../types';
+import { compressImage, parseCatatanInvalid, formatCatatanWithInvalid, cleanWaliKelas, isMatchLembagaStrict, getLembagaJenis, getDefaultCalonClassName } from '../../lib/utils';
 import { uploadFileToStorage, getApiUrl } from '../../lib/api';
 import SantriDetailModal from '../sekretaris/SantriDetailModal';
+import ColumnVisibilityModal from '../sekretaris/ColumnVisibilityModal';
 import { PUTRA_AVATAR, PUTRI_AVATAR, renderSantriAvatar, calculateRealtimeAge, getPesantrenProfile } from '../SekretarisHelper';
+import EditSantriKolomModal from './EditSantriKolomModal';
+import { ExportModal } from '../ExportModal';
+import { getSantriNismForLembaga, getSantriTahunMasuk, formatTanggalMasukDMY, getNismFieldKeyForLembaga } from '../../lib/nismHelper';
 
 const MONTH_NAMES = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
@@ -54,6 +60,7 @@ interface LembagaKelasSubProps {
   onAddAssignment?: (newAss: RombelAssignment) => any;
   onRemoveAssignment?: (santriId: string, kelompokId: string) => any;
   onResetAllClasses?: () => any;
+  onResetAllLembagaStudents?: () => any;
 }
 
 const getLogoUrl = (url?: string): string => {
@@ -100,7 +107,8 @@ export default function LembagaKelasSub({
   onDeleteGroup,
   onAddAssignment,
   onRemoveAssignment,
-  onResetAllClasses
+  onResetAllClasses,
+  onResetAllLembagaStudents
 }: LembagaKelasSubProps) {
 
   // --- Core State ---
@@ -110,16 +118,61 @@ export default function LembagaKelasSub({
   // selectedLembaga can represent either a real Lembaga (Formal/Internal) or a KategoriRombel (Rombel)
   const [selectedLembaga, setSelectedLembaga] = useState<any | null>(null);
   const [selectedKelas, setSelectedKelas] = useState<any | null>(null);
+  const detailKelasRef = useRef<HTMLDivElement>(null);
   
+  // Horizontal scroll state & refs for Daftar Kelas
+  const classPillsContainerRef = useRef<HTMLDivElement>(null);
+  const [canScrollPillsLeft, setCanScrollPillsLeft] = useState(false);
+  const [canScrollPillsRight, setCanScrollPillsRight] = useState(false);
+  const isMouseDownPillsRef = useRef(false);
+  const startXPillsPosRef = useRef(0);
+  const startPillsScrollLeftRef = useRef(0);
+  const hasDraggedPillsRef = useRef(false);
+  
+  const [isExportLembagaModalOpen, setIsExportLembagaModalOpen] = useState<boolean>(false);
+
+  // Keep selectedLembaga in sync with the latest lembagasList or categoriesList when parent updates
+  useEffect(() => {
+    if (!selectedLembaga) return;
+    if (activeTab === 'Rombel') {
+      const updatedCat = categoriesList.find(c => String(c.id) === String(selectedLembaga.id));
+      if (updatedCat && (updatedCat.nama !== selectedLembaga.nama || updatedCat.deskripsi !== selectedLembaga.deskripsi)) {
+        setSelectedLembaga((prev: any) => prev ? { ...prev, ...updatedCat } : updatedCat);
+      }
+    } else {
+      const updatedLem = lembagasList.find(l => String(l.id) === String(selectedLembaga.id));
+      if (updatedLem) {
+        setSelectedLembaga((prev: any) => {
+          if (!prev) return updatedLem;
+          const hasChange = 
+            prev.nama !== updatedLem.nama ||
+            prev.kode !== updatedLem.kode ||
+            prev.nomorStatistik !== updatedLem.nomorStatistik ||
+            prev.nomor_statistik !== updatedLem.nomor_statistik ||
+            prev.npsn !== updatedLem.npsn ||
+            prev.deskripsi !== updatedLem.deskripsi ||
+            prev.logo !== updatedLem.logo ||
+            prev.taMulaiTanggal !== updatedLem.taMulaiTanggal ||
+            prev.taMulaiBulan !== updatedLem.taMulaiBulan ||
+            prev.taSelesaiTanggal !== updatedLem.taSelesaiTanggal ||
+            prev.taSelesaiBulan !== updatedLem.taSelesaiBulan;
+          return hasChange ? { ...prev, ...updatedLem } : prev;
+        });
+      }
+    }
+  }, [lembagasList, categoriesList, activeTab]);
+
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState('');
+  const [classListSearch, setClassListSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('Semua');
   const [activeActionStudentId, setActiveActionStudentId] = useState<string | null>(null);
   const [activeEmisDropdownId, setActiveEmisDropdownId] = useState<string | null>(null);
   const [activeVervalDropdownId, setActiveVervalDropdownId] = useState<string | null>(null);
   const [emisDropdownPos, setEmisDropdownPos] = useState<{ top: number; left: number; isUpward?: boolean } | null>(null);
   const [vervalDropdownPos, setVervalDropdownPos] = useState<{ top: number; left: number; isUpward?: boolean } | null>(null);
-  const [pendingEmis, setPendingEmis] = useState<{ [santriId: string]: 'Terdaftar' | 'Belum' | 'Invalid' }>({});
+  const [pendingEmis, setPendingEmis] = useState<{ [santriId: string]: 'Terdaftar' | 'Belum' | 'Invalid' | 'Keluar' | 'Lulus' }>({});
+  const [invalidEmisModal, setInvalidEmisModal] = useState<{ santri: Santri; note: string } | null>(null);
   const [pendingVerval, setPendingVerval] = useState<{ [santriId: string]: 'Sukses' | 'Proses' }>({});
   const [activeActionKelasId, setActiveActionKelasId] = useState<string | null>(null);
   const [kelasDropdownPos, setKelasDropdownPos] = useState<{ top: number; left: number } | null>(null);
@@ -130,9 +183,43 @@ export default function LembagaKelasSub({
   const [bulkTransferLembagaId, setBulkTransferLembagaId] = useState('');
   const [bulkDestClassId, setBulkDestClassId] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState<number>(50);
+  const [showPageJumpDropdown, setShowPageJumpDropdown] = useState(false);
+
+  // Column Visibility Modal state & visible columns
+  const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('smartsantri_pendidikan_visible_columns');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.error('Failed to parse saved visibleColumns', e);
+    }
+    return {
+      nism: true,
+      nisn: true,
+      statusEmis: true,
+      statusVerval: true,
+      statusKeanggotaan: true,
+      kelasMhd: true,
+    };
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('smartsantri_pendidikan_visible_columns', JSON.stringify(visibleColumns));
+    } catch (e) {
+      console.error('Failed to save visibleColumns', e);
+    }
+  }, [visibleColumns]);
   
   // Sorting states
-  const [sortField, setSortField] = useState<'nama' | 'nik' | 'nis' | 'nisn' | 'indukMhd' | 'indukWustho' | 'indukUlya' | 'statusKeanggotaan' | 'statusEmis' | 'statusVerval' | 'kamar' | null>(null);
+  const [sortField, setSortField] = useState<keyof Santri | 'nism' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   // Scroll & Table navigation states
@@ -152,72 +239,86 @@ export default function LembagaKelasSub({
 
   const scrollSourceRef = useRef<'main' | 'floating' | null>(null);
   const scrollTimeoutRef = useRef<number | null>(null);
+  const rafScrollRef = useRef<number | null>(null);
 
   const updateScrollButtons = () => {
     const container = tableContainerRef.current;
     if (container) {
       const { scrollLeft, scrollWidth, clientWidth } = container;
       const hasHorizontalScroll = scrollWidth > clientWidth + 4;
-      setIsScrollable(hasHorizontalScroll);
-      setCanScrollLeft(hasHorizontalScroll && scrollLeft > 2);
-      setCanScrollRight(hasHorizontalScroll && scrollLeft + clientWidth < scrollWidth - 2);
+      const canLeft = hasHorizontalScroll && scrollLeft > 2;
+      const canRight = hasHorizontalScroll && scrollLeft + clientWidth < scrollWidth - 2;
+      setIsScrollable(prev => prev !== hasHorizontalScroll ? hasHorizontalScroll : prev);
+      setCanScrollLeft(prev => prev !== canLeft ? canLeft : prev);
+      setCanScrollRight(prev => prev !== canRight ? canRight : prev);
     }
   };
 
   const handleTableScroll = () => {
-    updateScrollButtons();
-    const container = tableContainerRef.current;
-    if (!container) return;
+    if (rafScrollRef.current) return;
+    rafScrollRef.current = requestAnimationFrame(() => {
+      rafScrollRef.current = null;
+      updateScrollButtons();
+      const container = tableContainerRef.current;
+      if (!container) return;
 
-    if (scrollSourceRef.current !== 'floating') {
-      scrollSourceRef.current = 'main';
-      if (scrollTimeoutRef.current) {
-        window.clearTimeout(scrollTimeoutRef.current);
-      }
-      scrollTimeoutRef.current = window.setTimeout(() => {
-        scrollSourceRef.current = null;
-      }, 150);
+      if (scrollSourceRef.current !== 'floating') {
+        scrollSourceRef.current = 'main';
+        if (scrollTimeoutRef.current) {
+          window.clearTimeout(scrollTimeoutRef.current);
+        }
+        scrollTimeoutRef.current = window.setTimeout(() => {
+          scrollSourceRef.current = null;
+        }, 150);
 
-      if (floatingHeaderRef.current && floatingHeaderRef.current.scrollLeft !== container.scrollLeft) {
-        floatingHeaderRef.current.scrollLeft = container.scrollLeft;
-      }
-    }
-
-    const mainHeader = document.querySelector('header');
-    const mainHeaderHeight = mainHeader ? (mainHeader as HTMLElement).offsetHeight : 64;
-    const computedStickyTop = mainHeaderHeight;
-
-    setStickyTop(computedStickyTop);
-
-    const containerRect = container.getBoundingClientRect();
-    const isHeaderFloating = 
-      containerRect.top <= computedStickyTop && 
-      containerRect.bottom > (computedStickyTop + 48);
-    setIsScrolled(isHeaderFloating);
-
-    setFloatingHeaderStyle({
-      left: containerRect.left,
-      width: containerRect.width,
-    });
-
-    const tableEl = container.querySelector('table');
-    if (tableEl) {
-      const fullW = Math.max(tableEl.scrollWidth, tableEl.getBoundingClientRect().width);
-      if (fullW > 0) setFloatingTableWidth(fullW);
-
-      const mainThs = tableEl.querySelectorAll('thead tr th');
-      if (mainThs && mainThs.length > 0) {
-        const widths = Array.from(mainThs).map(th => (th as HTMLElement).getBoundingClientRect().width);
-        if (widths.some(w => w > 0)) {
-          setColWidths(prev => {
-            if (prev.length === widths.length && prev.every((w, i) => Math.abs(w - widths[i]) < 0.5)) {
-              return prev;
-            }
-            return widths;
-          });
+        if (floatingHeaderRef.current && floatingHeaderRef.current.scrollLeft !== container.scrollLeft) {
+          floatingHeaderRef.current.scrollLeft = container.scrollLeft;
         }
       }
-    }
+
+      const mainHeader = document.querySelector('header');
+      const mainHeaderHeight = mainHeader ? (mainHeader as HTMLElement).offsetHeight : 64;
+      const computedStickyTop = mainHeaderHeight;
+
+      setStickyTop(prev => prev !== computedStickyTop ? computedStickyTop : prev);
+
+      const containerRect = container.getBoundingClientRect();
+      const isHeaderFloating = 
+        containerRect.top <= computedStickyTop && 
+        containerRect.bottom > (computedStickyTop + 48);
+      setIsScrolled(prev => prev !== isHeaderFloating ? isHeaderFloating : prev);
+
+      setFloatingHeaderStyle(prev => {
+        if (Math.abs(prev.left - containerRect.left) < 0.5 && Math.abs(prev.width - containerRect.width) < 0.5) {
+          return prev;
+        }
+        return {
+          left: containerRect.left,
+          width: containerRect.width,
+        };
+      });
+
+      const tableEl = container.querySelector('table');
+      if (tableEl) {
+        const fullW = Math.max(tableEl.scrollWidth, tableEl.getBoundingClientRect().width);
+        if (fullW > 0) {
+          setFloatingTableWidth(prev => Math.abs(prev - fullW) < 1 ? prev : fullW);
+        }
+
+        const mainThs = tableEl.querySelectorAll('thead tr th');
+        if (mainThs && mainThs.length > 0) {
+          const widths = Array.from(mainThs).map(th => (th as HTMLElement).getBoundingClientRect().width);
+          if (widths.some(w => w > 0)) {
+            setColWidths(prev => {
+              if (prev.length === widths.length && prev.every((w, i) => Math.abs(w - widths[i]) < 0.5)) {
+                return prev;
+              }
+              return widths;
+            });
+          }
+        }
+      }
+    });
   };
 
   const scrollTable = (direction: 'left' | 'right') => {
@@ -269,6 +370,7 @@ export default function LembagaKelasSub({
     }
 
     return () => {
+      if (rafScrollRef.current) cancelAnimationFrame(rafScrollRef.current);
       clearTimeout(timer);
       window.removeEventListener('resize', handleResize);
       document.removeEventListener('scroll', handleGlobalScroll, { capture: true });
@@ -280,6 +382,9 @@ export default function LembagaKelasSub({
 
   // Class Delete Confirmation state
   const [classToDelete, setClassToDelete] = useState<{ id: string; name: string } | null>(null);
+
+  // Edit student column modal state
+  const [editingSantriForKolom, setEditingSantriForKolom] = useState<Santri | null>(null);
 
   // Batas Usia states for Calon Pelajar
   const [kelBatasUsiaHari, setKelBatasUsiaHari] = useState<number>(1);
@@ -325,7 +430,35 @@ export default function LembagaKelasSub({
     }
   };
 
-  const handleSort = (field: 'nama' | 'nik' | 'nis' | 'nisn' | 'indukMhd' | 'indukWustho' | 'indukUlya' | 'statusKeanggotaan' | 'statusEmis' | 'statusVerval' | 'kamar') => {
+  const calculateAge = (birthDateStr?: string): string => {
+    if (!birthDateStr) return '-';
+    try {
+      const birth = new Date(birthDateStr);
+      if (isNaN(birth.getTime())) return '-';
+      const today = new Date();
+      let age = today.getFullYear() - birth.getFullYear();
+      const m = today.getMonth() - birth.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
+        age--;
+      }
+      return age >= 0 ? `${age} Thn` : '-';
+    } catch {
+      return '-';
+    }
+  };
+
+  const formatTanggal = (dateStr?: string): string => {
+    if (!dateStr) return '-';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      return d.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const handleSort = (field: keyof Santri | 'nism') => {
     if (sortField === field) {
       setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
@@ -334,7 +467,7 @@ export default function LembagaKelasSub({
     }
   };
 
-  const renderSortableHeader = (label: string, field: 'nama' | 'nik' | 'nis' | 'nisn' | 'indukMhd' | 'indukWustho' | 'indukUlya' | 'statusKeanggotaan' | 'statusEmis' | 'statusVerval' | 'kamar', extraClass: string, justify: string = 'justify-start', styleOverride?: React.CSSProperties) => {
+  const renderSortableHeader = (label: string, field: keyof Santri | 'nism', extraClass: string, justify: string = 'justify-start', styleOverride?: React.CSSProperties) => {
     const isSorted = sortField === field;
     return (
       <th 
@@ -377,6 +510,24 @@ export default function LembagaKelasSub({
     let colIdx = 0;
     const isAllSelected = filteredStudents.length > 0 && filteredStudents.every(s => selectedStudentIds.includes(s.id));
     const isSomeSelected = filteredStudents.some(s => selectedStudentIds.includes(s.id));
+    const isCurrentFormal = activeTab === 'Formal' || (selectedLembaga && getLembagaJenis(selectedLembaga) === 'Formal');
+    const isIndukPage = !!(effectiveSelectedKelas && (effectiveSelectedKelas.pillType === 'induk' || effectiveSelectedKelas.id === 'default-induk' || effectiveSelectedKelas.pillType === 'all' || effectiveSelectedKelas.id === 'all' || (effectiveSelectedKelas.nama && effectiveSelectedKelas.nama.trim().toLowerCase() === 'data induk')));
+    const isCalonPelajarPage = !isIndukPage && !!(effectiveSelectedKelas && (effectiveSelectedKelas.pillType === 'calon' || effectiveSelectedKelas.id === 'default-calon' || effectiveSelectedKelas.id === 'unassigned' || effectiveSelectedKelas.pillType === 'unassigned' || isCalonClass(effectiveSelectedKelas.nama)));
+
+    const shouldShowColumnLocal = (colKey: string): boolean => {
+      if (colKey === 'nama') return true;
+      if (colKey === 'statusEmis') {
+        if (isCalonPelajarPage) {
+          return visibleColumns['statusEmis'] ?? true;
+        }
+        if (isCurrentFormal) {
+          return visibleColumns['statusEmis'] ?? false;
+        }
+        return visibleColumns['statusEmis'] ?? true;
+      }
+      return visibleColumns[colKey] ?? false;
+    };
+
     const getStyle = () => {
       const idx = colIdx++;
       if (!isFloatingHeader || !colWidths || !colWidths[idx]) return undefined;
@@ -386,7 +537,8 @@ export default function LembagaKelasSub({
 
     return (
       <tr className="text-[11px] font-black uppercase tracking-wider text-slate-600 border-b border-slate-200 bg-slate-100 select-none">
-        <th style={getStyle()} className="sticky left-0 z-20 w-[42px] min-w-[42px] max-w-[42px] pl-2 pr-1 py-4 bg-slate-100 border-r border-slate-200 text-center font-black text-slate-600">
+        {/* 1. NO */}
+        <th style={getStyle()} className="sticky left-0 z-20 w-[46px] min-w-[46px] max-w-[46px] pl-2 pr-1 py-4 bg-slate-100 border-r border-slate-200 text-center font-black text-slate-600">
           {isSelectionMode ? (
             <button
               type="button"
@@ -413,24 +565,155 @@ export default function LembagaKelasSub({
               {!isAllSelected && isSomeSelected && <div className="h-2 w-2 bg-[#00693E] rounded-xs" />}
             </button>
           ) : (
-            "No"
+            "NO"
           )}
         </th>
-        {renderSortableHeader('Profil Santri', 'nama', 'sticky left-[42px] z-20 w-[200px] min-w-[200px] max-w-[200px] pl-2 py-4 bg-slate-100 border-r border-slate-200 relative', 'justify-start', getStyle())}
-        {activeTab === 'Formal' && renderSortableHeader('NIK', 'nik', 'w-[130px] min-w-[130px] pl-1 py-4 bg-slate-100', 'justify-start', getStyle())}
-        {renderSortableHeader('NISN', 'nisn', 'w-[110px] min-w-[110px] pl-1 py-4 bg-slate-100', 'justify-start', getStyle())}
-        {renderSortableHeader('Induk MHD', 'indukMhd', 'w-[110px] min-w-[110px] pl-1 py-4 bg-slate-100', 'justify-start', getStyle())}
-        {renderSortableHeader('Induk Wustho', 'indukWustho', 'w-[110px] min-w-[110px] pl-1 py-4 bg-slate-100', 'justify-start', getStyle())}
-        {renderSortableHeader('Induk Ulya', 'indukUlya', 'w-[110px] min-w-[110px] pl-1 py-4 bg-slate-100', 'justify-start', getStyle())}
-        {activeTab !== 'Formal' && renderSortableHeader('Status', 'statusKeanggotaan', 'w-[100px] min-w-[100px] pl-1 py-4 bg-slate-100', 'justify-start', getStyle())}
-        {activeTab === 'Formal' ? (
-          <>
-            {isCalonPelajarPage && renderSortableHeader('EMIS', 'statusEmis', 'w-[100px] min-w-[100px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
-            {!isCalonPelajarPage && renderSortableHeader('Verval', 'statusVerval', 'w-[100px] min-w-[100px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
-          </>
-        ) : (
-          renderSortableHeader('Kamar', 'kamar', 'w-[110px] min-w-[110px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())
+
+        {/* 2. NAMA (Sticky Left) */}
+        {renderSortableHeader('Nama Santri', 'nama', 'sticky left-[46px] z-20 w-[240px] min-w-[240px] max-w-[240px] pl-3 py-4 bg-slate-100 border-r border-slate-200 relative', 'justify-start', getStyle())}
+
+        {/* 3. NIS */}
+        {shouldShowColumnLocal('nis') && renderSortableHeader('NIS', 'nis', 'w-[95px] min-w-[95px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 4. NISM */}
+        {shouldShowColumnLocal('nism') && renderSortableHeader('NISM', 'nism', 'w-[140px] min-w-[140px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 5. NISN */}
+        {shouldShowColumnLocal('nisn') && renderSortableHeader('NISN', 'nisn', 'w-[120px] min-w-[120px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 6. NIK */}
+        {shouldShowColumnLocal('nik') && renderSortableHeader('NIK', 'nik', 'w-[155px] min-w-[155px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 7. EMIS (Tampil untuk Non-Formal, khusus kelas calon di Lembaga Formal, atau jika diaktifkan user di atur visibilitas) */}
+        {shouldShowColumnLocal('statusEmis') && renderSortableHeader(
+          isCalonPelajarPage ? 'Keterangan EMIS' : 'EMIS',
+          'statusEmis',
+          `${isCalonPelajarPage ? 'w-[145px] min-w-[145px]' : 'w-[110px] min-w-[110px]'} px-2 py-4 bg-slate-100 border-r border-slate-200 text-center`,
+          'justify-center',
+          getStyle()
         )}
+
+        {/* 8. VERVAL */}
+        {shouldShowColumnLocal('statusVerval') && renderSortableHeader('Verval', 'statusVerval', 'w-[110px] min-w-[110px] px-2 py-4 bg-slate-100 border-r border-slate-200 text-center', 'justify-center', getStyle())}
+
+        {/* 9. STATUS KEAKTIFAN */}
+        {shouldShowColumnLocal('statusKeanggotaan') && renderSortableHeader('Status Keaktifan', 'statusKeanggotaan', 'w-[140px] min-w-[140px] px-2 py-4 bg-slate-100 border-r border-slate-200 text-center', 'justify-center', getStyle())}
+
+        {/* 10. KELAS MHD */}
+        {shouldShowColumnLocal('kelasMhd') && renderSortableHeader('Kelas MHD', 'kelasMhd', 'w-[130px] min-w-[130px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 11. INDUK MHD */}
+        {shouldShowColumnLocal('indukMhd') && renderSortableHeader('Induk MHD', 'indukMhd', 'w-[120px] min-w-[120px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 12. INDUK WUSTHO */}
+        {shouldShowColumnLocal('indukWustho') && renderSortableHeader('Induk Wustho', 'indukWustho', 'w-[135px] min-w-[135px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 13. INDUK ULYA */}
+        {shouldShowColumnLocal('indukUlya') && renderSortableHeader('Induk Ulya', 'indukUlya', 'w-[120px] min-w-[120px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 14. NO KK */}
+        {shouldShowColumnLocal('noKk') && renderSortableHeader('No. KK', 'noKk', 'w-[155px] min-w-[155px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 15. TEMPAT LAHIR */}
+        {shouldShowColumnLocal('tempatLahir') && renderSortableHeader('Tempat Lahir', 'tempatLahir', 'w-[125px] min-w-[125px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 16. TANGGAL LAHIR */}
+        {shouldShowColumnLocal('tanggalLahir') && renderSortableHeader('Tanggal Lahir', 'tanggalLahir', 'w-[115px] min-w-[115px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 17. GENDER */}
+        {shouldShowColumnLocal('gender') && renderSortableHeader('Gender', 'gender', 'w-[90px] min-w-[90px] px-2 py-4 bg-slate-100 border-r border-slate-200 text-center', 'justify-center', getStyle())}
+
+        {/* 18. PENDIDIKAN TERAKHIR */}
+        {shouldShowColumnLocal('pendidikanTerakhir') && renderSortableHeader('Pendidikan Terakhir', 'pendidikanTerakhir', 'w-[160px] min-w-[160px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 19. PENDIDIKAN FORMAL */}
+        {shouldShowColumnLocal('pendidikanFormal') && renderSortableHeader('Pendidikan Formal', 'pendidikanFormal', 'w-[190px] min-w-[190px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 20. KELAS */}
+        {shouldShowColumnLocal('kelas') && renderSortableHeader('Kelas', 'kelas', 'w-[120px] min-w-[120px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 21. KAMAR */}
+        {shouldShowColumnLocal('kamar') && renderSortableHeader('Kamar', 'kamar', 'w-[100px] min-w-[100px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 22. ASAL SEKOLAH */}
+        {shouldShowColumnLocal('asal') && renderSortableHeader('Asal Sekolah', 'asal', 'w-[150px] min-w-[150px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 23. NAMA AYAH */}
+        {shouldShowColumnLocal('namaAyah') && renderSortableHeader('Nama Ayah', 'namaAyah', 'w-[150px] min-w-[150px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 24. NIK AYAH */}
+        {shouldShowColumnLocal('nikAyah') && renderSortableHeader('NIK Ayah', 'nikAyah', 'w-[155px] min-w-[155px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 25. PEKERJAAN AYAH */}
+        {shouldShowColumnLocal('pekerjaanAyah') && renderSortableHeader('Pekerjaan Ayah', 'pekerjaanAyah', 'w-[140px] min-w-[140px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 26. PENDIDIKAN AYAH */}
+        {shouldShowColumnLocal('pendidikanAyah') && renderSortableHeader('Pendidikan Ayah', 'pendidikanAyah', 'w-[130px] min-w-[130px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 27. NAMA IBU */}
+        {shouldShowColumnLocal('namaIbu') && renderSortableHeader('Nama Ibu', 'namaIbu', 'w-[150px] min-w-[150px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 28. NIK IBU */}
+        {shouldShowColumnLocal('nikIbu') && renderSortableHeader('NIK Ibu', 'nikIbu', 'w-[155px] min-w-[155px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 29. PEKERJAAN IBU */}
+        {shouldShowColumnLocal('pekerjaanIbu') && renderSortableHeader('Pekerjaan Ibu', 'pekerjaanIbu', 'w-[140px] min-w-[140px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 30. PENDIDIKAN IBU */}
+        {shouldShowColumnLocal('pendidikanIbu') && renderSortableHeader('Pendidikan Ibu', 'pendidikanIbu', 'w-[130px] min-w-[130px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 31. ANAK KE */}
+        {shouldShowColumnLocal('anakKe') && renderSortableHeader('Anak Ke', 'anakKe', 'w-[85px] min-w-[85px] px-2 py-4 bg-slate-100 border-r border-slate-200 text-center', 'justify-center', getStyle())}
+
+        {/* 32. JUMLAH SAUDARA */}
+        {shouldShowColumnLocal('dariBersaudara') && renderSortableHeader('Jumlah Saudara', 'dariBersaudara', 'w-[120px] min-w-[120px] px-2 py-4 bg-slate-100 border-r border-slate-200 text-center', 'justify-center', getStyle())}
+
+        {/* 33. ALAMAT */}
+        {shouldShowColumnLocal('alamat') && renderSortableHeader('Alamat', 'alamat', 'w-[180px] min-w-[180px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 34. RT */}
+        {shouldShowColumnLocal('rt') && renderSortableHeader('RT', 'rt', 'w-[65px] min-w-[65px] px-2 py-4 bg-slate-100 border-r border-slate-200 text-center', 'justify-center', getStyle())}
+
+        {/* 35. RW */}
+        {shouldShowColumnLocal('rw') && renderSortableHeader('RW', 'rw', 'w-[65px] min-w-[65px] px-2 py-4 bg-slate-100 border-r border-slate-200 text-center', 'justify-center', getStyle())}
+
+        {/* 36. DESA */}
+        {shouldShowColumnLocal('desa') && renderSortableHeader('Desa', 'desa', 'w-[140px] min-w-[140px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 37. KECAMATAN */}
+        {shouldShowColumnLocal('kecamatan') && renderSortableHeader('Kecamatan', 'kecamatan', 'w-[140px] min-w-[140px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 38. KABUPATEN */}
+        {shouldShowColumnLocal('kabupaten') && renderSortableHeader('Kabupaten', 'kabupaten', 'w-[150px] min-w-[150px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 39. PROVINSI */}
+        {shouldShowColumnLocal('provinsi') && renderSortableHeader('Provinsi', 'provinsi', 'w-[150px] min-w-[150px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 40. JARAK RUMAH */}
+        {shouldShowColumnLocal('jarakRumah') && renderSortableHeader('Jarak (km)', 'jarakRumah', 'w-[100px] min-w-[100px] px-2 py-4 bg-slate-100 border-r border-slate-200 text-center', 'justify-center', getStyle())}
+
+        {/* 41. NO HP */}
+        {shouldShowColumnLocal('noHp') && renderSortableHeader('No. HP', 'noHp', 'w-[130px] min-w-[130px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 42. STATUS DOMISILI */}
+        {shouldShowColumnLocal('statusDomisili') && renderSortableHeader('Status Domisili', 'statusDomisili', 'w-[130px] min-w-[130px] px-2 py-4 bg-slate-100 border-r border-slate-200 text-center', 'justify-center', getStyle())}
+
+        {/* 43. TAHUN MASUK */}
+        {shouldShowColumnLocal('tahunMasuk') && renderSortableHeader('Tahun Masuk', 'tahunMasuk', 'w-[105px] min-w-[105px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 44. TGL MASUK */}
+        {shouldShowColumnLocal('tanggalMasuk') && renderSortableHeader('Tgl Masuk', 'tanggalMasuk', 'w-[105px] min-w-[105px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 45. TGL KELUAR */}
+        {shouldShowColumnLocal('tanggalKeluar') && renderSortableHeader('Tgl Keluar', 'tanggalKeluar', 'w-[105px] min-w-[105px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 46. NO LEMARI */}
+        {shouldShowColumnLocal('nomorLemari') && renderSortableHeader('No. Lemari', 'nomorLemari', 'w-[100px] min-w-[100px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 47. CATATAN */}
+        {shouldShowColumnLocal('catatan') && renderSortableHeader('Catatan', 'catatan', 'w-[180px] min-w-[180px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+
+        {/* 48. AKSI (Sticky Right) */}
         <th style={getStyle()} className="sticky right-0 z-20 w-[56px] min-w-[56px] max-w-[56px] px-2 py-4 bg-slate-100 border-l border-slate-200 font-black text-slate-600 text-center shadow-[-2px_0_5px_rgba(0,0,0,0.03)]">
           <span>Aksi</span>
         </th>
@@ -499,6 +782,8 @@ export default function LembagaKelasSub({
   const [logoError, setLogoError] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [lemDeskripsi, setLemDeskripsi] = useState('');
+  const [lemNomorStatistik, setLemNomorStatistik] = useState('');
+  const [lemNpsn, setLemNpsn] = useState('');
   const [taMulaiTanggal, setTaMulaiTanggal] = useState<number>(1);
   const [taMulaiBulan, setTaMulaiBulan] = useState<number>(7);
   const [taSelesaiTanggal, setTaSelesaiTanggal] = useState<number>(30);
@@ -657,105 +942,171 @@ export default function LembagaKelasSub({
     }
   };
 
-  // Helper: Resolve Lembaga type
-  const getLembagaJenis = (l: Lembaga): 'Formal' | 'Internal' => {
-    if (l.jenis && (l.jenis === 'Formal' || l.jenis === 'Internal')) return l.jenis;
-    const lower = (l.nama || '').toLowerCase();
-    const kode = (l.kode || '').toLowerCase();
-    if (
-      lower.includes('madin') || 
-      lower.includes('diniyah') || 
-      lower.includes('tpq') || 
-      lower.includes('tahfidz') || 
-      lower.includes('pondok') || 
-      lower.includes('kitab') || 
-      lower.includes('internal') ||
-      kode.includes('madin') ||
-      kode.includes('tahf')
-    ) {
-      return 'Internal';
-    }
-    return 'Formal';
-  };
+  // Performance caches for student-institution membership & class membership
+  const studentInLembagaCache = useMemo(() => new Map<string, boolean>(), [santriList, lembagasList, kelasList, selectedGender]);
+  const studentsInClassCache = useMemo(() => new Map<string, Santri[]>(), [santriList, selectedGender, kelasList, lembagasList]);
+  const classesOfLembagaCache = useMemo(() => new Map<string, Kelas[]>(), [kelasList]);
 
   // Filtered Lembaga
-  const filteredLembagas = lembagasList.filter(l => {
-    const isJenisMatch = getLembagaJenis(l) === activeTab;
-    const isGenderMatchResult = isGenderMatch(l.gender, selectedGender);
-    return isJenisMatch && isGenderMatchResult;
-  });
+  const filteredLembagas = useMemo(() => {
+    return lembagasList.filter(l => {
+      const isJenisMatch = getLembagaJenis(l) === activeTab;
+      const isGenderMatchResult = isGenderMatch(l.gender, selectedGender);
+      return isJenisMatch && isGenderMatchResult;
+    });
+  }, [lembagasList, activeTab, selectedGender]);
 
-  // Helper: Determine if a student belongs to a given institution
-  const isStudentInLembaga = (s: Santri, l: Lembaga): boolean => {
+  // Helper: Determine if a student belongs to a given institution - MEMOIZED & CACHED
+  const isStudentInLembaga = useCallback((s: Santri, l: Lembaga): boolean => {
     if (!s || !l) return false;
     if (s.statusKeanggotaan === 'Meninggal') return false;
-    
-    const norm = (str?: string | null) => (str || '').trim().toLowerCase().replace(/[-_]/g, ' ');
+    if (!isGenderMatch(l.gender, s.gender)) return false;
 
-    const targetId = norm(l.id);
-    const targetNama = norm(l.nama);
-    const targetKode = norm(l.kode);
+    const cacheKey = `${s.id}_${l.id}_${s.kelas || ''}_${s.pendidikanFormal || ''}_${s.pendidikanInternal || ''}_${s.indukMhd || ''}_${s.indukWustho || ''}_${s.indukUlya || ''}`;
+    if (studentInLembagaCache.has(cacheKey)) {
+      return studentInLembagaCache.get(cacheKey)!;
+    }
 
-    const jenisLembaga = getLembagaJenis(l);
+    const check = (): boolean => {
+      const isFormal = getLembagaJenis(l) === 'Formal';
+      const norm = (str?: string | null) => (str || '').trim().toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ');
+      const rawLower = (str?: string | null) => (str || '').trim().toLowerCase();
+      const targetId = rawLower(l.id);
+      const nismKey = getNismFieldKeyForLembaga(l);
 
-    if (jenisLembaga === 'Formal') {
-      if (!s.pendidikanFormal || s.pendidikanFormal.trim() === '' || s.pendidikanFormal === 'TIDAK TERDAFTAR' || s.pendidikanFormal === 'Belum / Non-Formal') {
-        return false;
+      // 1. Direct explicit calonLembagaId match
+      if ((s as any).calonLembagaId && String((s as any).calonLembagaId) === String(l.id)) {
+        return true;
       }
-      const formalParts = s.pendidikanFormal.split(',').map(x => norm(x)).filter(Boolean);
-      return formalParts.some(pf => {
-        if (pf === targetId) return true;
-        if (targetNama && (pf === targetNama || pf.includes(targetNama) || targetNama.includes(pf))) return true;
-        if (targetKode) {
-          const normKode = norm(targetKode);
-          if (normKode) {
-            const words = pf.split(/[\s-]+/);
-            if (words.includes(normKode) || pf === normKode || pf.startsWith(normKode + ' ') || pf.startsWith(normKode + '-')) return true;
+
+      // Check candidate class in s.kelas or s.pendidikanFormal
+      const targetCalonName = getDefaultCalonClassName(l, s.gender).toLowerCase();
+      if (s.kelas) {
+        const sClassesRaw = s.kelas.split(',').map(x => x.trim().toLowerCase());
+        if (sClassesRaw.includes(targetCalonName)) {
+          return true;
+        }
+      }
+
+      if (isFormal) {
+        // Check explicit NISM key for this institution
+        if (nismKey === 'indukWustho' && s.indukWustho && s.indukWustho.trim() !== '' && s.indukWustho !== '-') {
+          return true;
+        }
+        if (nismKey === 'indukUlya' && s.indukUlya && s.indukUlya.trim() !== '' && s.indukUlya !== '-') {
+          return true;
+        }
+        if (nismKey === 'indukMhd' && s.indukMhd && s.indukMhd.trim() !== '' && s.indukMhd !== '-') {
+          return true;
+        }
+
+        // 2. Check s.pendidikanFormal (Primary source of truth for Formal)
+        if (s.pendidikanFormal && s.pendidikanFormal.trim() !== '' && s.pendidikanFormal !== 'TIDAK TERDAFTAR' && s.pendidikanFormal !== 'Belum / Non-Formal' && s.pendidikanFormal !== '-') {
+          const formalParts = s.pendidikanFormal.split(',').map(x => x.trim()).filter(Boolean);
+          for (const entry of formalParts) {
+            const dashParts = entry.split('-');
+            const prefix = dashParts[0].trim();
+            if (isMatchLembagaStrict(l, prefix, s.gender) || isMatchLembagaStrict(l, entry, s.gender)) {
+              return true;
+            }
+          }
+          // If s.pendidikanFormal matches another distinct formal institution strictly, return false
+          const otherFormalLembagas = lembagasList.filter(otherL => getLembagaJenis(otherL) === 'Formal' && String(otherL.id) !== String(l.id));
+          const matchesOtherFormal = otherFormalLembagas.some(otherL => {
+            return formalParts.some(entry => {
+              const prefix = entry.split('-')[0].trim();
+              return isMatchLembagaStrict(otherL, prefix, s.gender);
+            });
+          });
+          if (matchesOtherFormal) {
+            return false;
           }
         }
+
+        // 3. Check s.kelas matching only non-default specific classes registered under this formal institution
+        const otherFormalLembagas = lembagasList.filter(otherL => getLembagaJenis(otherL) === 'Formal' && String(otherL.id) !== String(l.id));
+        const classesOfL = kelasList.filter(k => {
+          const kLemId = rawLower(getClsLembagaId(k));
+          return kLemId === targetId && !isDefaultClass(k);
+        });
+        const specificClassNamesOfL = classesOfL
+          .map(k => norm(k.nama))
+          .filter(cn => cn && !cn.includes('calon') && !cn.includes('tanpa kelas'));
+
+        if (s.kelas && specificClassNamesOfL.length > 0) {
+          const sClasses = s.kelas.split(',').map(x => norm(x)).filter(Boolean);
+          
+          const hasOtherFormalConflict = otherFormalLembagas.some(otherL => {
+            return sClasses.some(sc => isMatchLembagaStrict(otherL, sc, s.gender));
+          });
+          if (hasOtherFormalConflict) return false;
+
+          const cleanClassStr = (str: string) => str.replace(/^(kelas|kls)\s+/, '').trim();
+          const matchClass = specificClassNamesOfL.some(cn => {
+            const cleanCn = cleanClassStr(cn);
+            return sClasses.some(sc => {
+              const cleanSc = cleanClassStr(sc);
+              return sc === cn || cleanSc === cleanCn;
+            });
+          });
+          if (matchClass) return true;
+        }
+
         return false;
-      });
+      } else {
+        // Internal institution
+        if (nismKey === 'indukMhd' && s.indukMhd && s.indukMhd.trim() !== '' && s.indukMhd !== '-') {
+          return true;
+        }
+
+        // 1. Check s.pendidikanInternal
+        if (s.pendidikanInternal && s.pendidikanInternal.trim() !== '' && s.pendidikanInternal !== 'Belum / Non-Madin' && s.pendidikanInternal !== '-') {
+          const internalParts = s.pendidikanInternal.split(',').map(x => x.trim()).filter(Boolean);
+          for (const entry of internalParts) {
+            const dashParts = entry.split('-');
+            const prefix = dashParts[0].trim();
+            if (isMatchLembagaStrict(l, prefix, s.gender) || rawLower(prefix) === targetId || isMatchLembagaStrict(l, entry, s.gender)) {
+              return true;
+            }
+          }
+        }
+
+        // 2. Check s.kelas matching only non-default specific classes registered under this internal institution
+        const classesOfL = kelasList.filter(k => {
+          const kLemId = rawLower(getClsLembagaId(k));
+          return kLemId === targetId && !isDefaultClass(k);
+        });
+        const specificClassNamesOfL = classesOfL
+          .map(k => norm(k.nama))
+          .filter(cn => cn && !cn.includes('calon') && !cn.includes('tanpa kelas'));
+
+        if (s.kelas && specificClassNamesOfL.length > 0) {
+          const sClasses = s.kelas.split(',').map(x => norm(x)).filter(Boolean);
+          const cleanClassStr = (str: string) => str.replace(/^(kelas|kls)\s+/, '').trim();
+          const matchClass = specificClassNamesOfL.some(cn => {
+            const cleanCn = cleanClassStr(cn);
+            return sClasses.some(sc => {
+              const cleanSc = cleanClassStr(sc);
+              return sc === cn || cleanSc === cleanCn;
+            });
+          });
+          if (matchClass) return true;
+        }
+
+        return false;
+      }
+    };
+
+    const res = check();
+    studentInLembagaCache.set(cacheKey, res);
+    return res;
+  }, [lembagasList, kelasList, studentInLembagaCache]);
+
+  // Helper: Get classes for a specific institution - MEMOIZED & CACHED
+  const getClassesOfLembaga = useCallback((lembagaId: string) => {
+    if (classesOfLembagaCache.has(lembagaId)) {
+      return classesOfLembagaCache.get(lembagaId)!;
     }
-
-    // 1. Check s.pendidikanInternal
-    if (s.pendidikanInternal) {
-      const internalParts = s.pendidikanInternal.split(',').map(x => norm(x)).filter(Boolean);
-      const matchInternal = internalParts.some(pi => 
-        pi === targetId ||
-        (targetNama && pi === targetNama) ||
-        (targetKode && pi === targetKode) ||
-        (targetNama && targetNama.length > 2 && (pi.includes(targetNama) || targetNama.includes(pi))) ||
-        (targetKode && targetKode.length > 2 && (pi.includes(targetKode) || targetKode.includes(pi)))
-      );
-      if (matchInternal) return true;
-    }
-
-    // 2. Check s.pendidikanFormal
-    if (s.pendidikanFormal) {
-      const formalParts = s.pendidikanFormal.split(',').map(x => norm(x)).filter(Boolean);
-      const matchFormal = formalParts.some(pf => 
-        pf === targetId ||
-        (targetNama && pf === targetNama) ||
-        (targetKode && pf === targetKode) ||
-        (targetNama && targetNama.length > 2 && (pf.includes(targetNama) || targetNama.includes(pf))) ||
-        (targetKode && targetKode.length > 2 && (pf.includes(targetKode) || targetKode.includes(pf)))
-      );
-      if (matchFormal) return true;
-    }
-
-    // 3. Check if s.kelas matches any class defined for this internal lembaga in kelasList
-    if (s.kelas) {
-      const sClasses = s.kelas.split(',').map(x => norm(x)).filter(Boolean);
-      const classesOfL = kelasList.filter(k => norm(getClsLembagaId(k)) === targetId);
-      const matchClass = classesOfL.some(k => k.nama && sClasses.includes(norm(k.nama)));
-      if (matchClass) return true;
-    }
-
-    return false;
-  };
-
-  // Helper: Get classes for a specific institution
-  const getClassesOfLembaga = (lembagaId: string) => {
     const list = kelasList.filter(k => getClsLembagaId(k) === String(lembagaId));
     const uniqueList: Kelas[] = [];
     const seenNames = new Set<string>();
@@ -766,94 +1117,101 @@ export default function LembagaKelasSub({
         uniqueList.push(item);
       }
     }
-    const hasDefault = uniqueList.some(k => isDefaultClass(k));
-    if (!hasDefault) {
-      const defaultCls: Kelas = {
-        id: `calon-${lembagaId}`,
-        lembagaId: String(lembagaId),
-        nama: 'Calon Peserta Didik',
-        waliKelas: '-',
-        tingkatan: 'Lainnya',
-        isDefault: true
-      };
-      return [defaultCls, ...uniqueList];
-    }
+    classesOfLembagaCache.set(lembagaId, uniqueList);
     return uniqueList;
-  };
+  }, [kelasList, classesOfLembagaCache]);
 
-  // Helper: Get students belonging to a specific class in an institution
-  const getStudentsInClass = (c: Kelas, l: Lembaga) => {
-    return santriList.filter(s => {
+  // Helper: Get students belonging to a specific class in an institution - MEMOIZED & CACHED
+  const getStudentsInClass = useCallback((c: Kelas, l: Lembaga) => {
+    const cacheKey = `${c.id}_${l.id}_${selectedGender}`;
+    if (studentsInClassCache.has(cacheKey)) {
+      return studentsInClassCache.get(cacheKey)!;
+    }
+
+    const res = santriList.filter(s => {
       if (!isGenderMatch(s.gender, selectedGender)) return false;
 
       const inLembaga = isStudentInLembaga(s, l);
       if (!inLembaga) return false;
 
-      const norm = (str?: string | null) => (str || '').trim().toLowerCase().replace(/[-_]/g, ' ');
-      const sClasses = s.kelas ? s.kelas.split(',').map(x => norm(x)).filter(Boolean) : [];
-      
-      // Extract specific class text from pendidikanFormal or pendidikanInternal if available
-      let specificClassText = '';
+      const norm = (str?: string | null) => (str || '').trim().toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ');
+      const rawLower = (str?: string | null) => (str || '').trim().toLowerCase();
+      const targetId = rawLower(l.id);
+      // Extract student's specific class text FOR THIS INSTITUTION l
+      let specificClassForThisLembaga: string | null = null;
+
       if (s.pendidikanFormal) {
-        const parts = s.pendidikanFormal.split('-');
-        if (parts.length > 1) {
-          const lemPart = norm(parts[0]);
-          const normNama = norm(l.nama);
-          const normKode = norm(l.kode);
-          const isLemMatch = lemPart === normNama || 
-            (normKode && (lemPart === normKode || lemPart.startsWith(normKode) || normNama.includes(lemPart) || lemPart.includes(normNama))) ||
-            (normNama && (normNama.includes(lemPart) || lemPart.includes(normNama)));
-          if (isLemMatch) {
-            specificClassText = norm(parts.slice(1).join('-'));
-          }
-        } else {
-          const normFormal = norm(s.pendidikanFormal);
-          if (normFormal.includes('calon')) {
-            specificClassText = 'calon peserta didik';
+        const formalEntries = s.pendidikanFormal.split(',').map(x => x.trim()).filter(Boolean);
+        for (const entry of formalEntries) {
+          const dashParts = entry.split('-');
+          const prefix = dashParts[0].trim();
+          if (isMatchLembagaStrict(l, prefix, s.gender)) {
+            if (dashParts.length > 1) {
+              specificClassForThisLembaga = dashParts.slice(1).join('-').trim();
+            } else {
+              specificClassForThisLembaga = getDefaultCalonClassName(l, s.gender);
+            }
+            break;
           }
         }
       }
 
-      if (!specificClassText && s.pendidikanInternal) {
-        const parts = s.pendidikanInternal.split('-');
-        if (parts.length > 1) {
-          const lemPart = norm(parts[0]);
-          const normNama = norm(l.nama);
-          const normKode = norm(l.kode);
-          const isLemMatch = lemPart === normNama || 
-            (normKode && (lemPart === normKode || lemPart.startsWith(normKode) || normNama.includes(lemPart) || lemPart.includes(normNama))) ||
-            (normNama && (normNama.includes(lemPart) || lemPart.includes(normNama)));
-          if (isLemMatch) {
-            specificClassText = norm(parts.slice(1).join('-'));
+      if (!specificClassForThisLembaga && s.pendidikanInternal) {
+        const internalEntries = s.pendidikanInternal.split(',').map(x => x.trim()).filter(Boolean);
+        for (const entry of internalEntries) {
+          const dashParts = entry.split('-');
+          const prefix = dashParts[0].trim();
+          if (isMatchLembagaStrict(l, prefix, s.gender)) {
+            if (dashParts.length > 1) {
+              specificClassForThisLembaga = dashParts.slice(1).join('-').trim();
+            } else {
+              specificClassForThisLembaga = getDefaultCalonClassName(l, s.gender);
+            }
+            break;
           }
         }
       }
+
+      const sClasses = s.kelas ? s.kelas.split(',').map(x => norm(x)).filter(Boolean) : [];
+      const cleanClassStr = (str?: string | null) => {
+        if (!str) return '';
+        return str.trim().toLowerCase()
+          .replace(/[-_]/g, ' ')
+          .replace(/^(kelas|kls)\s+/, '')
+          .replace(/\s+(pa|pi|putra|putri)$/i, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+      };
+      const compactClassStr = (str?: string | null) => cleanClassStr(str).replace(/\s+/g, '');
 
       const matchNonDefaultClass = (targetClass: Kelas): boolean => {
         if (isDefaultClass(targetClass)) return false;
         const targetNorm = norm(targetClass.nama);
         if (!targetNorm) return false;
-
-        const cleanClassStr = (str?: string | null) => {
-          if (!str) return '';
-          return str.trim().toLowerCase()
-            .replace(/[-_]/g, ' ')
-            .replace(/^(kelas|kls)\s+/, '')
-            .replace(/\s+/g, ' ')
-            .trim();
-        };
-
         const cleanedTarget = cleanClassStr(targetNorm);
+        const compactTarget = compactClassStr(targetNorm);
 
-        // 1. Direct match in sClasses (exact norm or cleaned match)
-        if (sClasses.some(sc => sc === targetNorm || cleanClassStr(sc) === cleanedTarget)) {
+        // 1. Direct match in sClasses
+        if (sClasses.some(sc => {
+          const scNorm = norm(sc);
+          const scClean = cleanClassStr(scNorm);
+          const scCompact = compactClassStr(scNorm);
+          return scNorm === targetNorm || scClean === cleanedTarget || (compactTarget && scCompact === compactTarget);
+        })) {
           return true;
         }
 
-        // 2. Direct match in specificClassText (exact norm or cleaned match)
-        if (specificClassText) {
-          const cleanedSpecific = cleanClassStr(specificClassText);
-          if (specificClassText === targetNorm || cleanedSpecific === cleanedTarget) {
+        // 2. Direct match in specificClassForThisLembaga
+        if (specificClassForThisLembaga) {
+          const specNorm = norm(specificClassForThisLembaga);
+          const cleanedSpec = cleanClassStr(specNorm);
+          const compactSpec = compactClassStr(specNorm);
+          if (
+            specNorm === targetNorm || 
+            cleanedSpec === cleanedTarget || 
+            (compactTarget && compactSpec === compactTarget) ||
+            (cleanedTarget.length > 1 && (cleanedSpec.includes(cleanedTarget) || cleanedTarget.includes(cleanedSpec)))
+          ) {
             return true;
           }
         }
@@ -862,8 +1220,11 @@ export default function LembagaKelasSub({
       };
 
       if (isDefaultClass(c)) {
-        if (specificClassText && (specificClassText.includes('calon') || specificClassText.includes('tanpa'))) {
-          return true;
+        if (specificClassForThisLembaga) {
+          const specNorm = norm(specificClassForThisLembaga);
+          if (specNorm.includes('calon') || specNorm.includes('tanpa')) {
+            return true;
+          }
         }
         const otherClassesOfL = getClassesOfLembaga(l.id).filter(x => !isDefaultClass(x));
         const inOtherClass = otherClassesOfL.some(oc => matchNonDefaultClass(oc));
@@ -872,15 +1233,18 @@ export default function LembagaKelasSub({
         return matchNonDefaultClass(c);
       }
     });
-  };
 
-  // Helper: Get total students following an institution
-  const getLembagaStudentCount = (l: Lembaga) => {
+    studentsInClassCache.set(cacheKey, res);
+    return res;
+  }, [santriList, selectedGender, isStudentInLembaga, getClassesOfLembaga, studentsInClassCache]);
+
+  // Helper: Get total students following an institution - MEMOIZED
+  const getLembagaStudentCount = useCallback((l: Lembaga) => {
     return santriList.filter(s => {
       if (!isGenderMatch(s.gender, selectedGender)) return false;
       return isStudentInLembaga(s, l);
     }).length;
-  };
+  }, [santriList, selectedGender, isStudentInLembaga]);
 
   // --- Dynamic Unified Institutions Builder ---
   const institutions = useMemo(() => {
@@ -912,7 +1276,7 @@ export default function LembagaKelasSub({
       });
     } else {
       return filteredLembagas.map(l => {
-        const classes = getClassesOfLembaga(l.id);
+        const classes = getClassesOfLembaga(l.id).filter(x => !isDefaultClass(x));
         const studentsCount = getLembagaStudentCount(l);
         return {
           id: l.id,
@@ -922,6 +1286,9 @@ export default function LembagaKelasSub({
           logo: l.logo || '',
           gender: l.gender,
           jenis: getLembagaJenis(l),
+          nomorStatistik: l.nomorStatistik || l.nomor_statistik || '',
+          nomor_statistik: l.nomorStatistik || l.nomor_statistik || '',
+          npsn: l.npsn || '',
           classesCount: classes.length,
           studentsCount: studentsCount,
           taMulaiTanggal: l.taMulaiTanggal,
@@ -993,8 +1360,8 @@ export default function LembagaKelasSub({
     return statsAcademic.rombel;
   }, [activeTab, statsAcademic]);
 
-  // --- Dynamic Unified Classes Builder ---
-  const subClasses = useMemo(() => {
+  // --- Dynamic Unified Custom Classes Builder ---
+  const customSubClasses = useMemo(() => {
     if (!selectedLembaga) return [];
     if (activeTab === 'Rombel') {
       return groupsList
@@ -1005,25 +1372,234 @@ export default function LembagaKelasSub({
           waliKelas: g.pembimbing,
           tingkatan: 'Lainnya',
           kapasitas: g.kuota || 20,
-          lembagaId: selectedLembaga.id
+          lembagaId: selectedLembaga.id,
+          isDefault: false
         }));
     } else {
-      return getClassesOfLembaga(selectedLembaga.id);
+      return getClassesOfLembaga(selectedLembaga.id).filter(c => !isDefaultClass(c));
     }
-  }, [selectedLembaga, activeTab, groupsList, kelasList]);
+  }, [selectedLembaga, activeTab, groupsList, kelasList, selectedGender]);
+
+  const subClasses = customSubClasses;
+
+  // --- Dynamic Data Induk Students (All students in this Lembaga) ---
+  const allStudentsOfLembaga = useMemo(() => {
+    if (!selectedLembaga) return [];
+    if (activeTab === 'Rombel') {
+      const assignedIds = new Set(
+        assignmentsList
+          .filter(a => a.kategoriId === selectedLembaga.id || customSubClasses.some(c => c.id === a.kelompokId))
+          .map(a => a.santriId)
+      );
+      return santriList.filter(s => {
+        if (!isGenderMatch(s.gender, selectedGender)) return false;
+        return assignedIds.has(s.id);
+      });
+    } else {
+      return santriList.filter(s => {
+        if (!isGenderMatch(s.gender, selectedGender)) return false;
+        return isStudentInLembaga(s, selectedLembaga);
+      });
+    }
+  }, [santriList, selectedLembaga, selectedGender, activeTab, assignmentsList, customSubClasses]);
+
+  // --- Dynamic Calon Peserta Didik Students (Students not in custom classes) ---
+  const calonStudentsOfLembaga = useMemo(() => {
+    if (!selectedLembaga) return [];
+    
+    if (activeTab === 'Rombel') {
+      const assignedToCustomGroupIds = new Set(
+        assignmentsList
+          .filter(a => customSubClasses.some(c => c.id === a.kelompokId))
+          .map(a => a.santriId)
+      );
+      return allStudentsOfLembaga.filter(s => !assignedToCustomGroupIds.has(s.id));
+    } else {
+      const assignedToCustomClassIds = new Set<string>();
+      customSubClasses.forEach(c => {
+        getStudentsInClass(c, selectedLembaga).forEach(s => assignedToCustomClassIds.add(s.id));
+      });
+      return allStudentsOfLembaga.filter(s => !assignedToCustomClassIds.has(s.id));
+    }
+  }, [allStudentsOfLembaga, selectedLembaga, activeTab, assignmentsList, customSubClasses, getStudentsInClass]);
+
+  // --- Class Pill Items in Horizontal Scroll ---
+  // Mandatory Default Classes: 1. Data Induk, 2. Calon peserta didik + Custom User Classes
+  const classPillItems = useMemo(() => {
+    if (!selectedLembaga) return [];
+
+    // 1. "Data Induk" default pill (representing all students in this lembaga/rombel)
+    const indukPill: any = {
+      id: 'default-induk',
+      nama: 'Data Induk',
+      displayName: 'DATA INDUK',
+      pillType: 'induk',
+      count: allStudentsOfLembaga.length,
+      waliKelas: '-',
+      tingkatan: 'Data Induk',
+      lembagaId: selectedLembaga.id,
+      isDefault: true
+    };
+
+    // 2. "Calon peserta didik" default pill (representing all students not in custom classes)
+    const calonClassName = getDefaultCalonClassName(selectedLembaga, selectedGender);
+    const calonPill: any = {
+      id: 'default-calon',
+      nama: calonClassName,
+      displayName: calonClassName.toUpperCase(),
+      pillType: 'calon',
+      count: calonStudentsOfLembaga.length,
+      waliKelas: '-',
+      tingkatan: 'Calon Pelajar',
+      lembagaId: selectedLembaga.id,
+      isDefault: true
+    };
+
+    // 3. User-created custom classes with their student counts
+    const classPills = customSubClasses.map(c => {
+      let count = 0;
+      if (activeTab === 'Rombel') {
+        const assignedIds = assignmentsList
+          .filter(a => a.kelompokId === c.id)
+          .map(a => a.santriId);
+        count = santriList.filter(s => assignedIds.includes(s.id) && isGenderMatch(s.gender, selectedGender)).length;
+      } else {
+        count = getStudentsInClass(c, selectedLembaga).length;
+      }
+      return {
+        ...c,
+        pillType: 'kelas',
+        displayName: c.nama.toUpperCase(),
+        count,
+        isDefault: false
+      };
+    });
+
+    return [indukPill, calonPill, ...classPills];
+  }, [selectedLembaga, customSubClasses, allStudentsOfLembaga, calonStudentsOfLembaga, activeTab, assignmentsList, santriList, selectedGender, getStudentsInClass]);
+
+  const effectiveSelectedKelas = useMemo(() => {
+    if (selectedKelas) {
+      const match = classPillItems.find(p => p.id === selectedKelas.id);
+      return match || selectedKelas;
+    }
+    return classPillItems.length > 0 ? classPillItems[0] : null;
+  }, [selectedKelas, classPillItems]);
+
+  // --- Horizontal Scroll Management for Daftar Kelas Pills ---
+  const checkPillsScroll = useCallback(() => {
+    const el = classPillsContainerRef.current;
+    if (!el) return;
+    const hasOverflow = el.scrollWidth > el.clientWidth + 4;
+    setCanScrollPillsLeft(el.scrollLeft > 6);
+    setCanScrollPillsRight(hasOverflow && el.scrollLeft < el.scrollWidth - el.clientWidth - 6);
+  }, []);
+
+  const scrollPills = useCallback((direction: 'left' | 'right') => {
+    const el = classPillsContainerRef.current;
+    if (!el) return;
+    const scrollAmount = Math.max(220, Math.floor(el.clientWidth * 0.65));
+    el.scrollBy({
+      left: direction === 'left' ? -scrollAmount : scrollAmount,
+      behavior: 'smooth'
+    });
+  }, []);
+
+  // Update pills scroll indicators on scroll, resize, or content changes
+  useEffect(() => {
+    const el = classPillsContainerRef.current;
+    if (!el) return;
+
+    checkPillsScroll();
+    const handleScroll = () => checkPillsScroll();
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('resize', handleScroll);
+
+    const timer = setTimeout(checkPillsScroll, 150);
+
+    return () => {
+      el.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleScroll);
+      clearTimeout(timer);
+    };
+  }, [checkPillsScroll, classPillItems, selectedLembaga]);
+
+  // Translate vertical wheel over pills container into smooth horizontal scroll
+  useEffect(() => {
+    const el = classPillsContainerRef.current;
+    if (!el) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      if (el.scrollWidth > el.clientWidth) {
+        if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+          e.preventDefault();
+          el.scrollLeft += e.deltaY;
+          checkPillsScroll();
+        }
+      }
+    };
+
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, [checkPillsScroll, classPillItems.length]);
+
+  // Auto-scroll selected pill into view smoothly
+  useEffect(() => {
+    if (!effectiveSelectedKelas || !classPillsContainerRef.current) return;
+    const activePill = classPillsContainerRef.current.querySelector<HTMLElement>(`[data-pill-id="${effectiveSelectedKelas.id}"]`);
+    if (activePill) {
+      activePill.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+  }, [effectiveSelectedKelas?.id]);
+
+  // Drag-to-scroll handlers for desktop mouse
+  const handlePillsMouseDown = (e: React.MouseEvent) => {
+    const el = classPillsContainerRef.current;
+    if (!el) return;
+    isMouseDownPillsRef.current = true;
+    startXPillsPosRef.current = e.pageX - el.offsetLeft;
+    startPillsScrollLeftRef.current = el.scrollLeft;
+    hasDraggedPillsRef.current = false;
+  };
+
+  const handlePillsMouseMove = (e: React.MouseEvent) => {
+    if (!isMouseDownPillsRef.current) return;
+    const el = classPillsContainerRef.current;
+    if (!el) return;
+    const x = e.pageX - el.offsetLeft;
+    const walk = (x - startXPillsPosRef.current) * 1.5;
+    if (Math.abs(walk) > 4) {
+      hasDraggedPillsRef.current = true;
+    }
+    el.scrollLeft = startPillsScrollLeftRef.current - walk;
+    checkPillsScroll();
+  };
+
+  const handlePillsMouseUpOrLeave = () => {
+    isMouseDownPillsRef.current = false;
+  };
 
   // --- Dynamic Unified Students Getter ---
   const currentClassStudents = useMemo(() => {
-    if (!selectedKelas) return [];
+    if (!effectiveSelectedKelas || !selectedLembaga) return [];
+    
+    if (effectiveSelectedKelas.id === 'default-induk' || effectiveSelectedKelas.pillType === 'induk' || effectiveSelectedKelas.id === 'all' || effectiveSelectedKelas.pillType === 'all') {
+      return allStudentsOfLembaga;
+    }
+    
+    if (effectiveSelectedKelas.id === 'default-calon' || effectiveSelectedKelas.pillType === 'calon' || effectiveSelectedKelas.id === 'unassigned' || effectiveSelectedKelas.pillType === 'unassigned') {
+      return calonStudentsOfLembaga;
+    }
+
     if (activeTab === 'Rombel') {
       const assignedIds = assignmentsList
-        .filter(a => a.kelompokId === selectedKelas.id)
+        .filter(a => a.kelompokId === effectiveSelectedKelas.id)
         .map(a => a.santriId);
-      return santriList.filter(s => assignedIds.includes(s.id) && s.gender === selectedGender);
+      return santriList.filter(s => assignedIds.includes(s.id) && isGenderMatch(s.gender, selectedGender));
     } else {
-      return getStudentsInClass(selectedKelas, selectedLembaga);
+      return getStudentsInClass(effectiveSelectedKelas, selectedLembaga);
     }
-  }, [selectedKelas, selectedLembaga, activeTab, assignmentsList, santriList, selectedGender, kelasList]);
+  }, [effectiveSelectedKelas, selectedLembaga, allStudentsOfLembaga, calonStudentsOfLembaga, activeTab, assignmentsList, santriList, selectedGender, getStudentsInClass]);
 
   // Filtered students by search query and status filter
   const searchedStudents = useMemo(() => {
@@ -1033,7 +1609,12 @@ export default function LembagaKelasSub({
         (s.nama || '').toLowerCase().includes(q) ||
         (s.nik && s.nik.toLowerCase().includes(q)) ||
         (s.nis && s.nis.toLowerCase().includes(q)) ||
+        (s.nism && s.nism.toLowerCase().includes(q)) ||
         (s.nisn && s.nisn.toLowerCase().includes(q)) ||
+        (s.tempatLahir && s.tempatLahir.toLowerCase().includes(q)) ||
+        (s.namaAyah && s.namaAyah.toLowerCase().includes(q)) ||
+        (s.namaIbu && s.namaIbu.toLowerCase().includes(q)) ||
+        (s.kelasMhd && s.kelasMhd.toLowerCase().includes(q)) ||
         (s.indukMhd && s.indukMhd.toLowerCase().includes(q)) ||
         (s.indukWustho && s.indukWustho.toLowerCase().includes(q)) ||
         (s.indukUlya && s.indukUlya.toLowerCase().includes(q))
@@ -1043,7 +1624,8 @@ export default function LembagaKelasSub({
 
       // Apply status filter
       if (statusFilter && statusFilter !== 'Semua') {
-        const isCP = !!(selectedKelas && isDefaultClass(selectedKelas));
+        const isInduk = !!(effectiveSelectedKelas && (effectiveSelectedKelas.pillType === 'induk' || effectiveSelectedKelas.id === 'default-induk' || effectiveSelectedKelas.pillType === 'all' || effectiveSelectedKelas.id === 'all' || (effectiveSelectedKelas.nama && effectiveSelectedKelas.nama.trim().toLowerCase() === 'data induk')));
+        const isCP = !isInduk && !!(effectiveSelectedKelas && (isDefaultClass(effectiveSelectedKelas) || effectiveSelectedKelas.pillType === 'calon' || effectiveSelectedKelas.id === 'default-calon' || isCalonClass(effectiveSelectedKelas.nama)));
         if (isCP) {
           // Status EMIS filter: 'Terdaftar' or 'Belum'
           const isTerdaftar = isEmisTerdaftar(s.statusEmis);
@@ -1065,19 +1647,43 @@ export default function LembagaKelasSub({
 
       return true;
     });
-  }, [currentClassStudents, searchQuery, statusFilter, selectedKelas]);
+  }, [currentClassStudents, searchQuery, statusFilter, effectiveSelectedKelas]);
 
   // Sort and filter students
   const filteredStudents = useMemo(() => {
     return [...searchedStudents].sort((a, b) => {
       if (!sortField) return 0;
       
-      let valA = a[sortField] || '';
-      let valB = b[sortField] || '';
+      let valA = (a as any)[sortField] || '';
+      let valB = (b as any)[sortField] || '';
       
       if (sortField === 'nik') {
         valA = a.nik || '';
         valB = b.nik || '';
+      } else if (sortField === 'nism') {
+        valA = a.nism || '';
+        valB = b.nism || '';
+      } else if (sortField === 'nisn') {
+        valA = a.nisn || '';
+        valB = b.nisn || '';
+      } else if (sortField === 'tempatLahir') {
+        valA = a.tempatLahir || '';
+        valB = b.tempatLahir || '';
+      } else if (sortField === 'tanggalLahir') {
+        valA = a.tanggalLahir || '';
+        valB = b.tanggalLahir || '';
+      } else if (sortField === 'namaAyah') {
+        valA = a.namaAyah || '';
+        valB = b.namaAyah || '';
+      } else if (sortField === 'namaIbu') {
+        valA = a.namaIbu || '';
+        valB = b.namaIbu || '';
+      } else if (sortField === 'kelasMhd') {
+        valA = a.kelasMhd || a.pendidikanInternal || a.indukMhd || '';
+        valB = b.kelasMhd || b.pendidikanInternal || b.indukMhd || '';
+      } else if (sortField === 'semester') {
+        valA = a.semester || 'Semester 1';
+        valB = b.semester || 'Semester 1';
       } else if (sortField === 'statusKeanggotaan') {
         valA = a.statusKeanggotaan || '';
         valB = b.statusKeanggotaan || '';
@@ -1104,15 +1710,14 @@ export default function LembagaKelasSub({
     });
   }, [searchedStudents, sortField, sortDirection]);
 
-  // --- Automatical Selection of Topmost Class ---
+  // --- Class selection and cleanup ---
   useEffect(() => {
     if (selectedLembaga) {
       const classes = subClasses;
-      if (classes.length > 0) {
-        // Find if selectedKelas is already in this new list, otherwise fallback to the first
+      if (classes.length > 0 && selectedKelas) {
         const stillExists = classes.find(c => c.id === selectedKelas?.id);
         if (!stillExists) {
-          setSelectedKelas(classes[0]);
+          setSelectedKelas(null);
         }
       } else {
         setSelectedKelas(null);
@@ -1122,7 +1727,8 @@ export default function LembagaKelasSub({
     }
     setSearchQuery('');
     setActiveActionStudentId(null);
-  }, [selectedLembaga, activeTab]);
+    setClassListSearch('');
+  }, [selectedLembaga?.id, activeTab]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -1158,6 +1764,8 @@ export default function LembagaKelasSub({
       setLemKode((lem.kode || '').toUpperCase().slice(0, 4));
       setLemLogo(lem.logo || '');
       setLemDeskripsi(lem.deskripsi || '');
+      setLemNomorStatistik(lem.nomorStatistik || lem.nomor_statistik || '');
+      setLemNpsn(lem.npsn || '');
       setTaMulaiTanggal(lem.taMulaiTanggal || 1);
       setTaMulaiBulan(lem.taMulaiBulan || 7);
       setTaSelesaiTanggal(lem.taSelesaiTanggal || 30);
@@ -1168,6 +1776,8 @@ export default function LembagaKelasSub({
       setLemKode('');
       setLemLogo('');
       setLemDeskripsi('');
+      setLemNomorStatistik('');
+      setLemNpsn('');
       setTaMulaiTanggal(1);
       setTaMulaiBulan(7);
       setTaSelesaiTanggal(30);
@@ -1228,11 +1838,18 @@ export default function LembagaKelasSub({
 
       if (editingLembaga) {
         const { classesCount, studentsCount, ...cleanLembaga } = editingLembaga;
+        const cleanStatistik = lemNomorStatistik.trim() || null;
+        const cleanNpsn = lemNpsn.trim() || null;
+        const cleanLogo = lemLogo.trim() || null;
+
         await onUpdateLembaga({
           ...cleanLembaga,
           nama: lemNama.trim(),
           kode: finalKode,
-          logo: lemLogo || undefined,
+          logo: cleanLogo || undefined,
+          nomorStatistik: cleanStatistik || '',
+          nomor_statistik: cleanStatistik || '',
+          npsn: cleanNpsn || '',
           deskripsi: lemDeskripsi.trim(),
           taMulaiTanggal,
           taMulaiBulan,
@@ -1245,7 +1862,10 @@ export default function LembagaKelasSub({
             ...selectedLembaga,
             nama: lemNama.trim(),
             kode: finalKode,
-            logo: lemLogo || undefined,
+            logo: cleanLogo || undefined,
+            nomorStatistik: cleanStatistik || '',
+            nomor_statistik: cleanStatistik || '',
+            npsn: cleanNpsn || '',
             deskripsi: lemDeskripsi.trim(),
             taMulaiTanggal,
             taMulaiBulan,
@@ -1255,6 +1875,9 @@ export default function LembagaKelasSub({
         }
       } else {
         const newLembagaId = 'L-' + Date.now();
+        const cleanStatistik = lemNomorStatistik.trim() || null;
+        const cleanNpsn = lemNpsn.trim() || null;
+        const cleanLogo = lemLogo.trim() || null;
 
         const savedLem = await onAddLembaga({
           id: newLembagaId,
@@ -1262,7 +1885,10 @@ export default function LembagaKelasSub({
           kode: finalKode,
           gender: selectedGender,
           jenis: activeTab,
-          logo: lemLogo || undefined,
+          logo: cleanLogo || undefined,
+          nomorStatistik: cleanStatistik || '',
+          nomor_statistik: cleanStatistik || '',
+          npsn: cleanNpsn || '',
           deskripsi: lemDeskripsi.trim(),
           taMulaiTanggal,
           taMulaiBulan,
@@ -1272,17 +1898,7 @@ export default function LembagaKelasSub({
 
         const actualLembagaId = savedLem?.id || newLembagaId;
 
-        // Automatically create a default class named "Calon Peserta Didik"
-        await onAddKelas({
-          id: 'K-' + Date.now() + '-default',
-          lembagaId: actualLembagaId,
-          nama: 'Calon Peserta Didik',
-          waliKelas: '-',
-          tingkatan: 'Lainnya',
-          kapasitas: 999
-        });
-
-        showToast('Lembaga baru berhasil dibuat beserta kelas default.');
+        showToast('Lembaga baru berhasil dibuat.');
       }
     }
 
@@ -1335,9 +1951,7 @@ export default function LembagaKelasSub({
     setIsKelasModalOpen(true);
   };
 
-  const handleSaveKelas = () => {
-    const isLembagaFormal = false;
-    const isCalonPelajar = Boolean(isLembagaFormal && editingKelas && isDefaultClass(editingKelas));
+  const handleSaveKelas = async () => {
     const targetNama = kelNama.trim();
     if (!selectedLembaga || !targetNama) return;
 
@@ -1346,39 +1960,38 @@ export default function LembagaKelasSub({
     if (activeTab === 'Rombel') {
       if (editingKelas) {
         if (onUpdateGroup) {
-          onUpdateGroup({
+          const upGrp = {
             id: editingKelas.id,
             kategoriId: selectedLembaga.id,
-            nama: kelNama.trim(),
+            nama: targetNama,
             pembimbing: finalWali,
-            kuota: Number(kelKapasitas)
-          });
+            kuota: Number(kelKapasitas),
+            gender: selectedGender
+          };
+          await onUpdateGroup(upGrp);
           showToast('Kelompok rombel berhasil diperbarui.');
           if (selectedKelas?.id === editingKelas.id) {
-            setSelectedKelas({
-              ...selectedKelas,
-              nama: kelNama.trim(),
-              waliKelas: finalWali,
-              kapasitas: Number(kelKapasitas)
-            });
+            setSelectedKelas(upGrp);
           }
         }
       } else {
         if (onAddGroup) {
-          onAddGroup({
+          const newGrp = {
             id: 'G-' + Date.now(),
             kategoriId: selectedLembaga.id,
-            nama: kelNama.trim(),
+            nama: targetNama,
             pembimbing: finalWali,
             kuota: Number(kelKapasitas),
             gender: selectedGender
-          });
+          };
+          const savedGrp = await onAddGroup(newGrp);
+          setSelectedKelas(savedGrp || newGrp);
           showToast('Kelompok rombel baru berhasil ditambahkan.');
         }
       }
     } else {
       if (editingKelas) {
-        onUpdateKelas({
+        const upKel: Kelas = {
           ...editingKelas,
           nama: targetNama,
           waliKelas: finalWali,
@@ -1388,30 +2001,28 @@ export default function LembagaKelasSub({
           batasUsiaBulan: Number(kelBatasUsiaBulan),
           batasUsiaUmurMin: Number(kelBatasUsiaUmurMin),
           batasUsiaUmurMax: Number(kelBatasUsiaUmurMax)
-        });
+        };
+        await onUpdateKelas(upKel);
         showToast('Kelas berhasil diperbarui.');
         if (selectedKelas?.id === editingKelas.id) {
-          setSelectedKelas({
-            ...selectedKelas,
-            nama: targetNama,
-            waliKelas: finalWali,
-            tingkatan: kelTingkat,
-            kapasitas: Number(kelKapasitas),
-            batasUsiaHari: Number(kelBatasUsiaHari),
-            batasUsiaBulan: Number(kelBatasUsiaBulan),
-            batasUsiaUmurMin: Number(kelBatasUsiaUmurMin),
-            batasUsiaUmurMax: Number(kelBatasUsiaUmurMax)
-          });
+          setSelectedKelas(upKel);
         }
       } else {
-        onAddKelas({
+        const newKel: Kelas = {
           id: 'K-' + Date.now(),
           lembagaId: selectedLembaga.id,
-          nama: kelNama.trim(),
+          nama: targetNama,
           waliKelas: finalWali,
           tingkatan: kelTingkat,
-          kapasitas: Number(kelKapasitas)
-        });
+          kapasitas: Number(kelKapasitas),
+          batasUsiaHari: Number(kelBatasUsiaHari),
+          batasUsiaBulan: Number(kelBatasUsiaBulan),
+          batasUsiaUmurMin: Number(kelBatasUsiaUmurMin),
+          batasUsiaUmurMax: Number(kelBatasUsiaUmurMax),
+          isDefault: false
+        };
+        const saved = await onAddKelas(newKel);
+        setSelectedKelas(saved || newKel);
         showToast('Kelas baru berhasil ditambahkan.');
       }
     }
@@ -1490,15 +2101,34 @@ export default function LembagaKelasSub({
     setConfirmRemoveOpen(true);
   };
 
+  const handleRemoveStudentFromCalon = (student: Santri) => {
+    if (!selectedLembaga) return;
+    const calonName = getDefaultCalonClassName(selectedLembaga, student.gender || selectedGender);
+    setConfirmRemoveData({
+      type: 'single',
+      studentName: student.nama,
+      studentId: student.id,
+      label: 'calon peserta didik',
+      className: calonName,
+      onConfirm: () => {
+        onUpdateSantriClass(student.id, 'Tanpa Kelas', selectedLembaga.id);
+        showToast(`${student.nama} berhasil dikeluarkan dari daftar ${calonName}.`);
+      }
+    });
+    setConfirmRemoveOpen(true);
+  };
+
   const handleExecuteTransfer = () => {
-    if (!transferStudent || !destClassId || !selectedKelas) return;
-    const targetLemId = transferLembagaId || selectedLembaga.id;
+    if (!transferStudent || !destClassId) return;
+    const targetLemId = transferLembagaId || selectedLembaga?.id;
+    if (!targetLemId) return;
 
     if (activeTab === 'Rombel') {
+      const curKelId = selectedKelas ? selectedKelas.id : undefined;
       if (onRemoveAssignment && onAddAssignment) {
-        // Remove from current
-        onRemoveAssignment(transferStudent.id, selectedKelas.id);
-        // Add to dest
+        if (curKelId) {
+          onRemoveAssignment(transferStudent.id, curKelId);
+        }
         onAddAssignment({
           id: 'RA-' + Date.now(),
           santriId: transferStudent.id,
@@ -1509,13 +2139,14 @@ export default function LembagaKelasSub({
       }
     } else {
       let destClassObj = kelasList.find(c => c.id === destClassId);
-      if (!destClassObj && destClassId.startsWith('default-')) {
+      if (!destClassObj && (destClassId.startsWith('default-') || destClassId.startsWith('calon-'))) {
+        const targetLem = lembagasList.find(l => l.id === targetLemId) || selectedLembaga;
         destClassObj = {
           id: destClassId,
           lembagaId: String(targetLemId),
-          nama: 'Calon Peserta Didik',
+          nama: getDefaultCalonClassName(targetLem, transferStudent.gender || selectedGender),
           waliKelas: '-',
-          tingkatan: 'Lainnya',
+          tingkatan: 'Calon Pelajar',
           isDefault: true
         };
       }
@@ -1560,14 +2191,6 @@ export default function LembagaKelasSub({
       }
 
       if (currentClassStudentIds.includes(s.id)) return false;
-
-      // Khusus pada modal tambah anggota yang dibuka di kelas lembaga formal (kecuali calon peserta didik):
-      // buat daftar yang ditampilkan hanya yang EMIS sudah terdaftar.
-      if (activeTab !== 'Rombel' && isFormalLembaga && !isCalonClass) {
-        if (!isEmisTerdaftar(s.statusEmis)) {
-          return false;
-        }
-      }
 
       return true;
     });
@@ -1676,12 +2299,6 @@ export default function LembagaKelasSub({
       }
 
       if (currentClassSet.has(s.id)) return false;
-
-      if (activeTab !== 'Rombel' && isFormalLembaga && !isCalonClass) {
-        if (!isEmisTerdaftar(s.statusEmis)) {
-          return false;
-        }
-      }
 
       return true;
     });
@@ -1837,25 +2454,48 @@ export default function LembagaKelasSub({
   const verifiedPercent = totalStudents > 0 ? Math.round((verifiedCount / totalStudents) * 100) : 0;
   const pendingPercent = totalStudents > 0 ? 100 - verifiedPercent : 0;
 
-  // Compute EMIS stats (3 status: Terdaftar, Invalid, Belum)
+  // Compute EMIS stats (5 status: Terdaftar, Invalid, Belum, Keluar, Lulus)
   const emisTerdaftarCount = currentClassStudents.filter(s => s.statusEmis === 'Terdaftar').length;
   const emisInvalidCount = currentClassStudents.filter(s => s.statusEmis === 'Invalid').length;
-  const emisBelumCount = currentClassStudents.filter(s => !s.statusEmis || s.statusEmis === 'Belum' || (s.statusEmis !== 'Terdaftar' && s.statusEmis !== 'Invalid')).length;
+  const emisKeluarCount = currentClassStudents.filter(s => s.statusEmis === 'Keluar').length;
+  const emisLulusCount = currentClassStudents.filter(s => s.statusEmis === 'Lulus').length;
+  const emisBelumCount = currentClassStudents.filter(s => !s.statusEmis || s.statusEmis === 'Belum').length;
   const emisRegisteredCount = emisTerdaftarCount;
   
   const emisTerdaftarPercent = totalStudents > 0 ? (emisTerdaftarCount / totalStudents) * 100 : 0;
   const emisInvalidPercent = totalStudents > 0 ? (emisInvalidCount / totalStudents) * 100 : 0;
+  const emisKeluarPercent = totalStudents > 0 ? (emisKeluarCount / totalStudents) * 100 : 0;
+  const emisLulusPercent = totalStudents > 0 ? (emisLulusCount / totalStudents) * 100 : 0;
   const emisBelumPercent = totalStudents > 0 ? (emisBelumCount / totalStudents) * 100 : 0;
 
   // Pagination & Students logic calculated at component root for consistent sharing
-  const itemsPerPage = 50;
   const totalPages = Math.ceil(filteredStudents.length / itemsPerPage) || 1;
   const activePage = Math.min(currentPage, totalPages);
   const startIndex = (activePage - 1) * itemsPerPage;
-  const paginatedStudents = filteredStudents.slice(startIndex, startIndex + itemsPerPage);
+  const endIndex = Math.min(startIndex + itemsPerPage, filteredStudents.length);
+  const paginatedStudents = filteredStudents.slice(startIndex, endIndex);
 
-  const isCalonPelajarPage = !!(selectedKelas && isDefaultClass(selectedKelas));
+  const isIndukPage = !!(effectiveSelectedKelas && (effectiveSelectedKelas.pillType === 'induk' || effectiveSelectedKelas.id === 'default-induk' || effectiveSelectedKelas.pillType === 'all' || effectiveSelectedKelas.id === 'all' || (effectiveSelectedKelas.nama && effectiveSelectedKelas.nama.trim().toLowerCase() === 'data induk')));
+  const isCalonPelajarPage = !isIndukPage && !!(effectiveSelectedKelas && (effectiveSelectedKelas.pillType === 'calon' || effectiveSelectedKelas.id === 'default-calon' || effectiveSelectedKelas.id === 'unassigned' || effectiveSelectedKelas.pillType === 'unassigned' || isCalonClass(effectiveSelectedKelas.nama)));
+  const isLulusanPage = !!(effectiveSelectedKelas && (effectiveSelectedKelas.isLulusan || effectiveSelectedKelas.pillType === 'lulusan'));
+  const isCurrentFormal = activeTab === 'Formal' || (selectedLembaga && getLembagaJenis(selectedLembaga) === 'Formal');
   const gridColsClass = 'grid-cols-[55px_240px_110px_110px_100px_100px_50px]';
+
+  const shouldShowColumn = (colKey: string): boolean => {
+    if (colKey === 'nama') return true;
+    if (colKey === 'statusEmis') {
+      if (isCalonPelajarPage) {
+        // khusus kelas calon di masing lembaga formal tolong tampilkan kolom keterangan emis
+        return visibleColumns['statusEmis'] ?? true;
+      }
+      if (isCurrentFormal) {
+        // Lembaga formal kelas reguler: hanya tampil jika diaktifkan user di atur visibilitas
+        return visibleColumns['statusEmis'] ?? false;
+      }
+      return visibleColumns['statusEmis'] ?? true;
+    }
+    return visibleColumns[colKey] ?? false;
+  };
 
   // Toggle selection for individual student
   const handleToggleStudentSelection = (studentId: string) => {
@@ -1955,13 +2595,14 @@ export default function LembagaKelasSub({
       }
     } else {
       let destClassObj = kelasList.find(c => c.id === bulkDestClassId);
-      if (!destClassObj && bulkDestClassId.startsWith('default-')) {
+      if (!destClassObj && (bulkDestClassId.startsWith('default-') || bulkDestClassId.startsWith('calon-'))) {
+        const targetLem = lembagasList.find(l => l.id === targetLemId) || selectedLembaga;
         destClassObj = {
           id: bulkDestClassId,
           lembagaId: String(targetLemId),
-          nama: 'Calon Peserta Didik',
+          nama: getDefaultCalonClassName(targetLem, selectedGender),
           waliKelas: '-',
-          tingkatan: 'Lainnya',
+          tingkatan: 'Calon Pelajar',
           isDefault: true
         };
       }
@@ -1985,42 +2626,325 @@ export default function LembagaKelasSub({
     setBulkTransferLembagaId('');
   };
 
-  // Handle printing PDF / document for the selected institution (Lembaga)
-  const handlePrintLembagaPDF = () => {
-    if (!selectedLembaga) return;
-    const profile = getPesantrenProfile();
-    
-    // Get all students for this institution
-    const lembagaStudents = santriList.filter(s => {
-      if (s.gender !== selectedGender) return false;
-      return s.pendidikanInternal ? s.pendidikanInternal.split(',').map(x => x.trim()).includes(selectedLembaga.id) : false;
-    });
+  // Helper date formatting for export and printing
+  const formatTanggalIndo = (dateStr?: string) => {
+    if (!dateStr) return '-';
+    try {
+      let d: Date;
+      if (dateStr.includes('-')) {
+        const parts = dateStr.split('-');
+        if (parts[0].length === 4) {
+          d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+        } else {
+          d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+        }
+      } else {
+        d = new Date(dateStr);
+      }
+      if (isNaN(d.getTime())) return dateStr;
+      return d.toLocaleDateString('id-ID', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      });
+    } catch (e) {
+      return dateStr;
+    }
+  };
 
-    if (lembagaStudents.length === 0) {
-      alert(`Tidak ada data santri pada ${selectedLembaga.nama}.`);
+  const getSantriAgeDisplay = (birthDateStr?: string) => {
+    const age = calculateRealtimeAge(birthDateStr);
+    return age !== null ? `${age} Thn` : '-';
+  };
+
+  // Dynamic helper to resolve data, titles, and filenames for current view
+  const getCurrentViewExportData = () => {
+    if (!selectedLembaga) {
+      return {
+        title: 'DATA SANTRI',
+        modalTitle: 'Ekspor Data Santri',
+        modalDesc: 'Pilih format dokumen untuk mengunduh Excel atau mencetak data.',
+        students: [],
+        defaultFileName: 'Data_Santri'
+      };
+    }
+    const dateStr = new Date().toISOString().split('T')[0];
+    const cleanLemName = selectedLembaga.nama.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    if (effectiveSelectedKelas) {
+      const cleanKelasName = effectiveSelectedKelas.nama.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const classStudentsToUse = (searchedStudents.length > 0 || searchQuery.trim() !== '' || statusFilter !== 'Semua')
+        ? searchedStudents
+        : currentClassStudents;
+      return {
+        title: `DAFTAR SANTRI KELAS ${effectiveSelectedKelas.nama.toUpperCase()} - ${selectedLembaga.nama.toUpperCase()}`,
+        modalTitle: `Ekspor Data Kelas ${effectiveSelectedKelas.nama} - ${selectedLembaga.nama}`,
+        modalDesc: `Pilih format dokumen untuk mengunduh Excel (.xls) atau mencetak data santri kelas ${effectiveSelectedKelas.nama} saat ini.`,
+        students: classStudentsToUse,
+        defaultFileName: `Kelas_${cleanKelasName}_${cleanLemName}_${selectedGender}_${dateStr}`
+      };
+    } else {
+      return {
+        title: `DATA SANTRI - ${selectedLembaga.nama.toUpperCase()}`,
+        modalTitle: `Ekspor Data Santri - ${selectedLembaga.nama}`,
+        modalDesc: `Pilih format dokumen untuk mengunduh Excel (.xls) atau mencetak data santri ${selectedLembaga.nama} saat ini.`,
+        students: currentClassStudents,
+        defaultFileName: `Data_${cleanLemName}_${selectedGender}_${dateStr}`
+      };
+    }
+  };
+
+  // Helper untuk mendapatkan kolom ekspor yang persis sesuai dengan tampilan tabel Lembaga / Kelas saat ini
+  const getActiveLembagaExportColumns = () => {
+    const isCalonPelajarPage = !isIndukPage && !!(effectiveSelectedKelas && (effectiveSelectedKelas.pillType === 'calon' || effectiveSelectedKelas.id === 'default-calon' || effectiveSelectedKelas.id === 'unassigned' || effectiveSelectedKelas.pillType === 'unassigned' || isCalonClass(effectiveSelectedKelas.nama)));
+
+    const shouldShowColumnLocal = (colKey: string): boolean => {
+      if (colKey === 'nama') return true;
+      if (colKey === 'statusEmis') {
+        if (isCalonPelajarPage) {
+          return visibleColumns['statusEmis'] ?? true;
+        }
+        if (isCurrentFormal) {
+          return visibleColumns['statusEmis'] ?? false;
+        }
+        return visibleColumns['statusEmis'] ?? true;
+      }
+      return visibleColumns[colKey] ?? false;
+    };
+
+    const allExportColumns = [
+      { id: 'nama', label: 'Nama Santri', isAlwaysVisible: true, isMono: false, isCenter: false, getValue: (s: Santri) => s.nama || '-' },
+      { id: 'nis', label: 'NIS', colKey: 'nis', isMono: true, isCenter: true, getValue: (s: Santri) => s.nis || '-' },
+      { id: 'nism', label: 'NISM', colKey: 'nism', isMono: true, isCenter: true, getValue: (s: Santri) => getSantriNismForLembaga(s, selectedLembaga) || '-' },
+      { id: 'nisn', label: 'NISN', colKey: 'nisn', isMono: true, isCenter: true, getValue: (s: Santri) => s.nisn || '-' },
+      { id: 'nik', label: 'NIK', colKey: 'nik', isMono: true, isCenter: true, getValue: (s: Santri) => s.nik || '-' },
+      { id: 'statusEmis', label: isCalonPelajarPage ? 'Keterangan EMIS' : 'EMIS', colKey: 'statusEmis', isMono: false, isCenter: true, getValue: (s: Santri) => s.statusEmis || 'Belum' },
+      { id: 'statusVerval', label: 'Verval', colKey: 'statusVerval', isMono: false, isCenter: true, getValue: (s: Santri) => s.statusVerval || (s.nisn && s.nisn.trim() !== '' ? 'Sukses' : 'Proses') },
+      { id: 'statusKeanggotaan', label: 'Status Keaktifan', colKey: 'statusKeanggotaan', isMono: false, isCenter: true, getValue: (s: Santri) => s.statusKeanggotaan || 'Aktif' },
+      { id: 'kelasMhd', label: 'Kelas MHD', colKey: 'kelasMhd', isMono: false, isCenter: false, getValue: (s: Santri) => s.kelasMhd || s.pendidikanInternal || s.indukMhd || '-' },
+      { id: 'indukMhd', label: 'Induk MHD', colKey: 'indukMhd', isMono: true, isCenter: true, getValue: (s: Santri) => s.indukMhd || '-' },
+      { id: 'indukWustho', label: 'Induk Wustho', colKey: 'indukWustho', isMono: true, isCenter: true, getValue: (s: Santri) => s.indukWustho || '-' },
+      { id: 'indukUlya', label: 'Induk Ulya', colKey: 'indukUlya', isMono: true, isCenter: true, getValue: (s: Santri) => s.indukUlya || '-' },
+      { id: 'noKk', label: 'No. KK', colKey: 'noKk', isMono: true, isCenter: true, getValue: (s: Santri) => s.noKk || '-' },
+      { id: 'tempatLahir', label: 'Tempat Lahir', colKey: 'tempatLahir', isMono: false, isCenter: false, getValue: (s: Santri) => s.tempatLahir || '-' },
+      { id: 'tanggalLahir', label: 'Tanggal Lahir', colKey: 'tanggalLahir', isMono: true, isCenter: true, getValue: (s: Santri) => formatTanggalIndo(s.tanggalLahir) },
+      { id: 'gender', label: 'Gender', colKey: 'gender', isMono: false, isCenter: true, getValue: (s: Santri) => s.gender === 'Putra' ? 'L' : s.gender === 'Putri' ? 'P' : (s.gender || '-') },
+      { id: 'pendidikanTerakhir', label: 'Pendidikan Terakhir', colKey: 'pendidikanTerakhir', isMono: false, isCenter: false, getValue: (s: Santri) => s.pendidikanTerakhir || '-' },
+      { id: 'pendidikanFormal', label: 'Pendidikan Formal', colKey: 'pendidikanFormal', isMono: false, isCenter: false, getValue: (s: Santri) => s.pendidikanFormal || '-' },
+      { id: 'kelas', label: 'Kelas', colKey: 'kelas', isMono: false, isCenter: false, getValue: (s: Santri) => s.kelas || '-' },
+      { id: 'kamar', label: 'Kamar', colKey: 'kamar', isMono: false, isCenter: false, getValue: (s: Santri) => s.kamar || '-' },
+      { id: 'asal', label: 'Asal Sekolah', colKey: 'asal', isMono: false, isCenter: false, getValue: (s: Santri) => s.asal || '-' },
+      { id: 'namaAyah', label: 'Nama Ayah', colKey: 'namaAyah', isMono: false, isCenter: false, getValue: (s: Santri) => s.namaAyah || '-' },
+      { id: 'nikAyah', label: 'NIK Ayah', colKey: 'nikAyah', isMono: true, isCenter: true, getValue: (s: Santri) => s.nikAyah || '-' },
+      { id: 'pekerjaanAyah', label: 'Pekerjaan Ayah', colKey: 'pekerjaanAyah', isMono: false, isCenter: false, getValue: (s: Santri) => s.pekerjaanAyah || '-' },
+      { id: 'pendidikanAyah', label: 'Pendidikan Ayah', colKey: 'pendidikanAyah', isMono: false, isCenter: false, getValue: (s: Santri) => s.pendidikanAyah || '-' },
+      { id: 'namaIbu', label: 'Nama Ibu', colKey: 'namaIbu', isMono: false, isCenter: false, getValue: (s: Santri) => s.namaIbu || '-' },
+      { id: 'nikIbu', label: 'NIK Ibu', colKey: 'nikIbu', isMono: true, isCenter: true, getValue: (s: Santri) => s.nikIbu || '-' },
+      { id: 'pekerjaanIbu', label: 'Pekerjaan Ibu', colKey: 'pekerjaanIbu', isMono: false, isCenter: false, getValue: (s: Santri) => s.pekerjaanIbu || '-' },
+      { id: 'pendidikanIbu', label: 'Pendidikan Ibu', colKey: 'pendidikanIbu', isMono: false, isCenter: false, getValue: (s: Santri) => s.pendidikanIbu || '-' },
+      { id: 'anakKe', label: 'Anak Ke', colKey: 'anakKe', isMono: false, isCenter: true, getValue: (s: Santri) => s.anakKe !== undefined ? String(s.anakKe) : '-' },
+      { id: 'dariBersaudara', label: 'Jumlah Saudara', colKey: 'dariBersaudara', isMono: false, isCenter: true, getValue: (s: Santri) => s.dariBersaudara !== undefined ? String(s.dariBersaudara) : '-' },
+      { id: 'alamat', label: 'Alamat', colKey: 'alamat', isMono: false, isCenter: false, getValue: (s: Santri) => s.alamat || '-' },
+      { id: 'rt', label: 'RT', colKey: 'rt', isMono: false, isCenter: true, getValue: (s: Santri) => s.rt || '-' },
+      { id: 'rw', label: 'RW', colKey: 'rw', isMono: false, isCenter: true, getValue: (s: Santri) => s.rw || '-' },
+      { id: 'desa', label: 'Desa', colKey: 'desa', isMono: false, isCenter: false, getValue: (s: Santri) => s.desa || '-' },
+      { id: 'kecamatan', label: 'Kecamatan', colKey: 'kecamatan', isMono: false, isCenter: false, getValue: (s: Santri) => s.kecamatan || '-' },
+      { id: 'kabupaten', label: 'Kabupaten', colKey: 'kabupaten', isMono: false, isCenter: false, getValue: (s: Santri) => s.kabupaten || '-' },
+      { id: 'provinsi', label: 'Provinsi', colKey: 'provinsi', isMono: false, isCenter: false, getValue: (s: Santri) => s.provinsi || '-' },
+      { id: 'jarakRumah', label: 'Jarak (km)', colKey: 'jarakRumah', isMono: false, isCenter: true, getValue: (s: Santri) => s.jarakRumah !== undefined ? String(s.jarakRumah) : '-' },
+      { id: 'noHp', label: 'No. HP', colKey: 'noHp', isMono: true, isCenter: true, getValue: (s: Santri) => s.noHp || '-' },
+      { id: 'statusDomisili', label: 'Status Domisili', colKey: 'statusDomisili', isMono: false, isCenter: true, getValue: (s: Santri) => s.statusDomisili || '-' },
+      { id: 'tahunMasuk', label: 'Tahun Masuk', colKey: 'tahunMasuk', isMono: true, isCenter: true, getValue: (s: Santri) => s.tahunMasuk || getSantriTahunMasuk(s) || '-' },
+      { id: 'tanggalMasuk', label: 'Tgl Masuk', colKey: 'tanggalMasuk', isMono: true, isCenter: true, getValue: (s: Santri) => formatTanggalIndo(s.tanggalMasuk) },
+      { id: 'tanggalKeluar', label: 'Tgl Keluar', colKey: 'tanggalKeluar', isMono: true, isCenter: true, getValue: (s: Santri) => formatTanggalIndo(s.tanggalKeluar) },
+      { id: 'nomorLemari', label: 'No. Lemari', colKey: 'nomorLemari', isMono: false, isCenter: false, getValue: (s: Santri) => s.nomorLemari || '-' },
+      { id: 'catatan', label: 'Catatan', colKey: 'catatan', isMono: false, isCenter: false, getValue: (s: Santri) => s.catatan || '-' }
+    ];
+
+    return allExportColumns.filter(col => col.isAlwaysVisible || (col.colKey && shouldShowColumnLocal(col.colKey)));
+  };
+
+  const escapeXml = (str: any) => String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+
+  // Handle exporting XML-based Excel file for Lembaga (context-aware)
+  const handleExportExcelLembaga = (customFileName?: string) => {
+    if (!selectedLembaga) return;
+    const viewData = getCurrentViewExportData();
+    const studentsToExport = viewData.students;
+    if (studentsToExport.length === 0) {
+      alert(`Tidak ada data santri pada ${viewData.title} untuk diekspor.`);
       return;
     }
 
+    const noStatistik = selectedLembaga.nomorStatistik || selectedLembaga.nomor_statistik || '-';
+    const npsn = selectedLembaga.npsn || '-';
+    const dateStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+
+    const activeCols = getActiveLembagaExportColumns();
+    const headers = ['NO', ...activeCols.map(c => c.label)];
+
+    const rows = studentsToExport.map((s, idx) => [
+      idx + 1,
+      ...activeCols.map(c => c.getValue(s))
+    ]);
+
+    const colWidths = [
+      35,  // NO
+      ...activeCols.map(c => {
+        if (c.id === 'nama') return 160;
+        if (c.id === 'nism' || c.id === 'nik' || c.id === 'noKk' || c.id === 'nikAyah' || c.id === 'nikIbu') return 120;
+        if (c.id === 'tempatLahir' || c.id === 'namaAyah' || c.id === 'namaIbu' || c.id === 'alamat') return 130;
+        if (c.id === 'tanggalLahir' || c.id === 'tanggalMasuk' || c.id === 'tanggalKeluar') return 95;
+        return 85;
+      })
+    ];
+
+    let xml = `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Center" ss:WrapText="1"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+   </Borders>
+   <Font ss:FontName="Segoe UI" x:Family="Swiss" ss:Size="10" ss:Color="#334155"/>
+   <Interior/>
+   <NumberFormat ss:Format="@"/>
+   <Protection/>
+  </Style>
+  <Style ss:ID="TitleStyle">
+   <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="13" ss:Bold="1" ss:Color="#00693E"/>
+  </Style>
+  <Style ss:ID="MetaRow">
+   <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Color="#475569"/>
+  </Style>
+  <Style ss:ID="Header">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#047857"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#047857"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#047857"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#047857"/>
+   </Borders>
+   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#047857" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="CenterCell">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+   </Borders>
+   <Font ss:FontName="Segoe UI" x:Family="Swiss" ss:Size="10" ss:Color="#334155"/>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="Data Santri">
+  <Table>`;
+
+    colWidths.forEach(width => {
+      xml += `\n   <Column ss:Width="${width}"/>`;
+    });
+
+    // Metadata header rows
+    xml += `\n   <Row ss:Height="24">
+    <Cell ss:StyleID="TitleStyle"><Data ss:Type="String">${escapeXml(viewData.title)} (${escapeXml(selectedGender.toUpperCase())})</Data></Cell>
+   </Row>`;
+
+    xml += `\n   <Row ss:Height="18">
+    <Cell ss:StyleID="MetaRow"><Data ss:Type="String">No. Statistik: ${escapeXml(noStatistik)}   |   NPSN: ${escapeXml(npsn)}   |   Total Santri: ${studentsToExport.length} Santri   |   Tanggal Ekspor: ${escapeXml(dateStr)}</Data></Cell>
+   </Row>`;
+
+    xml += `\n   <Row ss:Height="10"></Row>`;
+
+    // Table Column Headers
+    xml += `\n   <Row ss:Height="26">`;
+    headers.forEach(header => {
+      xml += `\n    <Cell ss:StyleID="Header"><Data ss:Type="String">${escapeXml(header)}</Data></Cell>`;
+    });
+    xml += `\n   </Row>`;
+
+    // Table Data Rows
+    rows.forEach(row => {
+      xml += `\n   <Row ss:Height="20">`;
+      row.forEach((cell, cellIdx) => {
+        const isCenter = [0, 5, 6, 7, 10, 11, 12, 14].includes(cellIdx);
+        const styleAttr = isCenter ? ' ss:StyleID="CenterCell"' : '';
+        xml += `\n    <Cell${styleAttr}><Data ss:Type="String">${escapeXml(cell)}</Data></Cell>`;
+      });
+      xml += `\n   </Row>`;
+    });
+
+    xml += `\n  </Table>
+ </Worksheet>
+</Workbook>`;
+
+    const defaultName = `${viewData.defaultFileName}.xls`;
+    const filename = customFileName
+      ? (customFileName.toLowerCase().endsWith('.xls') || customFileName.toLowerCase().endsWith('.xlsx') ? customFileName : `${customFileName}.xls`)
+      : defaultName;
+
+    const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Handle printing PDF for Lembaga (context-aware)
+  const handlePrintPDFLembaga = (customFileName?: string) => {
+    if (!selectedLembaga) return;
+    const profile = getPesantrenProfile();
+    const viewData = getCurrentViewExportData();
+    const studentsToPrint = viewData.students;
+    if (studentsToPrint.length === 0) {
+      alert(`Tidak ada data santri pada ${viewData.title}.`);
+      return;
+    }
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
       alert('Gagal membuka jendela cetak. Pastikan pop-up dibolehkan di peramban Anda.');
       return;
     }
-
+    const noStatistik = selectedLembaga.nomorStatistik || selectedLembaga.nomor_statistik || '-';
+    const npsn = selectedLembaga.npsn || '-';
     const dateStr = new Date().toLocaleDateString('id-ID', {
       day: 'numeric',
       month: 'long',
       year: 'numeric'
     });
 
-    const rowsHtml = lembagaStudents.map((s, idx) => `
+    const activeCols = getActiveLembagaExportColumns();
+
+    const rowsHtml = studentsToPrint.map((s, idx) => `
       <tr>
         <td style="text-align: center;">${idx + 1}</td>
-        <td>${s.nis || '-'}</td>
-        <td><strong>${s.nama}</strong></td>
-        <td>${s.gender || '-'}</td>
-        <td>${s.kelas || 'Calon Peserta Didik'}</td>
-        <td style="text-align: center;">${s.statusKeanggotaan || 'Aktif'}</td>
+        ${activeCols.map(c => {
+          const val = c.getValue(s);
+          const isMono = c.isMono ? 'font-family: monospace; font-size: 8.5px;' : '';
+          const isCenter = c.isCenter ? 'text-align: center;' : '';
+          const isBold = c.id === 'nama' ? 'font-weight: bold;' : '';
+          return `<td style="${isMono} ${isCenter} ${isBold}">${escapeXml(val)}</td>`;
+        }).join('')}
       </tr>
     `).join('');
 
@@ -2028,20 +2952,23 @@ export default function LembagaKelasSub({
       <!DOCTYPE html>
       <html>
       <head>
-        <title>DAFTAR SANTRI - ${selectedLembaga.nama.toUpperCase()}</title>
+        <title>${customFileName || `${viewData.title} (${selectedGender.toUpperCase()})`}</title>
         <style>
-          @page { size: A4 portrait; margin: 15mm; }
-          body { font-family: sans-serif; color: #1e293b; margin: 0; padding: 10px; font-size: 11px; }
-          .header { text-align: center; border-bottom: 2px solid #00693E; padding-bottom: 10px; margin-bottom: 15px; }
-          .header h1 { margin: 0; font-size: 18px; color: #00693E; font-weight: bold; }
-          .header p { margin: 3px 0 0; font-size: 11px; color: #64748b; }
-          .title { text-align: center; font-size: 14px; font-weight: bold; margin-bottom: 15px; text-transform: uppercase; }
-          .info { margin-bottom: 12px; font-size: 11px; }
-          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-          th, td { border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 10px; text-align: left; }
-          th { background-color: #f1f5f9; font-weight: bold; color: #334155; }
+          @page { size: A4 landscape; margin: 10mm; }
+          body { font-family: sans-serif; color: #1e293b; margin: 0; padding: 10px; font-size: 9px; }
+          .header { text-align: center; border-bottom: 2px solid #00693E; padding-bottom: 8px; margin-bottom: 10px; }
+          .header h1 { margin: 0; font-size: 16px; color: #00693E; font-weight: bold; text-transform: uppercase; }
+          .header p { margin: 2px 0 0; font-size: 9.5px; color: #64748b; }
+          .title { text-align: center; font-size: 13px; font-weight: bold; margin-bottom: 4px; text-transform: uppercase; color: #0f172a; }
+          .meta-box { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; margin-bottom: 10px; display: flex; justify-content: space-between; font-size: 9.5px; }
+          .meta-item { display: inline-block; margin-right: 15px; }
+          .meta-label { font-weight: bold; color: #64748b; }
+          .meta-val { font-weight: bold; color: #0f172a; font-family: monospace; }
+          table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+          th, td { border: 1px solid #cbd5e1; padding: 4.5px 5px; font-size: 8.5px; text-align: left; }
+          th { background-color: #f1f5f9; font-weight: bold; color: #334155; text-align: center; text-transform: uppercase; font-size: 8.5px; }
           tr:nth-child(even) { background-color: #f8fafc; }
-          .footer { margin-top: 25px; text-align: right; font-size: 10px; color: #64748b; }
+          .footer { margin-top: 15px; text-align: right; font-size: 8.5px; color: #64748b; }
         </style>
       </head>
       <body>
@@ -2049,19 +2976,23 @@ export default function LembagaKelasSub({
           <h1>${profile.namaPesantren || 'PONDOK PESANTREN'}</h1>
           <p>${profile.alamat || ''} ${(profile as any).kota ? ' - ' + (profile as any).kota : ''}</p>
         </div>
-        <div class="title">DAFTAR SANTRI - ${selectedLembaga.nama}</div>
-        <div class="info">
-          <strong>Gender:</strong> Santri ${selectedGender} | <strong>Total Santri:</strong> ${lembagaStudents.length} Santri
+        <div class="title">${viewData.title} (${selectedGender.toUpperCase()})</div>
+        <div class="meta-box">
+          <div>
+            <span class="meta-item"><span class="meta-label">No. Statistik:</span> <span class="meta-val">${noStatistik}</span></span>
+            <span class="meta-item"><span class="meta-label">NPSN:</span> <span class="meta-val">${npsn}</span></span>
+            <span class="meta-item"><span class="meta-label">Gender:</span> <span>Santri ${selectedGender}</span></span>
+          </div>
+          <div>
+            <span class="meta-item"><span class="meta-label">Total Santri:</span> <strong>${studentsToPrint.length} Santri</strong></span>
+            <span class="meta-item"><span class="meta-label">Tanggal:</span> <span>${dateStr}</span></span>
+          </div>
         </div>
         <table>
           <thead>
             <tr>
-              <th style="width: 30px; text-align: center;">No</th>
-              <th style="width: 90px;">NIS</th>
-              <th>Nama Santri</th>
-              <th style="width: 60px;">Gender</th>
-              <th style="width: 120px;">Kelas</th>
-              <th style="width: 70px; text-align: center;">Status</th>
+              <th style="width: 25px; text-align: center;">NO</th>
+              ${activeCols.map(c => `<th>${escapeXml(c.label)}</th>`).join('')}
             </tr>
           </thead>
           <tbody>
@@ -2069,19 +3000,31 @@ export default function LembagaKelasSub({
           </tbody>
         </table>
         <div class="footer">
-          Dicetak pada: ${dateStr}
+          Dicetak dari Sistem SMART SANTRI - Modul Lembaga Pendidikan &bull; ${dateStr}
         </div>
         <script>
-          window.onload = function() {
-            window.print();
-          };
+          window.onload = function() { window.print(); };
         </script>
       </body>
       </html>
     `;
-
     printWindow.document.write(html);
     printWindow.document.close();
+  };
+
+  // Handle printing PDF for Data Induk
+  const handlePrintDataIndukPDF = () => {
+    handlePrintPDFLembaga();
+  };
+
+  // Handle printing PDF for Calon Peserta Didik
+  const handlePrintCalonPDF = () => {
+    handlePrintPDFLembaga();
+  };
+
+  // Handle printing PDF for Lulusan
+  const handlePrintLulusanPDF = () => {
+    handlePrintPDFLembaga();
   };
 
   // Handle printing PDF / document for the selected class (Kelas)
@@ -2109,6 +3052,14 @@ export default function LembagaKelasSub({
     });
 
     const isFormal = activeTab === 'Formal';
+    const isAll = selectedKelas.pillType === 'all' || selectedKelas.id === 'all';
+    const isUnassigned = selectedKelas.pillType === 'unassigned' || selectedKelas.id === 'unassigned';
+    const docTitle = isAll 
+      ? `DAFTAR SELURUH SANTRI - ${selectedLembaga.nama.toUpperCase()}`
+      : isUnassigned
+      ? `DAFTAR SANTRI TANPA KELAS - ${selectedLembaga.nama.toUpperCase()}`
+      : `DAFTAR SANTRI KELAS ${selectedKelas.nama.toUpperCase()} - ${selectedLembaga.nama.toUpperCase()}`;
+    const waliLabel = isAll ? 'Semua Kelas' : isUnassigned ? 'Tanpa Kelas' : cleanWaliKelas(selectedKelas.waliKelas || selectedKelas.pembimbing);
 
     const rowsHtml = studentsInClass.map((s, idx) => `
       <tr>
@@ -2129,7 +3080,7 @@ export default function LembagaKelasSub({
       <!DOCTYPE html>
       <html>
       <head>
-        <title>DAFTAR SANTRI KELAS ${selectedKelas.nama.toUpperCase()} - ${selectedLembaga.nama.toUpperCase()}</title>
+        <title>${docTitle}</title>
         <style>
           @page { size: A4 portrait; margin: 15mm; }
           body { font-family: sans-serif; color: #1e293b; margin: 0; padding: 10px; font-size: 11px; }
@@ -2151,10 +3102,10 @@ export default function LembagaKelasSub({
           <h1>${profile.namaPesantren || 'PONDOK PESANTREN'}</h1>
           <p>${profile.alamat || ''} ${(profile as any).kota ? ' - ' + (profile as any).kota : ''}</p>
         </div>
-        <div class="title">DAFTAR SANTRI KELAS: ${selectedKelas.nama}</div>
+        <div class="title">${isAll ? `DATA SELURUH SANTRI: ${selectedLembaga.nama}` : `DAFTAR SANTRI KELAS: ${selectedKelas.nama}`}</div>
         <div class="subtitle">${selectedLembaga.nama} (${selectedGender})</div>
         <div class="info">
-          <span><strong>Wali Kelas / Pembimbing:</strong> ${cleanWaliKelas(selectedKelas.waliKelas || selectedKelas.pembimbing)}</span>
+          <span><strong>Wali Kelas / Pembimbing:</strong> ${waliLabel}</span>
           <span><strong>Total Santri:</strong> ${studentsInClass.length} Santri</span>
         </div>
         <table>
@@ -2356,7 +3307,10 @@ export default function LembagaKelasSub({
                   return (
                     <div
                       key={l.id}
-                      onClick={() => setSelectedLembaga(l)}
+                      onClick={() => {
+                        setSelectedLembaga(l);
+                        setSelectedKelas(null);
+                      }}
                       className="group relative bg-white border border-slate-100 rounded-2xl cursor-pointer transition-all hover:border-slate-300 hover:shadow-md flex h-32 overflow-hidden"
                     >
                       {/* Logo or placeholder icon on the left */}
@@ -2407,6 +3361,22 @@ export default function LembagaKelasSub({
                               <h3 className="text-base font-black text-slate-800 leading-tight group-hover:text-emerald-700 transition-colors truncate">
                                 {l.nama}
                               </h3>
+                              {(l.nomorStatistik || l.nomor_statistik || l.npsn) && (
+                                <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                  {(l.nomorStatistik || l.nomor_statistik) && (
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-semibold border border-slate-200/60">
+                                      <span className="text-[9px] font-black text-slate-400">NS:</span>
+                                      <span className="font-mono">{l.nomorStatistik || l.nomor_statistik}</span>
+                                    </span>
+                                  )}
+                                  {l.npsn && (
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-semibold border border-slate-200/60">
+                                      <span className="text-[9px] font-black text-slate-400">NPSN:</span>
+                                      <span className="font-mono">{l.npsn}</span>
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                               {l.deskripsi && (
                                 <p className="text-[10px] text-slate-400 font-medium truncate mt-0.5">
                                   {l.deskripsi}
@@ -2485,17 +3455,17 @@ export default function LembagaKelasSub({
           </motion.div>
         ) : (
           <motion.div
-            key="stacked-view-container"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            key="unified-daftar-kelas-view"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
             className="flex flex-col gap-6 animate-fade-in"
           >
-            {/* TOP CARD: NAMA LEMBAGA & DAFTAR KELAS */}
-            <div className="w-full bg-white border border-slate-100 rounded-3xl p-5 sm:p-6 shadow-xs relative">
+            {/* Lembaga Profile Header Card */}
+            <div className="w-full bg-white border border-slate-100 rounded-3xl p-5 sm:p-7 shadow-xs relative">
               
-              {/* Header Bar: Back to Units button, Category Tag, and Lembaga Action Buttons */}
-              <div className="flex items-center justify-between gap-4 mb-5 pb-4 border-b border-slate-100/90">
+              {/* Header Bar: Back to Lembaga button, Category Tag, and Lembaga Action Buttons */}
+              <div className="flex items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-100/90">
                 <div className="flex items-center gap-3">
                   <button
                     disabled={isSelectionMode}
@@ -2504,15 +3474,16 @@ export default function LembagaKelasSub({
                       setSelectedLembaga(null);
                       setSelectedKelas(null);
                     }}
-                    className={`p-2 rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-all cursor-pointer shadow-3xs shrink-0 ${
-                      isSelectionMode ? 'opacity-40 cursor-not-allowed text-slate-300' : 'active:scale-95'
+                    className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-[#00693E] transition-all font-bold text-xs shadow-3xs shrink-0 ${
+                      isSelectionMode ? 'opacity-40 cursor-not-allowed text-slate-300' : 'active:scale-95 cursor-pointer'
                     }`}
-                    title="Kembali ke Daftar Unit"
+                    title="Kembali ke Daftar Lembaga"
                   >
                     <ArrowLeft className="h-4 w-4" />
+                    <span>Kembali ke Daftar Lembaga</span>
                   </button>
 
-                  <span className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none">
+                  <span className="hidden sm:inline-block text-xs font-black text-slate-400 uppercase tracking-widest leading-none">
                     {activeTab === 'Formal'
                       ? 'Pendidikan Formal'
                       : activeTab === 'Rombel'
@@ -2521,16 +3492,16 @@ export default function LembagaKelasSub({
                   </span>
                 </div>
 
-                {/* Lembaga Action Buttons (Cetak, Edit, Hapus) */}
+                {/* Lembaga Action Buttons (Export Data, Reset Data, Edit, Hapus) */}
                 <div className="flex items-center gap-2">
                   <button
                     disabled={isSelectionMode}
-                    onClick={handlePrintLembagaPDF}
+                    onClick={() => setIsExportLembagaModalOpen(true)}
                     className="inline-flex items-center justify-center bg-white border border-slate-200 h-9 px-3 sm:px-3.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer shadow-3xs active:scale-95 transition-all disabled:opacity-40 gap-1.5"
-                    title="Cetak Data Lembaga"
+                    title="Export Data Santri"
                   >
-                    <Printer className="h-4 w-4 text-slate-600" />
-                    <span className="hidden sm:inline">Cetak Unit</span>
+                    <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                    <span className="hidden sm:inline">Export Data</span>
                   </button>
                   {canWriteCurrent && (
                     <>
@@ -2565,10 +3536,9 @@ export default function LembagaKelasSub({
               </div>
 
               {/* Lembaga Info Row (Logo, Nama, Kode, Stats) */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                <div className="flex items-center gap-4">
-                  {/* Circle / Rounded Logo */}
-                  <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-2xl overflow-hidden bg-slate-50 flex items-center justify-center border border-slate-100 shadow-2xs shrink-0">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-slate-100">
+                <div className="flex items-center gap-4 sm:gap-5">
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl overflow-hidden bg-slate-50 flex items-center justify-center border border-slate-100 shadow-2xs shrink-0">
                     {selectedLembaga.logo ? (
                       <div className="w-full h-full relative flex items-center justify-center">
                         <img 
@@ -2584,49 +3554,113 @@ export default function LembagaKelasSub({
                         />
                         <div className="hidden flex items-center justify-center w-full h-full">
                           {activeTab === 'Rombel' ? (
-                            <Award className="h-8 w-8 text-emerald-600" />
+                            <Award className="h-9 w-9 text-emerald-600" />
                           ) : (
-                            <School className="h-8 w-8 text-emerald-600" />
+                            <School className="h-9 w-9 text-emerald-600" />
                           )}
                         </div>
                       </div>
                     ) : activeTab === 'Rombel' ? (
-                      <Award className="h-8 w-8 text-emerald-600" />
+                      <Award className="h-9 w-9 text-emerald-600" />
                     ) : (
-                      <School className="h-8 w-8 text-emerald-600" />
+                      <School className="h-9 w-9 text-emerald-600" />
                     )}
                   </div>
 
-                  {/* Lembaga Name & 4-letter Kode Badge */}
                   <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight leading-tight uppercase truncate">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <h2 className="text-xl sm:text-2xl lg:text-3xl font-black text-slate-800 tracking-tight leading-tight uppercase">
                         {selectedLembaga.nama}
                       </h2>
-                      <span className="px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 text-xs font-black uppercase tracking-wider border border-emerald-200/80 shrink-0 shadow-2xs">
+                      <span className="px-2.5 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 text-xs font-black uppercase tracking-wider border border-emerald-200/80 shrink-0 shadow-2xs">
                         {(selectedLembaga.kode || generate4LetterKode(selectedLembaga.nama)).toUpperCase().slice(0, 4)}
                       </span>
                     </div>
-                    
-                    {/* Stats */}
-                    <p className="text-xs font-extrabold text-slate-400 mt-1 uppercase tracking-wider">
-                      {subClasses.length} {activeTab === 'Rombel' ? 'Kelompok' : 'Kelas'} &bull; {institutions.find(x => x.id === selectedLembaga.id)?.studentsCount || 0} Santri
-                    </p>
+
+                    {((selectedLembaga.nomorStatistik || selectedLembaga.nomor_statistik) || selectedLembaga.npsn) && (
+                      <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                        {(selectedLembaga.nomorStatistik || selectedLembaga.nomor_statistik) && (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100/90 text-slate-750 text-xs font-semibold border border-slate-200/70 shadow-2xs">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide">No. Statistik:</span>
+                            <span className="font-mono font-bold text-slate-800">{selectedLembaga.nomorStatistik || selectedLembaga.nomor_statistik}</span>
+                          </span>
+                        )}
+                        {selectedLembaga.npsn && (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100/90 text-slate-750 text-xs font-semibold border border-slate-200/70 shadow-2xs">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide">NPSN:</span>
+                            <span className="font-mono font-bold text-slate-800">{selectedLembaga.npsn}</span>
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {selectedLembaga.deskripsi && (
+                      <p className="text-xs sm:text-sm text-slate-500 font-medium mt-1">
+                        {selectedLembaga.deskripsi}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Lembaga Stat Badges */}
+                <div className="flex items-center gap-3 self-start md:self-center">
+                  <div className="bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-center min-w-[100px]">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-0.5">
+                      TOTAL {activeTab === 'Rombel' ? 'ROMBEL' : 'KELAS'}
+                    </span>
+                    <span className="text-base sm:text-lg font-black text-slate-800">
+                      {classPillItems.length}
+                    </span>
+                  </div>
+                  <div className="bg-emerald-50/60 border border-emerald-100 rounded-2xl px-4 py-3 text-center min-w-[100px]">
+                    <span className="text-[10px] font-black text-emerald-600 uppercase tracking-wider block mb-0.5">
+                      TOTAL SANTRI
+                    </span>
+                    <span className="text-base sm:text-lg font-black text-[#00693E]">
+                      {institutions.find(x => x.id === selectedLembaga.id)?.studentsCount || 0}
+                    </span>
                   </div>
                 </div>
               </div>
 
-              {/* Section: Daftar Kelas (Placed right here on top in a single horizontal scroll row) */}
-              <div className="bg-slate-50/70 border border-slate-100/90 rounded-2xl p-3.5 sm:p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-black text-slate-500 uppercase tracking-wider">
+              {/* HORIZONTAL DAFTAR KELAS PILLS */}
+              <div className="mt-5">
+                <div className="flex items-center justify-between gap-4 mb-3.5 flex-wrap sm:flex-nowrap">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider">
                       Daftar {activeTab === 'Rombel' ? 'Rombel' : 'Kelas'}
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-black">
+                      {classPillItems.length}
                     </span>
-                    <span className="px-2 py-0.5 rounded-full bg-slate-200/80 text-slate-600 text-[11px] font-extrabold">
-                      {subClasses.length}
+
+                    {/* Scroll buttons in header */}
+                    <div className="flex items-center gap-1 ml-1 sm:ml-2 bg-slate-100/90 p-0.5 rounded-xl border border-slate-200/70">
+                      <button
+                        type="button"
+                        onClick={() => scrollPills('left')}
+                        disabled={!canScrollPillsLeft}
+                        className="inline-flex items-center justify-center h-6 w-6 rounded-lg text-slate-600 hover:text-emerald-700 hover:bg-white disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer active:scale-90"
+                        title="Geser daftar kelas ke kiri"
+                      >
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => scrollPills('right')}
+                        disabled={!canScrollPillsRight}
+                        className="inline-flex items-center justify-center h-6 w-6 rounded-lg text-slate-600 hover:text-emerald-700 hover:bg-white disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer active:scale-90"
+                        title="Geser daftar kelas ke kanan"
+                      >
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+
+                    <span className="hidden sm:inline-block text-[11px] font-medium text-slate-400">
+                      (Geser ke samping untuk kelas lainnya)
                     </span>
                   </div>
+
                   {canWriteCurrent && (
                     <button
                       disabled={isSelectionMode}
@@ -2647,126 +3681,175 @@ export default function LembagaKelasSub({
                   )}
                 </div>
 
-                {/* Single Row Horizontal Scroll */}
-                <div className="flex items-center flex-nowrap gap-2 sm:gap-2.5 overflow-x-auto pb-1.5 pt-0.5 px-0.5 scrollbar-thin">
-                  {subClasses.length === 0 ? (
-                    <div className="text-center py-2 w-full text-slate-400 text-xs font-medium italic">
-                      Belum ada {activeTab === 'Rombel' ? 'kelompok' : 'kelas'} terdaftar.
+                {/* Horizontal Scrollable Pills with floating edge arrows & drag-to-scroll */}
+                <div className="relative group/pills w-full">
+                  {/* Left floating navigation button with soft gradient */}
+                  {canScrollPillsLeft && (
+                    <div className="absolute left-0 top-0 bottom-2.5 z-10 flex items-center pr-4 pl-0.5 bg-gradient-to-r from-white via-white/95 to-transparent pointer-events-none rounded-l-2xl">
+                      <button
+                        type="button"
+                        onClick={() => scrollPills('left')}
+                        className="pointer-events-auto h-8 w-8 rounded-full bg-white shadow-md border border-slate-200 text-slate-700 hover:text-emerald-700 hover:bg-emerald-50 hover:border-emerald-300 flex items-center justify-center transition-all cursor-pointer active:scale-90"
+                        title="Geser ke kiri"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
                     </div>
-                  ) : (
-                    subClasses.map((c: any) => {
-                      const isSelected = selectedKelas?.id === c.id;
-                      const isDefault = activeTab !== 'Rombel' && isDefaultClass(c);
-                      
+                  )}
+
+                  {/* Right floating navigation button with soft gradient */}
+                  {canScrollPillsRight && (
+                    <div className="absolute right-0 top-0 bottom-2.5 z-10 flex items-center pl-4 pr-0.5 bg-gradient-to-l from-white via-white/95 to-transparent pointer-events-none rounded-r-2xl">
+                      <button
+                        type="button"
+                        onClick={() => scrollPills('right')}
+                        className="pointer-events-auto h-8 w-8 rounded-full bg-white shadow-md border border-slate-200 text-slate-700 hover:text-emerald-700 hover:bg-emerald-50 hover:border-emerald-300 flex items-center justify-center transition-all cursor-pointer active:scale-90"
+                        title="Geser ke kanan"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+
+                  <div 
+                    ref={classPillsContainerRef}
+                    onMouseDown={handlePillsMouseDown}
+                    onMouseMove={handlePillsMouseMove}
+                    onMouseUp={handlePillsMouseUpOrLeave}
+                    onMouseLeave={handlePillsMouseUpOrLeave}
+                    className="flex items-center gap-2.5 overflow-x-auto pb-2.5 pt-1 pills-scrollbar scroll-smooth cursor-grab active:cursor-grabbing select-none"
+                  >
+                    {classPillItems.map((item) => {
+                      const isSelected = effectiveSelectedKelas?.id === item.id;
+                      const isRegular = item.pillType === 'kelas';
+                      const isAll = item.pillType === 'all';
+                      const isUnassigned = item.pillType === 'unassigned';
+
                       return (
                         <div
-                          key={c.id}
+                          key={item.id}
+                          data-pill-id={item.id}
                           onClick={() => {
-                            if (isSelectionMode) return;
-                            setSelectedKelas(c);
+                            if (hasDraggedPillsRef.current) {
+                              hasDraggedPillsRef.current = false;
+                              return;
+                            }
+                            setSelectedKelas(item);
                             setTimeout(() => {
-                              detailKelasSectionRef.current?.scrollIntoView({
-                                behavior: 'smooth',
-                                block: 'start'
-                              });
+                              detailKelasRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                             }, 50);
                           }}
-                          className={`group px-3.5 py-2 rounded-xl transition-all flex items-center justify-between gap-2.5 relative select-none border shrink-0 ${
-                            isSelectionMode
-                              ? 'opacity-50 cursor-not-allowed'
-                              : 'cursor-pointer'
-                          } ${
-                            isSelected 
-                              ? 'bg-[#00693E] border-[#00693E] text-white shadow-sm ring-2 ring-emerald-500/20' 
-                              : 'bg-white border-slate-200/80 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                          className={`group inline-flex items-center gap-2 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer select-none shrink-0 shadow-2xs ${
+                            isSelected
+                              ? 'bg-[#00693E] text-white shadow-md ring-2 ring-emerald-600/30'
+                              : isUnassigned
+                              ? 'bg-amber-50/70 text-amber-800 hover:bg-amber-100/80 border border-amber-200/80'
+                              : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200/80 hover:border-emerald-500/50'
                           }`}
                         >
-                          <div className="flex items-center gap-2 min-w-0">
-                            {isSelected ? (
-                              <FolderOpen className="h-4 w-4 text-white shrink-0" />
-                            ) : (
-                              <Folder className="h-4 w-4 text-slate-400 shrink-0" />
-                            )}
-                            <span className="text-xs font-black uppercase tracking-wider whitespace-nowrap">
-                              {c.nama}
-                            </span>
-                          </div>
+                          {isAll ? (
+                            <Users className={`h-4 w-4 shrink-0 ${isSelected ? 'text-white' : 'text-emerald-600'}`} />
+                          ) : isUnassigned ? (
+                            <Folder className={`h-4 w-4 shrink-0 ${isSelected ? 'text-white' : 'text-amber-600'}`} />
+                          ) : (
+                            <Folder className={`h-4 w-4 shrink-0 ${isSelected ? 'text-white' : 'text-emerald-600'}`} />
+                          )}
+                          <span className="tracking-tight uppercase whitespace-nowrap">{item.displayName || item.nama}</span>
+                          
+                          {/* Student Count Badge */}
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
+                            isSelected
+                              ? 'bg-white/20 text-white'
+                              : isUnassigned
+                              ? 'bg-amber-200/60 text-amber-900'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            {item.count ?? 0}
+                          </span>
 
-                          {/* Titik 3 Action Button with Dropdown */}
-                          {canWriteCurrent && (
-                            <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
-                              <button
-                                disabled={isSelectionMode}
-                                onClick={(e) => {
-                                  if (isSelectionMode) return;
-                                  if (activeActionKelasId === c.id) {
-                                    setActiveActionKelasId(null);
-                                    setKelasDropdownPos(null);
-                                  } else {
-                                    const rect = e.currentTarget.getBoundingClientRect();
-                                    const dropdownWidth = 120;
-                                    const dropdownHeight = 100;
-                                    let top = rect.bottom + 4;
-                                    if (top + dropdownHeight > window.innerHeight) {
-                                      top = rect.top - dropdownHeight - 4;
-                                    }
-                                    let left = rect.right - dropdownWidth;
-                                    if (left < 8) left = 8;
-                                    if (left + dropdownWidth > window.innerWidth - 8) {
-                                      left = window.innerWidth - dropdownWidth - 8;
-                                    }
-                                    setKelasDropdownPos({ top, left });
-                                    setActiveActionKelasId(c.id);
+                          {/* 3 dots menu for regular classes */}
+                          {isRegular && canWriteCurrent && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (activeActionKelasId === item.id) {
+                                  setActiveActionKelasId(null);
+                                  setKelasDropdownPos(null);
+                                } else {
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  const dropdownWidth = 140;
+                                  const dropdownHeight = 110;
+                                  let top = rect.bottom + 4;
+                                  if (top + dropdownHeight > window.innerHeight) {
+                                    top = rect.top - dropdownHeight - 4;
                                   }
-                                }}
-                                className={`p-1 rounded-lg transition-colors ${
-                                  isSelectionMode 
-                                    ? 'opacity-30 cursor-not-allowed text-slate-350' 
-                                    : 'cursor-pointer'
-                                } ${
-                                  isSelected 
-                                    ? 'hover:bg-emerald-800 text-emerald-100' 
-                                    : 'hover:bg-slate-100 text-slate-400 hover:text-slate-700'
-                                }`}
-                                title="Opsi Aksi"
-                              >
-                                <MoreVertical className="h-3.5 w-3.5 text-current" />
-                              </button>
-                            </div>
+                                  let left = rect.right - dropdownWidth;
+                                  if (left < 8) left = 8;
+                                  if (left + dropdownWidth > window.innerWidth - 8) {
+                                    left = window.innerWidth - dropdownWidth - 8;
+                                  }
+                                  setKelasDropdownPos({ top, left });
+                                  setActiveActionKelasId(item.id);
+                                }
+                              }}
+                              className={`p-1 rounded-lg transition-colors cursor-pointer ${
+                                isSelected
+                                  ? 'text-emerald-100 hover:text-white hover:bg-emerald-700/60'
+                                  : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                              }`}
+                              title="Menu Kelas"
+                            >
+                              <MoreVertical className="h-3.5 w-3.5" />
+                            </button>
                           )}
                         </div>
                       );
-                    })
-                  )}
+                    })}
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* BOTTOM CARD: DATA KELAS (FULL WIDTH) */}
-            <div 
-              ref={detailKelasSectionRef} 
-              className="w-full bg-white border border-slate-100 rounded-3xl p-5 sm:p-6 shadow-xs relative scroll-mt-20 sm:scroll-mt-24"
-            >
-              
-              {!selectedKelas ? (
-                <div className="flex flex-col items-center justify-center text-center py-16 px-4">
-                  <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-4 shadow-3xs">
-                    <GraduationCap className="h-8 w-8 text-[#00693E]" />
-                  </div>
-                  <h3 className="text-base font-black text-slate-800 uppercase tracking-tight">Silakan Pilih Kelas</h3>
-                  <p className="text-xs text-slate-400 max-w-sm mt-2 font-medium">
-                    Pilih salah satu kelas di bawah naungan {selectedLembaga.nama} pada daftar kelas di atas untuk melihat data santri secara lengkap.
-                  </p>
+            {/* DETAIL KELAS SECTION / TABLE */}
+            {!effectiveSelectedKelas ? (
+              <div className="w-full bg-white border border-slate-100 rounded-3xl p-8 sm:p-12 text-center shadow-xs flex flex-col items-center justify-center">
+                <div className="w-16 h-16 rounded-3xl bg-slate-50 text-slate-400 flex items-center justify-center mb-4 border border-slate-100">
+                  <Folder className="h-8 w-8 text-slate-300" />
                 </div>
-              ) : (
-                <div className="flex flex-col w-full min-h-0">
+                <h4 className="text-base font-black text-slate-700 uppercase tracking-tight">
+                  Belum Ada {activeTab === 'Rombel' ? 'Rombongan Belajar' : 'Kelas'}
+                </h4>
+                <p className="text-xs text-slate-400 max-w-sm mt-1 font-medium">
+                  Silakan tambahkan {activeTab === 'Rombel' ? 'kelompok rombel' : 'kelas'} baru untuk lembaga ini menggunakan tombol Tambah di atas.
+                </p>
+                {canWriteCurrent && (
+                  <button
+                    onClick={() => handleOpenKelasModal()}
+                    className="mt-5 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#00693E] text-white text-xs font-bold hover:bg-emerald-800 transition-all cursor-pointer shadow-xs active:scale-95"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span>Tambah {activeTab === 'Rombel' ? 'Rombel Pertama' : 'Kelas Pertama'}</span>
+                  </button>
+                )}
+              </div>
+            ) : (() => {
+              const selectedKelas = effectiveSelectedKelas;
+              const isIndukPill = selectedKelas.pillType === 'induk' || selectedKelas.id === 'default-induk' || selectedKelas.pillType === 'all' || selectedKelas.id === 'all';
+              const isCalonPill = selectedKelas.pillType === 'calon' || selectedKelas.id === 'default-calon' || isDefaultClass(selectedKelas);
+              const isDefaultPill = isIndukPill || isCalonPill;
+
+              return (
+                <div ref={detailKelasRef} className="w-full bg-white border border-slate-100 rounded-3xl p-5 sm:p-6 lg:p-7 shadow-xs relative scroll-mt-6">
+                  <div className="flex flex-col w-full min-h-0">
                   
                   {/* 1. Detail Kelas Header */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5 shrink-0">
                     <div>
-                      <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider">Detail Kelas</span>
+                      <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider">
+                        {isIndukPill ? 'DATA INDUK SANTRI' : isCalonPill ? (selectedKelas.displayName || selectedKelas.nama || 'CALON PESERTA DIDIK') : (activeTab === 'Rombel' ? 'DETAIL ROMBEL' : 'DETAIL KELAS')}
+                      </span>
                       <h2 className="text-2xl lg:text-3xl font-black text-slate-800 tracking-tight leading-none uppercase mt-0.5">
-                        {selectedKelas.nama}
+                        {isIndukPill ? `Data Induk (${selectedLembaga.nama})` : isCalonPill ? `${selectedKelas.nama} (${selectedLembaga.nama})` : selectedKelas.nama}
                       </h2>
                     </div>
 
@@ -2776,32 +3859,33 @@ export default function LembagaKelasSub({
                         disabled={isSelectionMode}
                         onClick={handlePrintKelasPDF}
                         className="inline-flex items-center justify-center bg-white border border-slate-200 h-9 px-3 sm:px-3.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer shadow-3xs active:scale-95 transition-all disabled:opacity-40 gap-1.5"
-                        title="Cetak Data Kelas"
+                        title={isIndukPill ? 'Cetak Data Induk' : 'Cetak Data Kelas'}
                       >
                         <Printer className="h-4 w-4 text-slate-600" />
-                        <span className="hidden sm:inline">Cetak Kelas</span>
+                        <span className="hidden sm:inline">{isIndukPill ? 'Cetak Induk' : 'Cetak Kelas'}</span>
                       </button>
                       {canWriteCurrent && (() => {
                         const isRombelTab = (activeTab as string) === 'Rombel';
-                        const isSelectedKelasDefault = !isRombelTab && isDefaultClass(selectedKelas);
                         return (
                           <>
-                            <button
-                              disabled={isSelectionMode}
-                              onClick={() => {
-                                if (isSelectionMode) return;
-                                handleOpenKelasModal(selectedKelas);
-                              }}
-                              className={`inline-flex items-center justify-center bg-white border border-slate-200 h-9 px-3 sm:px-3.5 rounded-xl text-xs font-bold transition-all gap-1.5 ${
-                                isSelectionMode 
-                                  ? 'opacity-40 cursor-not-allowed text-slate-350' 
-                                  : 'hover:bg-slate-50 cursor-pointer text-slate-700 shadow-3xs active:scale-95'
-                              }`}
-                              title="Edit Kelas"
-                            >
-                              <Pencil className="h-4 w-4 text-slate-500" />
-                              <span className="hidden sm:inline">Edit</span>
-                            </button>
+                            {!isDefaultPill && (
+                              <button
+                                disabled={isSelectionMode}
+                                onClick={() => {
+                                  if (isSelectionMode) return;
+                                  handleOpenKelasModal(selectedKelas);
+                                }}
+                                className={`inline-flex items-center justify-center bg-white border border-slate-200 h-9 px-3 sm:px-3.5 rounded-xl text-xs font-bold transition-all gap-1.5 ${
+                                  isSelectionMode 
+                                    ? 'opacity-40 cursor-not-allowed text-slate-350' 
+                                    : 'hover:bg-slate-50 cursor-pointer text-slate-700 shadow-3xs active:scale-95'
+                                }`}
+                                title="Edit Kelas"
+                              >
+                                <Pencil className="h-4 w-4 text-slate-500" />
+                                <span className="hidden sm:inline">Edit</span>
+                              </button>
+                            )}
                           
                             <button
                               disabled={isSelectionMode}
@@ -2824,7 +3908,7 @@ export default function LembagaKelasSub({
                               </span>
                             </button>
 
-                            {!isSelectedKelasDefault && (
+                            {!isDefaultPill && (
                               <button
                                 disabled={isSelectionMode}
                                 onClick={() => {
@@ -2851,12 +3935,40 @@ export default function LembagaKelasSub({
                   {/* 2. BENTO STATS CARDS */}
                     <div className={`grid grid-cols-1 ${
                       activeTab === 'Formal' 
-                        ? (isCalonPelajarPage ? 'sm:grid-cols-2' : 'sm:grid-cols-3') 
-                        : (isCalonPelajarPage ? 'sm:grid-cols-1' : 'sm:grid-cols-2')
+                        ? (isCalonPelajarPage || isIndukPage ? 'sm:grid-cols-2' : 'sm:grid-cols-3') 
+                        : (isCalonPelajarPage || isIndukPage ? 'sm:grid-cols-1' : 'sm:grid-cols-2')
                     } gap-5 mb-6 shrink-0`}>
                       
-                       {/* Card 1: Wali Kelas / Pembimbing */}
-                       {!isCalonPelajarPage && (
+                       {/* Card 1: Wali Kelas / Total Kelas / Status */}
+                       {isIndukPill ? (
+                         <div className="bg-white rounded-3xl border border-slate-100 p-5 shadow-2xs flex flex-col justify-between">
+                           <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-2.5">
+                             TOTAL {activeTab === 'Rombel' ? 'ROMBEL' : 'KELAS'}
+                           </span>
+                           <div className="flex items-center gap-3">
+                             <div className="h-9 w-9 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
+                               <School className="h-4.5 w-4.5 text-[#046A38]" />
+                             </div>
+                             <span className="text-sm font-extrabold text-slate-800">
+                               {subClasses.length} {activeTab === 'Rombel' ? 'Kelompok' : 'Kelas'}
+                             </span>
+                           </div>
+                         </div>
+                       ) : isCalonPill ? (
+                         <div className="bg-white rounded-3xl border border-slate-100 p-5 shadow-2xs flex flex-col justify-between">
+                           <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-2.5">
+                             STATUS PENEMPATAN
+                           </span>
+                           <div className="flex items-center gap-3">
+                             <div className="h-9 w-9 rounded-full bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+                               <AlertCircle className="h-4.5 w-4.5 text-amber-600" />
+                             </div>
+                             <span className="text-sm font-extrabold text-amber-800">
+                               {selectedKelas.nama || 'Calon Peserta Didik'}
+                             </span>
+                           </div>
+                         </div>
+                       ) : (
                          <div className="bg-white rounded-3xl border border-slate-100 p-5 shadow-2xs flex flex-col justify-between">
                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-2.5">
                              {activeTab === 'Rombel' ? 'PEMBIMBING' : 'WALI KELAS'}
@@ -2909,6 +4021,20 @@ export default function LembagaKelasSub({
                                     title={`Invalid: ${emisInvalidCount}`}
                                   />
                                 )}
+                                {emisKeluarPercent > 0 && (
+                                  <div 
+                                    className="bg-amber-500 h-full transition-all duration-500" 
+                                    style={{ width: `${emisKeluarPercent}%` }} 
+                                    title={`Keluar: ${emisKeluarCount}`}
+                                  />
+                                )}
+                                {emisLulusPercent > 0 && (
+                                  <div 
+                                    className="bg-blue-500 h-full transition-all duration-500" 
+                                    style={{ width: `${emisLulusPercent}%` }} 
+                                    title={`Lulus: ${emisLulusCount}`}
+                                  />
+                                )}
                                 {emisBelumPercent > 0 && (
                                   <div 
                                     className="bg-slate-300 h-full transition-all duration-500" 
@@ -2919,7 +4045,7 @@ export default function LembagaKelasSub({
                               </div>
 
                               {/* Keterangan jumlah masing-masing di bawah bar */}
-                              <div className="flex items-center justify-between text-[10px] font-bold text-slate-600 pt-0.5">
+                              <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[10px] font-bold text-slate-600 pt-0.5">
                                 <div className="flex items-center gap-1">
                                   <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block shrink-0"></span>
                                   <span>Terdaftar: <strong className="font-black text-slate-800">{emisTerdaftarCount}</strong></span>
@@ -2928,6 +4054,18 @@ export default function LembagaKelasSub({
                                   <span className="w-2 h-2 rounded-full bg-rose-500 inline-block shrink-0"></span>
                                   <span>Invalid: <strong className="font-black text-slate-800">{emisInvalidCount}</strong></span>
                                 </div>
+                                {emisKeluarCount > 0 && (
+                                  <div className="flex items-center gap-1">
+                                    <span className="w-2 h-2 rounded-full bg-amber-500 inline-block shrink-0"></span>
+                                    <span>Keluar: <strong className="font-black text-slate-800">{emisKeluarCount}</strong></span>
+                                  </div>
+                                )}
+                                {emisLulusCount > 0 && (
+                                  <div className="flex items-center gap-1">
+                                    <span className="w-2 h-2 rounded-full bg-blue-500 inline-block shrink-0"></span>
+                                    <span>Lulus: <strong className="font-black text-slate-800">{emisLulusCount}</strong></span>
+                                  </div>
+                                )}
                                 <div className="flex items-center gap-1">
                                   <span className="w-2 h-2 rounded-full bg-slate-400 inline-block shrink-0"></span>
                                   <span>Belum: <strong className="font-black text-slate-800">{emisBelumCount}</strong></span>
@@ -3039,6 +4177,18 @@ export default function LembagaKelasSub({
                       </div>
                       )}
 
+                      {/* Tombol Atur Visibilitas Kolom */}
+                      <button
+                        id="btn-column-visibility-pendidikan-trigger"
+                        type="button"
+                        onClick={() => setIsColumnModalOpen(true)}
+                        className="h-11 px-3.5 shrink-0 flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white text-slate-700 hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-300 transition-all shadow-3xs cursor-pointer active:scale-95"
+                        title="Atur Visibilitas Kolom"
+                      >
+                        <SlidersHorizontal className="h-4 w-4 text-emerald-700 shrink-0" />
+                        <span className="text-xs font-bold whitespace-nowrap">Visibilitas Kolom</span>
+                      </button>
+
                     </div>
 
 
@@ -3086,7 +4236,7 @@ export default function LembagaKelasSub({
                                 className="overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
                               >
                                 <table 
-                                  className="w-full text-left border-collapse min-w-[1050px]"
+                                  className="w-full text-left border-collapse min-w-[980px]"
                                   style={{
                                     width: floatingTableWidth ? `${floatingTableWidth}px` : '100%',
                                     minWidth: floatingTableWidth ? `${floatingTableWidth}px` : '100%',
@@ -3108,7 +4258,7 @@ export default function LembagaKelasSub({
                             onScroll={handleTableScroll}
                             className="overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
                           >
-                            <table className="w-full text-left border-collapse min-w-[1050px]">
+                            <table className="w-full text-left border-collapse min-w-[980px]">
                               {/* Table Header - 100% Solid Background */}
                               <thead style={{ visibility: isScrolled ? 'hidden' : 'visible' }}>
                                 {renderTableHeadContents(false)}
@@ -3118,7 +4268,7 @@ export default function LembagaKelasSub({
                               <tbody className="divide-y divide-slate-100">
                                 {filteredStudents.length === 0 ? (
                                   <tr>
-                                    <td colSpan={7} className="py-16 text-center text-slate-400 font-medium text-xs">
+                                    <td colSpan={(!isCurrentFormal || isCalonPelajarPage) ? 9 : 8} className="py-16 text-center text-slate-400 font-medium text-xs">
                                       <div className="flex flex-col items-center justify-center gap-2.5">
                                         <p className="italic">Belum ada santri terdaftar di kelas/kelompok ini.</p>
                                         {canWriteCurrent && (
@@ -3140,7 +4290,7 @@ export default function LembagaKelasSub({
                                     </td>
                                   </tr>
                                 ) : (
-                                  filteredStudents.map((s, idx) => {
+                                  paginatedStudents.map((s, idx) => {
                                 const isNisnValid = s.nisn && s.nisn.trim() !== '';
                                 const isSelected = selectedStudentIds.includes(s.id);
                                 
@@ -3160,8 +4310,8 @@ export default function LembagaKelasSub({
                                       isSelectionMode ? 'cursor-pointer' : ''
                                     } ${rowBgClass}`}
                                   >
-                                    {/* No or Checkbox Column */}
-                                    <td className={`sticky left-0 z-10 w-[42px] min-w-[42px] max-w-[42px] text-center pl-2 pr-1 py-4.5 select-none transition-colors ${stickyBg}`}>
+                                    {/* 1. NO or Checkbox Column */}
+                                    <td className={`sticky left-0 z-10 w-[46px] min-w-[46px] max-w-[46px] text-center pl-2 pr-1 py-3.5 select-none transition-colors border-r border-slate-100 ${stickyBg}`}>
                                       {isSelectionMode ? (
                                         <input
                                           type="checkbox"
@@ -3171,12 +4321,12 @@ export default function LembagaKelasSub({
                                           className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer h-3.5 w-3.5"
                                         />
                                       ) : (
-                                        <span className="font-sans text-slate-400 text-xs font-extrabold">{idx + 1}</span>
+                                        <span className="font-sans text-slate-400 text-xs font-extrabold">{startIndex + idx + 1}</span>
                                       )}
                                     </td>
 
-                                    {/* Nama Lengkap with Avatar & NIS (Profil) */}
-                                    <td className={`sticky left-[42px] z-10 w-[200px] min-w-[200px] max-w-[200px] pl-2 py-3.5 transition-colors border-r border-slate-100 ${stickyBg}`}>
+                                    {/* 2. NAMA (Sticky Left) */}
+                                    <td className={`sticky left-[46px] z-10 w-[240px] min-w-[240px] max-w-[240px] pl-3 pr-2 py-3 transition-colors border-r border-slate-100 ${stickyBg}`}>
                                       <div className="flex items-center gap-2.5 min-w-0">
                                         {renderStudentAvatar(s)}
                                         <div className="min-w-0 flex-1">
@@ -3199,25 +4349,7 @@ export default function LembagaKelasSub({
                                             </span>
                                           </div>
 
-                                          {/* Baris 2: NIS & Status */}
-                                          <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
-                                            <span className="text-[10px] text-slate-400 font-mono font-medium truncate">
-                                              {s.nis || '-'}
-                                            </span>
-                                            {activeTab === 'Formal' && (
-                                              <span className={`inline-flex items-center px-1.5 py-0.2 rounded-full text-[8px] font-black uppercase tracking-wide shrink-0 ${
-                                                (s.statusKeanggotaan || 'Aktif') === 'Aktif'
-                                                  ? 'bg-[#E6F4EA] text-[#137333]'
-                                                  : s.statusKeanggotaan === 'Alumni'
-                                                    ? 'bg-purple-100 text-purple-800 border border-purple-200/80'
-                                                    : 'bg-slate-100 text-slate-500'
-                                              }`}>
-                                                {s.statusKeanggotaan || 'Aktif'}
-                                              </span>
-                                            )}
-                                          </div>
-
-                                          {/* Baris 3: Alamat */}
+                                          {/* Baris 2: Alamat */}
                                           {(s.desa || s.kecamatan || s.kabupaten) && (
                                             <div 
                                               className="text-[9px] text-slate-400 font-extrabold uppercase truncate mt-0.5" 
@@ -3230,94 +4362,74 @@ export default function LembagaKelasSub({
                                       </div>
                                     </td>
 
-                                    {/* NIK (Khusus Pendidikan Formal) */}
-                                    {activeTab === 'Formal' && (
-                                      <td className="w-[130px] min-w-[130px] font-mono font-bold text-slate-600 truncate pl-1 py-4.5">
+                                    {/* 3. NIS */}
+                                    {shouldShowColumn('nis') && (
+                                      <td className="w-[95px] min-w-[95px] font-mono font-bold text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.nis || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 4. NISM */}
+                                    {shouldShowColumn('nism') && (
+                                      <td className="w-[140px] min-w-[140px] font-mono font-bold text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {getSantriNismForLembaga(s, selectedLembaga) || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 5. NISN */}
+                                    {shouldShowColumn('nisn') && (
+                                      <td className="w-[120px] min-w-[120px] font-mono font-bold text-slate-600 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.nisn || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 6. NIK */}
+                                    {shouldShowColumn('nik') && (
+                                      <td className="w-[155px] min-w-[155px] font-mono font-bold text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
                                         {s.nik || <span className="text-slate-300">-</span>}
                                       </td>
                                     )}
 
-                                    {/* NISN */}
-                                    <td className="w-[110px] min-w-[110px] font-mono font-bold text-slate-600 truncate pl-1 py-4.5">
-                                      {s.nisn || <span className="text-slate-300">-</span>}
-                                    </td>
-
-                                    {/* Induk MHD */}
-                                    <td className="w-[110px] min-w-[110px] font-mono font-bold text-slate-400 truncate pl-1 py-4.5">
-                                      {s.indukMhd || <span className="text-slate-300">-</span>}
-                                    </td>
-
-                                    {/* Induk Wustho */}
-                                    <td className="w-[110px] min-w-[110px] font-mono font-bold text-slate-400 truncate pl-1 py-4.5">
-                                      {s.indukWustho || <span className="text-slate-300">-</span>}
-                                    </td>
-
-                                    {/* Induk Ulya */}
-                                    <td className="w-[110px] min-w-[110px] font-mono font-bold text-slate-400 truncate pl-1 py-4.5">
-                                      {s.indukUlya || <span className="text-slate-300">-</span>}
-                                    </td>
-
-                                    {/* Status (Non-Formal) */}
-                                    {activeTab !== 'Formal' && (
-                                      <td className="w-[100px] min-w-[100px] font-semibold pl-1 py-4.5">
-                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide ${
-                                          s.statusKeanggotaan === 'Aktif'
-                                            ? 'bg-[#E6F4EA] text-[#137333]'
-                                            : 'bg-slate-100 text-slate-500'
-                                        }`}>
-                                          {s.statusKeanggotaan || 'Aktif'}
-                                        </span>
-                                      </td>
-                                    )}
-
-                                    {/* EMIS / Verval / Kamar Column */}
-                                    {activeTab === 'Formal' ? (
-                                      <>
-                                        {/* EMIS Column */}
-                                        {isCalonPelajarPage && (
-                                      <td className="w-[100px] min-w-[100px] pl-1 py-4.5 relative">
-                                        <div className="relative inline-block text-left">
-                                          <button
-                                            disabled={!canWriteCurrent}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              if (activeEmisDropdownId === s.id) {
-                                                setActiveEmisDropdownId(null);
-                                                setEmisDropdownPos(null);
-                                              } else {
-                                                const rect = e.currentTarget.getBoundingClientRect();
-                                                const spaceBelow = window.innerHeight - rect.bottom;
-                                                const spaceAbove = rect.top;
-                                                const isUpward = spaceBelow < 180 && spaceAbove > spaceBelow;
-
-                                                setEmisDropdownPos({
-                                                  top: isUpward ? rect.top - 6 : rect.bottom + 6,
-                                                  left: Math.max(10, Math.min(window.innerWidth - 150, rect.left)),
-                                                  isUpward
-                                                });
-                                                setActiveEmisDropdownId(s.id);
-                                                setActiveVervalDropdownId(null);
-                                                setVervalDropdownPos(null);
-                                              }
-                                            }}
-                                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide transition-colors cursor-pointer shadow-2xs ${
-  s.statusEmis === 'Terdaftar'
-    ? 'bg-[#E6F4EA] text-[#137333] hover:bg-emerald-100'
-    : s.statusEmis === 'Invalid'
-    ? 'bg-rose-50 text-rose-700 hover:bg-rose-100'
-    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-}`}
+                                    {/* 7. EMIS (Read-only di modul pendidikan, hanya menerima keterangan dari sekretaris; selalu tampil untuk kelas calon di lembaga formal) */}
+                                    {shouldShowColumn('statusEmis') && (
+                                      <td className={`${isCalonPelajarPage ? "w-[145px] min-w-[145px]" : "w-[110px] min-w-[110px]"} text-center px-2 py-3.5 border-r border-slate-100`}>
+                                        <div className="flex flex-col items-center justify-center gap-0.5">
+                                          <span
+                                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide shadow-2xs ${
+                                              s.statusEmis === "Terdaftar"
+                                                ? "bg-[#E6F4EA] text-[#137333]"
+                                                : s.statusEmis === "Invalid"
+                                                ? "bg-rose-50 text-rose-700"
+                                                : s.statusEmis === "Keluar"
+                                                ? "bg-amber-50 text-amber-700"
+                                                : s.statusEmis === "Lulus"
+                                                ? "bg-blue-50 text-blue-700"
+                                                : "bg-slate-100 text-slate-600"
+                                            }`}
+                                            title={`Status EMIS: ${s.statusEmis || "Belum"} (Dikelola oleh Sekretaris)`}
                                           >
-                                            <span>{s.statusEmis || 'Belum'}</span>
-                                            <ChevronsUpDown className="h-3 w-3 opacity-60 shrink-0" />
-                                          </button>
+                                            {s.statusEmis || "Belum"}
+                                          </span>
+                                          {s.statusEmis === "Invalid" && s.catatan && (() => {
+                                            const { invalidReason } = parseCatatanInvalid(s.catatan);
+                                            const cleanReason = invalidReason.replace(/^Emis Invalid:\s*/i, "").trim();
+                                            if (!cleanReason) return null;
+                                            return (
+                                              <div 
+                                                className="text-[9.5px] text-rose-600 font-medium leading-tight truncate max-w-[130px] mt-0.5" 
+                                                title={`Keterangan Invalid: ${cleanReason}`}
+                                              >
+                                                {cleanReason}
+                                              </div>
+                                            );
+                                          })()}
                                         </div>
                                       </td>
                                     )}
 
-                                    {/* Verval Column */}
-                                    {!isCalonPelajarPage && (
-                                      <td className="w-[100px] min-w-[100px] pl-1 py-4.5 relative">
+                                    {/* 8. VERVAL */}
+                                    {shouldShowColumn('statusVerval') && (
+                                      <td className="w-[110px] min-w-[110px] text-center px-2 py-3.5 border-r border-slate-100 relative">
                                         <div className="relative inline-block text-left">
                                           <button
                                             disabled={!canWriteCurrent}
@@ -3342,31 +4454,305 @@ export default function LembagaKelasSub({
                                                 setEmisDropdownPos(null);
                                               }
                                             }}
-                                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide transition-colors cursor-pointer shadow-2xs ${
-                                              (s.statusVerval || (isNisnValid ? 'Sukses' : 'Proses')) === 'Sukses'
-                                                ? 'bg-[#E6F4EA] text-[#137333] hover:bg-emerald-200'
-                                                : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+                                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide transition-colors cursor-pointer shadow-2xs ${
+                                              (s.statusVerval || (isNisnValid ? "Sukses" : "Proses")) === "Sukses"
+                                                ? "bg-[#E6F4EA] text-[#137333] hover:bg-emerald-200"
+                                                : "bg-rose-50 text-rose-700 hover:bg-rose-100"
                                             }`}
                                           >
-                                            <span>{s.statusVerval || (isNisnValid ? 'Sukses' : 'Proses')}</span>
+                                            <span>{s.statusVerval || (isNisnValid ? "Sukses" : "Proses")}</span>
                                             <ChevronsUpDown className="h-3 w-3 opacity-60 shrink-0" />
                                           </button>
                                         </div>
                                       </td>
                                     )}
-                                  </>
-                                ) : (
-                                  /* Kamar Column */
-                                  <td className="w-[110px] min-w-[110px] pl-3 py-4.5 font-bold text-slate-700 truncate">
-                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100/80 text-slate-700 text-xs font-bold border border-slate-200/60">
-                                      <Home className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                                      <span className="truncate">{s.kamar || '-'}</span>
-                                    </span>
-                                  </td>
-                                )}
 
-                                {/* Aksi Column (Sticky Right) */}
-                                    <td className={`sticky right-0 z-10 w-[56px] min-w-[56px] max-w-[56px] text-center px-2 py-4.5 transition-colors border-l border-slate-200 shadow-[-2px_0_5px_rgba(0,0,0,0.03)] ${stickyBg}`}>
+                                    {/* 9. STATUS KEAKTIFAN */}
+                                    {shouldShowColumn('statusKeanggotaan') && (
+                                      <td className="w-[140px] min-w-[140px] text-center px-2 py-3.5 border-r border-slate-100">
+                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide ${
+                                          (s.statusKeanggotaan || "Aktif") === "Aktif"
+                                            ? "bg-[#E6F4EA] text-[#137333]"
+                                            : s.statusKeanggotaan === "Alumni"
+                                            ? "bg-purple-100 text-purple-800"
+                                            : "bg-slate-100 text-slate-500"
+                                        }`}>
+                                          {s.statusKeanggotaan || "Aktif"}
+                                        </span>
+                                      </td>
+                                    )}
+
+                                    {/* 10. KELAS MHD */}
+                                    {shouldShowColumn('kelasMhd') && (
+                                      <td className="w-[130px] min-w-[130px] text-slate-700 font-medium truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.kelasMhd || s.pendidikanInternal || s.indukMhd || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 11. INDUK MHD */}
+                                    {shouldShowColumn('indukMhd') && (
+                                      <td className="w-[120px] min-w-[120px] font-mono font-bold text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.indukMhd || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 12. INDUK WUSTHO */}
+                                    {shouldShowColumn('indukWustho') && (
+                                      <td className="w-[135px] min-w-[135px] font-mono font-bold text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.indukWustho || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 13. INDUK ULYA */}
+                                    {shouldShowColumn('indukUlya') && (
+                                      <td className="w-[120px] min-w-[120px] font-mono font-bold text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.indukUlya || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 14. NO KK */}
+                                    {shouldShowColumn('noKk') && (
+                                      <td className="w-[155px] min-w-[155px] font-mono font-bold text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.noKk || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 15. TEMPAT LAHIR */}
+                                    {shouldShowColumn('tempatLahir') && (
+                                      <td className="w-[125px] min-w-[125px] text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.tempatLahir || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 16. TANGGAL LAHIR */}
+                                    {shouldShowColumn('tanggalLahir') && (
+                                      <td className="w-[115px] min-w-[115px] text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.tanggalLahir || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 17. GENDER */}
+                                    {shouldShowColumn('gender') && (
+                                      <td className="w-[90px] min-w-[90px] text-center px-2 py-3.5 border-r border-slate-100">
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold ${
+                                          (s.gender as any) === "L" || s.gender === "Putra" ? "bg-blue-50 text-blue-700" : "bg-pink-50 text-pink-700"
+                                        }`}>
+                                          {(s.gender as any) === "L" || s.gender === "Putra" ? "Laki-laki" : (s.gender as any) === "P" || s.gender === "Putri" ? "Perempuan" : (s.gender || "-")}
+                                        </span>
+                                      </td>
+                                    )}
+
+                                    {/* 18. PENDIDIKAN TERAKHIR */}
+                                    {shouldShowColumn('pendidikanTerakhir') && (
+                                      <td className="w-[160px] min-w-[160px] text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.pendidikanTerakhir || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 19. PENDIDIKAN FORMAL */}
+                                    {shouldShowColumn('pendidikanFormal') && (
+                                      <td className="w-[190px] min-w-[190px] text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.pendidikanFormal || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 20. KELAS */}
+                                    {shouldShowColumn('kelas') && (
+                                      <td className="w-[120px] min-w-[120px] text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.kelas || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 21. KAMAR */}
+                                    {shouldShowColumn('kamar') && (
+                                      <td className="w-[100px] min-w-[100px] text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.kamar || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 22. ASAL SEKOLAH */}
+                                    {shouldShowColumn('asal') && (
+                                      <td className="w-[150px] min-w-[150px] text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.asal || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 23. NAMA AYAH */}
+                                    {shouldShowColumn('namaAyah') && (
+                                      <td className="w-[150px] min-w-[150px] text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.namaAyah || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 24. NIK AYAH */}
+                                    {shouldShowColumn('nikAyah') && (
+                                      <td className="w-[155px] min-w-[155px] font-mono text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.nikAyah || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 25. PEKERJAAN AYAH */}
+                                    {shouldShowColumn('pekerjaanAyah') && (
+                                      <td className="w-[140px] min-w-[140px] text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.pekerjaanAyah || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 26. PENDIDIKAN AYAH */}
+                                    {shouldShowColumn('pendidikanAyah') && (
+                                      <td className="w-[130px] min-w-[130px] text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.pendidikanAyah || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 27. NAMA IBU */}
+                                    {shouldShowColumn('namaIbu') && (
+                                      <td className="w-[150px] min-w-[150px] text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.namaIbu || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 28. NIK IBU */}
+                                    {shouldShowColumn('nikIbu') && (
+                                      <td className="w-[155px] min-w-[155px] font-mono text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.nikIbu || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 29. PEKERJAAN IBU */}
+                                    {shouldShowColumn('pekerjaanIbu') && (
+                                      <td className="w-[140px] min-w-[140px] text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.pekerjaanIbu || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 30. PENDIDIKAN IBU */}
+                                    {shouldShowColumn('pendidikanIbu') && (
+                                      <td className="w-[130px] min-w-[130px] text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.pendidikanIbu || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 31. ANAK KE */}
+                                    {shouldShowColumn('anakKe') && (
+                                      <td className="w-[85px] min-w-[85px] text-center text-slate-700 px-2 py-3.5 border-r border-slate-100">
+                                        {s.anakKe ?? "-"}
+                                      </td>
+                                    )}
+
+                                    {/* 32. JUMLAH SAUDARA */}
+                                    {shouldShowColumn('dariBersaudara') && (
+                                      <td className="w-[120px] min-w-[120px] text-center text-slate-700 px-2 py-3.5 border-r border-slate-100">
+                                        {s.dariBersaudara ?? "-"}
+                                      </td>
+                                    )}
+
+                                    {/* 33. ALAMAT */}
+                                    {shouldShowColumn('alamat') && (
+                                      <td className="w-[180px] min-w-[180px] text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.alamat || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 34. RT */}
+                                    {shouldShowColumn('rt') && (
+                                      <td className="w-[65px] min-w-[65px] text-center text-slate-700 px-2 py-3.5 border-r border-slate-100">
+                                        {s.rt || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 35. RW */}
+                                    {shouldShowColumn('rw') && (
+                                      <td className="w-[65px] min-w-[65px] text-center text-slate-700 px-2 py-3.5 border-r border-slate-100">
+                                        {s.rw || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 36. DESA */}
+                                    {shouldShowColumn('desa') && (
+                                      <td className="w-[140px] min-w-[140px] text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.desa || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 37. KECAMATAN */}
+                                    {shouldShowColumn('kecamatan') && (
+                                      <td className="w-[140px] min-w-[140px] text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.kecamatan || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 38. KABUPATEN */}
+                                    {shouldShowColumn('kabupaten') && (
+                                      <td className="w-[150px] min-w-[150px] text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.kabupaten || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 39. PROVINSI */}
+                                    {shouldShowColumn('provinsi') && (
+                                      <td className="w-[150px] min-w-[150px] text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.provinsi || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 40. JARAK RUMAH */}
+                                    {shouldShowColumn('jarakRumah') && (
+                                      <td className="w-[100px] min-w-[100px] text-center text-slate-700 px-2 py-3.5 border-r border-slate-100">
+                                        {s.jarakRumah ? `${s.jarakRumah} km` : <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 41. NO HP */}
+                                    {shouldShowColumn('noHp') && (
+                                      <td className="w-[130px] min-w-[130px] font-mono text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.noHp || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 42. STATUS DOMISILI */}
+                                    {shouldShowColumn('statusDomisili') && (
+                                      <td className="w-[130px] min-w-[130px] text-center text-slate-700 px-2 py-3.5 border-r border-slate-100">
+                                        {s.statusDomisili || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 43. TAHUN MASUK */}
+                                    {shouldShowColumn('tahunMasuk') && (
+                                      <td className="w-[105px] min-w-[105px] text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.tahunMasuk || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 44. TGL MASUK */}
+                                    {shouldShowColumn('tanggalMasuk') && (
+                                      <td className="w-[105px] min-w-[105px] text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.tanggalMasuk || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 45. TGL KELUAR */}
+                                    {shouldShowColumn('tanggalKeluar') && (
+                                      <td className="w-[105px] min-w-[105px] text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.tanggalKeluar || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 46. NO LEMARI */}
+                                    {shouldShowColumn('nomorLemari') && (
+                                      <td className="w-[100px] min-w-[100px] text-slate-700 truncate px-3 py-3.5 border-r border-slate-100">
+                                        {s.nomorLemari || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+
+                                    {/* 47. CATATAN */}
+                                    {shouldShowColumn('catatan') && (
+                                      <td className="w-[180px] min-w-[180px] text-slate-700 truncate px-3 py-3.5 border-r border-slate-100" title={s.catatan}>
+                                        {s.catatan || <span className="text-slate-300">-</span>}
+                                      </td>
+                                    )}
+                                    {/* 9. Aksi Column (Sticky Right) */}
+                                    <td className={`sticky right-0 z-10 w-[56px] min-w-[56px] max-w-[56px] text-center px-2 py-3.5 transition-colors border-l border-slate-200 shadow-[-2px_0_5px_rgba(0,0,0,0.03)] ${stickyBg}`}>
                                       <div className="relative inline-block text-left" onClick={(e) => e.stopPropagation()}>
                                         <button
                                           disabled={isSelectionMode}
@@ -3411,13 +4797,131 @@ export default function LembagaKelasSub({
                           </tbody>
                         </table>
                         </div>
+
+                        {/* Pagination & Row Limit Toolbar */}
+                        {filteredStudents.length > 0 && (
+                          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-5 py-3.5 bg-slate-50/70 border-t border-slate-200">
+                            {/* Left: Row counts and selector */}
+                            <div className="flex items-center gap-3 text-xs text-slate-500">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-medium">Tampilkan</span>
+                                <select
+                                  value={itemsPerPage}
+                                  onChange={(e) => {
+                                    setItemsPerPage(Number(e.target.value));
+                                    setCurrentPage(1);
+                                  }}
+                                  className="px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 outline-none focus:border-[#00693E] cursor-pointer shadow-3xs"
+                                >
+                                  <option value={20}>20</option>
+                                  <option value={50}>50</option>
+                                  <option value={100}>100</option>
+                                </select>
+                                <span className="font-medium">baris</span>
+                              </div>
+                              <span className="text-slate-300">|</span>
+                              <span className="font-semibold text-slate-600">
+                                Menampilkan <span className="font-black text-slate-800">{filteredStudents.length === 0 ? 0 : startIndex + 1}</span> - <span className="font-black text-slate-800">{endIndex}</span> dari <span className="font-black text-slate-800">{filteredStudents.length}</span> santri
+                              </span>
+                            </div>
+
+                            {/* Right: Pagination controls */}
+                            <div className="flex items-center gap-1">
+                              {/* First Page */}
+                              <button
+                                type="button"
+                                onClick={() => setCurrentPage(1)}
+                                disabled={activePage <= 1}
+                                className="h-8 w-8 rounded-lg flex items-center justify-center border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-3xs"
+                                title="Halaman Pertama"
+                              >
+                                <ChevronsLeft className="h-4 w-4" />
+                              </button>
+
+                              {/* Previous Page */}
+                              <button
+                                type="button"
+                                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                                disabled={activePage <= 1}
+                                className="h-8 w-8 rounded-lg flex items-center justify-center border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-3xs"
+                                title="Halaman Sebelumnya"
+                              >
+                                <ChevronLeft className="h-4 w-4" />
+                              </button>
+
+                              {/* Jump to Page Dropdown */}
+                              <div className="relative">
+                                <button
+                                  type="button"
+                                  onClick={() => setShowPageJumpDropdown(!showPageJumpDropdown)}
+                                  className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 cursor-pointer shadow-3xs"
+                                >
+                                  <span>Hal {activePage} / {totalPages}</span>
+                                  <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+                                </button>
+
+                                {showPageJumpDropdown && (
+                                  <>
+                                    <div 
+                                      className="fixed inset-0 z-40" 
+                                      onClick={() => setShowPageJumpDropdown(false)} 
+                                    />
+                                    <div className="absolute bottom-full mb-1 left-0 w-36 max-h-48 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl z-50 p-1 divide-y divide-slate-50">
+                                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
+                                        <button
+                                          key={pageNum}
+                                          type="button"
+                                          onClick={() => {
+                                            setCurrentPage(pageNum);
+                                            setShowPageJumpDropdown(false);
+                                          }}
+                                          className={`w-full px-3 py-1.5 text-left text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center justify-between ${
+                                            pageNum === activePage
+                                              ? 'bg-emerald-50 text-[#00693E]'
+                                              : 'text-slate-600 hover:bg-slate-50'
+                                          }`}
+                                        >
+                                          <span>Halaman {pageNum}</span>
+                                          {pageNum === activePage && <Check className="h-3 w-3" />}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+
+                              {/* Next Page */}
+                              <button
+                                type="button"
+                                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                                disabled={activePage >= totalPages}
+                                className="h-8 w-8 rounded-lg flex items-center justify-center border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-3xs"
+                                title="Halaman Selanjutnya"
+                              >
+                                <ChevronRight className="h-4 w-4" />
+                              </button>
+
+                              {/* Last Page */}
+                              <button
+                                type="button"
+                                onClick={() => setCurrentPage(totalPages)}
+                                disabled={activePage >= totalPages}
+                                className="h-8 w-8 rounded-lg flex items-center justify-center border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-3xs"
+                                title="Halaman Terakhir"
+                              >
+                                <ChevronsRight className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })()}
                 </div>
-              )}
               </div>
-          </motion.div>
+            );
+          })()}
+        </motion.div>
         )}
       </AnimatePresence>
 
@@ -3510,6 +5014,35 @@ export default function LembagaKelasSub({
                         placeholder="Contoh: Unit Satuan Pendidikan Menengah Formal"
                         className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:border-emerald-500 outline-none font-semibold text-slate-700"
                       />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                          <span>Nomor Statistik</span>
+                          <span className="text-[9px] text-slate-400 font-medium">NSM/NSS/NSPP</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={lemNomorStatistik}
+                          onChange={(e) => setLemNomorStatistik(e.target.value)}
+                          placeholder="Contoh: 131232010001"
+                          className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:border-emerald-500 outline-none font-mono font-semibold text-slate-700"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                          <span>NPSN</span>
+                          <span className="text-[9px] text-slate-400 font-medium">8 Digit</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={lemNpsn}
+                          onChange={(e) => setLemNpsn(e.target.value)}
+                          placeholder="Contoh: 69987654"
+                          className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:border-emerald-500 outline-none font-mono font-semibold text-slate-700"
+                        />
+                      </div>
                     </div>
 
                     <div>
@@ -3750,39 +5283,42 @@ export default function LembagaKelasSub({
 
       {/* C. PINDAH KELAS / TRANSFER STUDENT MODAL */}
       <AnimatePresence>
-        {transferStudent && selectedKelas && (() => {
+        {transferStudent && (selectedKelas || selectedLembaga) && (() => {
           const studentGender = transferStudent.gender || selectedGender;
+          const effectiveCurrentClass = selectedKelas || subClasses.find(c => isDefaultClass(c)) || { id: 'calon-' + selectedLembaga?.id, nama: getDefaultCalonClassName(selectedLembaga, studentGender) };
           const targetKind = activeTab === 'Rombel' ? 'Internal' : 'Formal';
           const eligibleLembagas = lembagasList.filter(l => 
             getLembagaJenis(l) === targetKind && isGenderMatch(l.gender, studentGender)
           );
-          const activeLemId = transferLembagaId || selectedLembaga.id;
+          const activeLemId = transferLembagaId || selectedLembaga?.id;
           const currentLemObj = lembagasList.find(l => l.id === activeLemId) || selectedLembaga;
           const isFormalTarget = (currentLemObj?.jenis === 'Formal' || targetKind === 'Formal');
-          const isStudentEmis = isEmisTerdaftar(transferStudent.statusEmis);
 
           let targetClasses = kelasList.filter(k => {
             const lemId = getClsLembagaId(k);
             return lemId === String(activeLemId);
           }).filter(c => {
-            if (activeLemId === selectedLembaga.id) {
-              return c.id !== selectedKelas.id;
+            if (activeLemId === selectedLembaga?.id) {
+              return c.id !== effectiveCurrentClass.id && c.nama.toLowerCase() !== effectiveCurrentClass.nama.toLowerCase();
             }
             return true;
           });
 
-          if (isFormalTarget && !isStudentEmis) {
-            targetClasses = targetClasses.filter(c => isDefaultClass(c) || c.nama.trim().toLowerCase() === 'calon peserta didik');
-            // If targetClasses is empty (no explicit default class in DB for activeLemId), provide synthetic default class
-            if (targetClasses.length === 0) {
-              targetClasses = [{
-                id: 'default-' + activeLemId,
-                lembagaId: String(activeLemId),
-                nama: 'Calon Peserta Didik',
-                waliKelas: '-',
-                tingkatan: 'Lainnya',
-                isDefault: true
-              }];
+          if (currentLemObj) {
+            const targetCalonName = getDefaultCalonClassName(currentLemObj, studentGender);
+            const hasCalon = targetClasses.some(c => isDefaultClass(c) || c.nama.toLowerCase() === targetCalonName.toLowerCase());
+            if (!hasCalon && targetCalonName.toLowerCase() !== effectiveCurrentClass.nama.toLowerCase()) {
+              targetClasses = [
+                {
+                  id: 'default-calon-' + currentLemObj.id,
+                  lembagaId: currentLemObj.id,
+                  nama: targetCalonName,
+                  waliKelas: '-',
+                  tingkatan: 'Calon Pelajar',
+                  isDefault: true
+                } as Kelas,
+                ...targetClasses
+              ];
             }
           }
 
@@ -3805,7 +5341,7 @@ export default function LembagaKelasSub({
 
                 <div className="p-5 space-y-4 text-xs font-medium text-slate-600">
                   <p className="leading-relaxed">
-                    Pindahkan <strong className="text-slate-800 font-extrabold">{transferStudent.nama}</strong> ({studentGender}) dari <strong className="text-emerald-700 font-extrabold">{selectedLembaga.nama} - "{selectedKelas.nama}"</strong> ke:
+                    Pindahkan <strong className="text-slate-800 font-extrabold">{transferStudent.nama}</strong> ({studentGender}) dari <strong className="text-emerald-700 font-extrabold">{selectedLembaga?.nama} - "{effectiveCurrentClass.nama}"</strong> ke:
                   </p>
 
                   {/* Kotak 1: Pilih Lembaga */}
@@ -3892,7 +5428,6 @@ export default function LembagaKelasSub({
           const isFormalTarget = (currentBulkLemObj?.jenis === 'Formal' || targetKind === 'Formal');
 
           const selectedStudents = santriList.filter(s => selectedStudentIds.includes(s.id));
-          const hasUnregisteredEmis = selectedStudents.some(s => !isEmisTerdaftar(s.statusEmis));
 
           let targetBulkClasses = kelasList.filter(k => {
             const lemId = getClsLembagaId(k);
@@ -3904,17 +5439,21 @@ export default function LembagaKelasSub({
             return true;
           });
 
-          if (isFormalTarget && hasUnregisteredEmis) {
-            targetBulkClasses = targetBulkClasses.filter(c => isDefaultClass(c) || c.nama.trim().toLowerCase() === 'calon peserta didik');
-            if (targetBulkClasses.length === 0) {
-              targetBulkClasses = [{
-                id: 'default-' + activeBulkLemId,
-                lembagaId: String(activeBulkLemId),
-                nama: 'Calon Peserta Didik',
-                waliKelas: '-',
-                tingkatan: 'Lainnya',
-                isDefault: true
-              }];
+          if (currentBulkLemObj) {
+            const targetCalonName = getDefaultCalonClassName(currentBulkLemObj, selectedGender);
+            const hasCalon = targetBulkClasses.some(c => isDefaultClass(c) || c.nama.toLowerCase() === targetCalonName.toLowerCase());
+            if (!hasCalon && targetCalonName.toLowerCase() !== selectedKelas.nama.toLowerCase()) {
+              targetBulkClasses = [
+                {
+                  id: 'default-calon-' + currentBulkLemObj.id,
+                  lembagaId: currentBulkLemObj.id,
+                  nama: targetCalonName,
+                  waliKelas: '-',
+                  tingkatan: 'Calon Pelajar',
+                  isDefault: true
+                } as Kelas,
+                ...targetBulkClasses
+              ];
             }
           }
 
@@ -3996,12 +5535,6 @@ export default function LembagaKelasSub({
                       </select>
                     )}
                   </div>
-
-                  {isFormalTarget && hasUnregisteredEmis && (
-                    <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-800 font-medium leading-relaxed">
-                      ⚠️ Terdapat santri yang <strong>belum terdaftar EMIS</strong> di antara data yang dipilih. Pada pendidikan formal, kelas tujuan dibatasi hanya ke <strong>"Calon Peserta Didik"</strong>.
-                    </div>
-                  )}
                 </div>
 
                 <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex items-center justify-end gap-2">
@@ -4568,6 +6101,8 @@ export default function LembagaKelasSub({
         <SantriDetailModal
           selectedSantri={selectedSantriForDetail}
           onClose={() => setSelectedSantriForDetail(null)}
+          lembagasList={lembagasList}
+          kelasList={kelasList}
         />
       )}
 
@@ -4684,9 +6219,6 @@ export default function LembagaKelasSub({
                                 statusEmis: valToApply as any,
                                 catatan: s.statusEmis === 'Invalid' && valToApply !== 'Invalid' ? extraNote : (valToApply === 'Invalid' && !s.catatan?.toLowerCase().startsWith('emis invalid:') ? `Emis Invalid: Status EMIS Invalid${s.catatan ? ` | ${s.catatan}` : ''}` : s.catatan)
                               };
-                              if (valToApply === 'Belum') {
-                                updated = demoteSantriToCalonPesertaDidik(s, lembagasList, kelasList);
-                              }
                               onUpdateSantri(updated);
                             }
                             setActiveEmisDropdownId(null);
@@ -4723,7 +6255,7 @@ export default function LembagaKelasSub({
                     </div>
                   )}
 
-                  {(['Terdaftar', 'Invalid', 'Belum'] as const).map((emisOption) => {
+                  {(['Terdaftar', 'Invalid', 'Belum', 'Keluar', 'Lulus'] as const).map((emisOption) => {
                     const activeVal = pendingEmis[s.id] || currentEmis;
                     const isCurrent = activeVal === emisOption;
                     return (
@@ -4732,16 +6264,47 @@ export default function LembagaKelasSub({
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setPendingEmis(prev => ({ ...prev, [s.id]: emisOption }));
+                          if (emisOption === 'Invalid') {
+                            const { invalidReason } = parseCatatanInvalid(s.catatan);
+                            const cleanReason = invalidReason.replace(/^Emis Invalid:\s*/i, '').trim();
+                            setInvalidEmisModal({
+                              santri: s,
+                              note: cleanReason
+                            });
+                            setActiveEmisDropdownId(null);
+                            setEmisDropdownPos(null);
+                          } else {
+                            setPendingEmis(prev => ({ ...prev, [s.id]: emisOption }));
+                          }
                         }}
                         className={`w-full text-left px-3 py-1.5 transition-colors flex items-center justify-between cursor-pointer ${
                           isCurrent 
-                            ? (emisOption === 'Invalid' ? 'bg-rose-50 text-rose-700 font-bold' : 'bg-emerald-50 text-emerald-700 font-bold') 
+                            ? (emisOption === 'Invalid' 
+                                ? 'bg-rose-50 text-rose-700 font-bold' 
+                                : emisOption === 'Keluar'
+                                  ? 'bg-amber-50 text-amber-700 font-bold'
+                                  : emisOption === 'Lulus'
+                                    ? 'bg-blue-50 text-blue-700 font-bold'
+                                    : emisOption === 'Terdaftar'
+                                      ? 'bg-emerald-50 text-emerald-700 font-bold'
+                                      : 'bg-slate-100 text-slate-700 font-bold') 
                             : 'hover:bg-slate-50 text-slate-600'
                         }`}
                       >
-                        <span className={emisOption === 'Invalid' ? 'text-rose-600 font-bold' : ''}>{emisOption}</span>
-                        {isCurrent && <span className={`h-1.5 w-1.5 rounded-full ${emisOption === 'Invalid' ? 'bg-rose-600' : 'bg-emerald-600'}`} />}
+                        <span className={
+                          emisOption === 'Invalid' ? 'text-rose-600 font-bold' :
+                          emisOption === 'Keluar' ? 'text-amber-700 font-bold' :
+                          emisOption === 'Lulus' ? 'text-blue-700 font-bold' :
+                          emisOption === 'Terdaftar' ? 'text-emerald-700 font-bold' : ''
+                        }>{emisOption}</span>
+                        {isCurrent && (
+                          <span className={`h-1.5 w-1.5 rounded-full ${
+                            emisOption === 'Invalid' ? 'bg-rose-600' :
+                            emisOption === 'Keluar' ? 'bg-amber-600' :
+                            emisOption === 'Lulus' ? 'bg-blue-600' :
+                            emisOption === 'Terdaftar' ? 'bg-emerald-600' : 'bg-slate-600'
+                          }`} />
+                        )}
                       </button>
                     );
                   })}
@@ -4750,6 +6313,91 @@ export default function LembagaKelasSub({
             })()}
           </div>
         </>,
+        document.body
+      )}
+
+      {/* Modal Keterangan EMIS Invalid */}
+      {typeof document !== 'undefined' && invalidEmisModal && createPortal(
+        <div 
+          className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4"
+          onClick={() => setInvalidEmisModal(null)}
+        >
+          <div 
+            className="bg-white rounded-2xl p-5 max-w-sm w-full shadow-2xl border border-slate-100 flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
+                <h4 className="text-sm font-bold text-slate-800">Keterangan EMIS Invalid</h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInvalidEmisModal(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <p className="text-xs text-slate-600 font-medium">
+                Santri: <strong className="text-slate-800">{invalidEmisModal.santri.nama}</strong>
+              </p>
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                Alasan / Keterangan Invalid:
+              </label>
+              <textarea
+                rows={3}
+                value={invalidEmisModal.note}
+                onChange={(e) => setInvalidEmisModal(prev => prev ? { ...prev, note: e.target.value } : null)}
+                placeholder="Contoh: NIK ganda di sekolah asal, berkas belum lengkap..."
+                className="w-full text-xs p-2.5 border border-slate-200 rounded-xl focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none resize-none leading-relaxed"
+                autoFocus
+              />
+              <p className="text-[10px] text-slate-400 italic">
+                * Keterangan ini akan tersimpan pada status EMIS Invalid santri.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setInvalidEmisModal(null)}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer transition-colors"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const detailNote = invalidEmisModal.note.trim() || 'Rincian belum diisi';
+                  const invalidPrefix = detailNote.toLowerCase().startsWith('emis invalid:') ? detailNote : `Emis Invalid: ${detailNote}`;
+                  const { extraNote } = parseCatatanInvalid(invalidEmisModal.santri.catatan);
+                  const finalNote = formatCatatanWithInvalid(invalidPrefix, extraNote);
+                  let updated: Santri = {
+                    ...invalidEmisModal.santri,
+                    statusEmis: 'Invalid',
+                    catatan: finalNote
+                  };
+                  onUpdateSantri(updated);
+                  setInvalidEmisModal(null);
+                  setActiveEmisDropdownId(null);
+                  setEmisDropdownPos(null);
+                  setPendingEmis(prev => {
+                    const copy = { ...prev };
+                    delete copy[invalidEmisModal.santri.id];
+                    return copy;
+                  });
+                  setToast({ message: `Status EMIS ${invalidEmisModal.santri.nama} berhasil diubah ke Invalid`, type: 'success' });
+                }}
+                className="px-4 py-1.5 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-xs cursor-pointer transition-colors active:scale-95"
+              >
+                Simpan Status Invalid
+              </button>
+            </div>
+          </div>
+        </div>,
         document.body
       )}
 
@@ -4884,6 +6532,17 @@ export default function LembagaKelasSub({
                 if (!s) return null;
                 return (
                   <>
+                    <button
+                      onClick={() => {
+                        setEditingSantriForKolom(s);
+                        setActiveActionStudentId(null);
+                        setStudentDropdownPos(null);
+                      }}
+                      className="w-full text-left px-3 py-1.5 hover:bg-emerald-50 hover:text-emerald-700 transition-colors cursor-pointer flex items-center gap-1.5 text-emerald-700 font-bold border-b border-slate-100"
+                    >
+                      <Pencil className="h-3 w-3 text-emerald-600" />
+                      <span>Edit Data</span>
+                    </button>
                     <button
                       onClick={() => {
                         setSelectedSantriForDetail(s);
@@ -5078,6 +6737,51 @@ export default function LembagaKelasSub({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Edit Santri Kolom Modal */}
+      {editingSantriForKolom && (
+        <EditSantriKolomModal
+          isOpen={Boolean(editingSantriForKolom)}
+          onClose={() => setEditingSantriForKolom(null)}
+          santri={editingSantriForKolom}
+          onSave={(updated) => {
+            onUpdateSantri?.(updated);
+            setEditingSantriForKolom(null);
+          }}
+          lembaga={selectedLembaga}
+          allStudents={santriList}
+        />
+      )}
+
+      {/* Column Visibility Modal */}
+      <ColumnVisibilityModal
+        isOpen={isColumnModalOpen}
+        onClose={() => setIsColumnModalOpen(false)}
+        visibleColumns={visibleColumns}
+        setVisibleColumns={setVisibleColumns}
+      />
+
+      {/* Export Lembaga Data Modal */}
+      {selectedLembaga && (() => {
+        const viewExportInfo = getCurrentViewExportData();
+        return (
+          <ExportModal
+            isOpen={isExportLembagaModalOpen}
+            onClose={() => setIsExportLembagaModalOpen(false)}
+            title={viewExportInfo.modalTitle}
+            description={viewExportInfo.modalDesc}
+            defaultFileName={viewExportInfo.defaultFileName}
+            onExportExcel={(fileName) => {
+              handleExportExcelLembaga(fileName);
+              setIsExportLembagaModalOpen(false);
+            }}
+            onPrintPDF={(fileName) => {
+              handlePrintPDFLembaga(fileName);
+              setIsExportLembagaModalOpen(false);
+            }}
+          />
+        );
+      })()}
 
     </div>
   );

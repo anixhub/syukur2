@@ -35,8 +35,9 @@ import {
   Building2
 } from 'lucide-react';
 import { ALL_COLUMNS, DEFAULT_WAJIB_KEYS, DEFAULT_TABLE_COLUMNS } from '../constants/monitoringColumns';
-import { Santri } from '../types';
-import { formatClassNameOnly } from '../lib/utils';
+import { Santri, Lembaga, Kelas } from '../types';
+import { formatClassNameOnly, getSantriFormalEducationInfo } from '../lib/utils';
+import { fetchTableData } from '../lib/api';
 import { DEFAULT_ROLES, getPermissionsForRole, normalizeRoleId } from '../lib/permissions';
 import { 
   renderSantriAvatar,
@@ -52,6 +53,8 @@ import DeleteConfirmModal from './sekretaris/DeleteConfirmModal';
 import SantriFormModal from './sekretaris/SantriFormModal';
 import OverviewSubModule from './sekretaris/OverviewSubModule';
 import AgeFilterModal, { AgeFilterConfig, DEFAULT_AGE_FILTER_CONFIG, calculateAgeOnDate } from './sekretaris/AgeFilterModal';
+import ColumnVisibilityModal from './sekretaris/ColumnVisibilityModal';
+import FilterBottomSheet from './sekretaris/FilterBottomSheet';
 import { getColumnValueString } from './sekretaris/ExcelColumnFilter';
 
 // Extracted Modular Components
@@ -124,12 +127,57 @@ export default function SekretarisView({
   const [genderFilter, setGenderFilter] = useState<string>('semua');
   const [domisiliFilter, setDomisiliFilter] = useState<string>('semua');
   const [emisFilter, setEmisFilter] = useState<string>('semua');
-  const [showStatusFilterDropdown, setShowStatusFilterDropdown] = useState<boolean>(false);
-  const [showDomisiliFilterDropdown, setShowDomisiliFilterDropdown] = useState<boolean>(false);
-  const [showGenderFilterDropdown, setShowGenderFilterDropdown] = useState<boolean>(false);
-  const [showEmisFilterDropdown, setShowEmisFilterDropdown] = useState<boolean>(false);
   const [isAgeModalOpen, setIsAgeModalOpen] = useState(false);
   const [ageFilterConfig, setAgeFilterConfig] = useState<AgeFilterConfig>(DEFAULT_AGE_FILTER_CONFIG);
+
+  // Synchronized Education Data
+  const [lembagasList, setLembagasList] = useState<Lembaga[]>(() => {
+    try {
+      const local = localStorage.getItem('smartsantri_lembagas');
+      return local ? JSON.parse(local) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [kelasList, setKelasList] = useState<Kelas[]>(() => {
+    try {
+      const local = localStorage.getItem('smartsantri_kelas');
+      return local ? JSON.parse(local) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    const loadEducationData = async () => {
+      try {
+        const [lems, kls] = await Promise.all([
+          fetchTableData<Lembaga>('lembaga', 'smartsantri_lembagas', []),
+          fetchTableData<Kelas>('kelas', 'smartsantri_kelas', [])
+        ]);
+        if (lems && lems.length > 0) setLembagasList(lems);
+        if (kls && kls.length > 0) setKelasList(kls);
+      } catch {}
+    };
+    loadEducationData();
+
+    const handleEduSync = () => {
+      try {
+        const lStr = localStorage.getItem('smartsantri_lembagas');
+        if (lStr) setLembagasList(JSON.parse(lStr));
+        const kStr = localStorage.getItem('smartsantri_kelas');
+        if (kStr) setKelasList(JSON.parse(kStr));
+      } catch {}
+    };
+
+    window.addEventListener('smartsantri_education_updated', handleEduSync);
+    window.addEventListener('storage', handleEduSync);
+    return () => {
+      window.removeEventListener('smartsantri_education_updated', handleEduSync);
+      window.removeEventListener('storage', handleEduSync);
+    };
+  }, []);
 
   // Excel Column Specific Filters State
   const [excelColumnFilters, setExcelColumnFilters] = useState<Record<string, string[]>>({});
@@ -156,12 +204,22 @@ export default function SekretarisView({
     k => excelColumnFilters[k] && excelColumnFilters[k].length > 0
   ).length;
 
+  const totalActiveFilterCount = useMemo(() => {
+    let count = 0;
+    if (statusFilter !== 'semua') count++;
+    if (domisiliFilter !== 'semua') count++;
+    if (emisFilter !== 'semua') count++;
+    if (ageFilterConfig.enabled) count++;
+    if (activeExcelFilterCount > 0) count += activeExcelFilterCount;
+    return count;
+  }, [statusFilter, domisiliFilter, emisFilter, ageFilterConfig.enabled, activeExcelFilterCount]);
+
   // Sorting, Pagination, and Column Visibility States
   const [sortKey, setSortKey] = useState<string>('nama');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(50);
-  const [showColumnConfig, setShowColumnConfig] = useState<boolean>(false);
+  const [isColumnModalOpen, setIsColumnModalOpen] = useState<boolean>(false);
   const [showSortDropdown, setShowSortDropdown] = useState<boolean>(false);
   const [showPageJumpDropdown, setShowPageJumpDropdown] = useState<boolean>(false);
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(() => {
@@ -189,25 +247,6 @@ export default function SekretarisView({
   const [isMobileBulkOpen, setIsMobileBulkOpen] = useState(false);
   const [isMobileFloatingDropdownOpen, setIsMobileFloatingDropdownOpen] = useState(false);
 
-  const columnConfigRef = React.useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        columnConfigRef.current && 
-        !columnConfigRef.current.contains(event.target as Node)
-      ) {
-        setShowColumnConfig(false);
-      }
-    };
-    if (showColumnConfig) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [showColumnConfig]);
-
   const [deleteConfirm, setDeleteConfirm] = useState<{
     isOpen: boolean;
     type: 'single' | 'bulk';
@@ -234,10 +273,17 @@ export default function SekretarisView({
     const activeRole = localStorage.getItem('smartsantri_active_role') || 'superadmin';
     if (normalizeRoleId(activeRole) !== 'superadmin') {
       const perms = getPermissionsForRole(activeRole);
-      canViewPutra = !!perms['sekretaris_putra.view'];
-      canViewPutri = !!perms['sekretaris_putri.view'];
-      canWritePutra = !!perms['sekretaris_putra.write'];
-      canWritePutri = !!perms['sekretaris_putri.write'];
+      if (perms && Object.keys(perms).length > 0) {
+        canViewPutra = perms['sekretaris_putra.view'] !== undefined ? !!perms['sekretaris_putra.view'] : true;
+        canViewPutri = perms['sekretaris_putri.view'] !== undefined ? !!perms['sekretaris_putri.view'] : true;
+        canWritePutra = !!perms['sekretaris_putra.write'];
+        canWritePutri = !!perms['sekretaris_putri.write'];
+      }
+    }
+    // Safety fallback: if neither can be viewed (e.g. unconfigured role), default to allowing view
+    if (!canViewPutra && !canViewPutri) {
+      canViewPutra = true;
+      canViewPutri = true;
     }
   } catch (e) {
     console.error('Error parsing permissions in SekretarisView:', e);
@@ -252,6 +298,8 @@ export default function SekretarisView({
       list.push('Putra');
     } else if (canViewPutri) {
       list.push('Putri');
+    } else {
+      list.push('semua', 'Putra', 'Putri');
     }
     return list;
   })();
@@ -406,19 +454,27 @@ export default function SekretarisView({
     document.body.removeChild(link);
   };
 
-  const handleExportExcelSantri = (customFileName?: string) => {
-    // Definisi kolom ekspor yang sesuai urutan data
-    const exportColumns = [
-      { id: 'nis', label: 'NIS', isAlwaysVisible: true, getValue: (s: Santri) => s.nis || '' },
-      { id: 'nama', label: 'Nama Lengkap', isAlwaysVisible: true, getValue: (s: Santri) => s.nama || '' },
-      { id: 'nisn', label: 'NISN', isAlwaysVisible: false, colKey: 'nisn', getValue: (s: Santri) => s.nisn || '' },
-      { id: 'indukMhd', label: 'INDUK MHD', isAlwaysVisible: false, colKey: 'indukMhd', getValue: (s: Santri) => s.indukMhd || '' },
-      { id: 'indukWustho', label: 'INDUK WUSTHO', isAlwaysVisible: false, colKey: 'indukWustho', getValue: (s: Santri) => s.indukWustho || '' },
-      { id: 'indukUlya', label: 'INDUK ULYA', isAlwaysVisible: false, colKey: 'indukUlya', getValue: (s: Santri) => s.indukUlya || '' },
-      { id: 'nik', label: 'NIK', isAlwaysVisible: false, colKey: 'nik', getValue: (s: Santri) => s.nik || '' },
+  // Helper untuk mendapatkan kolom ekspor yang persis sama dengan kolom yang sedang ditampilkan di tabel
+  const getActiveTableExportColumns = () => {
+    const isColumnDisplayed = (colKey: string): boolean => {
+      if (colKey === 'nama') return true;
+      if (colKey === 'umur') return !!ageFilterConfig.enabled;
+      if (isMonitoringMode) {
+        const isWajib = mandatoryKeys.includes(colKey as keyof Santri);
+        return monitoringActiveTab === 'wajib' ? isWajib : !isWajib;
+      }
+      return visibleColumns[colKey] ?? false;
+    };
+
+    const allTableColumns = [
+      { id: 'nama', label: 'Nama Lengkap', colKey: 'nama', isAlwaysVisible: true, getValue: (s: Santri) => s.nama || '' },
+      { id: 'nis', label: 'NIS', colKey: 'nis', isAlwaysVisible: false, getValue: (s: Santri) => s.nis || '' },
+      { id: 'nisn', label: 'NISN', colKey: 'nisn', isAlwaysVisible: false, getValue: (s: Santri) => s.nisn || '' },
+      { id: 'nik', label: 'NIK', colKey: 'nik', isAlwaysVisible: false, getValue: (s: Santri) => s.nik || '' },
       ...(ageFilterConfig.enabled ? [{
         id: 'umur',
         label: `Umur ${ageFilterConfig.refType === 'custom' && ageFilterConfig.customDate ? `(Per ${new Date(ageFilterConfig.customDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })})` : '(Hari ini)'}`,
+        colKey: 'umur',
         isAlwaysVisible: true,
         getValue: (s: Santri) => {
           const refDate = ageFilterConfig.refType === 'custom' && ageFilterConfig.customDate
@@ -428,43 +484,57 @@ export default function SekretarisView({
           return age !== null ? `${age} Tahun` : '';
         }
       }] : []),
-      { id: 'noKk', label: 'No. KK', isAlwaysVisible: false, colKey: 'noKk', getValue: (s: Santri) => s.noKk || '' },
-      { id: 'tempatLahir', label: 'Tempat Lahir', isAlwaysVisible: true, getValue: (s: Santri) => s.tempatLahir || '' },
-      { id: 'tanggalLahir', label: 'Tanggal Lahir', isAlwaysVisible: true, getValue: (s: Santri) => s.tanggalLahir || '' },
-      { id: 'gender', label: 'Gender', isAlwaysVisible: false, colKey: 'gender', getValue: (s: Santri) => s.gender || '' },
-      { id: 'pendidikanTerakhir', label: 'Pendidikan Terakhir', isAlwaysVisible: false, colKey: 'pendidikanTerakhir', getValue: (s: Santri) => s.pendidikanTerakhir || '' },
-      { id: 'anakKe', label: 'Anak Ke', isAlwaysVisible: false, colKey: 'anakKe', getValue: (s: Santri) => s.anakKe !== undefined ? String(s.anakKe) : '' },
-      { id: 'dariBersaudara', label: 'Jumlah Saudara', isAlwaysVisible: false, colKey: 'dariBersaudara', getValue: (s: Santri) => s.dariBersaudara !== undefined ? String(s.dariBersaudara) : '' },
-      { id: 'namaAyah', label: 'Nama Ayah', isAlwaysVisible: false, colKey: 'namaAyah', getValue: (s: Santri) => s.namaAyah || '' },
-      { id: 'nikAyah', label: 'NIK Ayah', isAlwaysVisible: false, colKey: 'nikAyah', getValue: (s: Santri) => s.nikAyah || '' },
-      { id: 'pekerjaanAyah', label: 'Pekerjaan Ayah', isAlwaysVisible: false, colKey: 'pekerjaanAyah', getValue: (s: Santri) => s.pekerjaanAyah || '' },
-      { id: 'pendidikanAyah', label: 'Pendidikan Ayah', isAlwaysVisible: false, colKey: 'pendidikanAyah', getValue: (s: Santri) => s.pendidikanAyah || '' },
-      { id: 'namaIbu', label: 'Nama Ibu', isAlwaysVisible: false, colKey: 'namaIbu', getValue: (s: Santri) => s.namaIbu || '' },
-      { id: 'nikIbu', label: 'NIK Ibu', isAlwaysVisible: false, colKey: 'nikIbu', getValue: (s: Santri) => s.nikIbu || '' },
-      { id: 'pekerjaanIbu', label: 'Pekerjaan Ibu', isAlwaysVisible: false, colKey: 'pekerjaanIbu', getValue: (s: Santri) => s.pekerjaanIbu || '' },
-      { id: 'pendidikanIbu', label: 'Pendidikan Ibu', isAlwaysVisible: false, colKey: 'pendidikanIbu', getValue: (s: Santri) => s.pendidikanIbu || '' },
-      { id: 'alamat', label: 'Alamat', isAlwaysVisible: false, colKey: 'alamat', getValue: (s: Santri) => s.alamat || '' },
-      { id: 'rt', label: 'RT', isAlwaysVisible: false, colKey: 'rt', getValue: (s: Santri) => s.rt || '' },
-      { id: 'rw', label: 'RW', isAlwaysVisible: false, colKey: 'rw', getValue: (s: Santri) => s.rw || '' },
-      { id: 'desa', label: 'Desa / Kelurahan', isAlwaysVisible: true, getValue: (s: Santri) => s.desa || '' },
-      { id: 'kecamatan', label: 'Kecamatan', isAlwaysVisible: true, getValue: (s: Santri) => s.kecamatan || '' },
-      { id: 'kabupaten', label: 'Kabupaten / Kota', isAlwaysVisible: true, getValue: (s: Santri) => s.kabupaten || '' },
-      { id: 'provinsi', label: 'Provinsi', isAlwaysVisible: true, getValue: (s: Santri) => s.provinsi || '' },
-      { id: 'jarakRumah', label: 'Jarak Rumah (km)', isAlwaysVisible: false, colKey: 'jarakRumah', getValue: (s: Santri) => s.jarakRumah !== undefined ? String(s.jarakRumah) : '' },
-      { id: 'noHp', label: 'No. HP Wali', isAlwaysVisible: false, colKey: 'noHp', getValue: (s: Santri) => s.noHp || '' },
-      { id: 'statusDomisili', label: 'Status Domisili', isAlwaysVisible: false, colKey: 'statusDomisili', getValue: (s: Santri) => s.statusDomisili || '' },
-      { id: 'statusKeanggotaan', label: 'Status Keanggotaan', isAlwaysVisible: false, colKey: 'statusKeanggotaan', getValue: (s: Santri) => s.statusKeanggotaan || '' },
-      { id: 'tanggalMasuk', label: 'Tanggal Masuk', isAlwaysVisible: false, colKey: 'tanggalMasuk', getValue: (s: Santri) => s.tanggalMasuk || '' },
-      { id: 'tanggalKeluar', label: 'Tanggal Keluar', isAlwaysVisible: false, colKey: 'tanggalKeluar', getValue: (s: Santri) => s.tanggalKeluar || '' },
-      { id: 'statusVerval', label: 'Status Verval', isAlwaysVisible: false, colKey: 'statusVerval', getValue: (s: Santri) => s.statusVerval || 'Proses' },
-      { id: 'catatan', label: 'Catatan', isAlwaysVisible: true, getValue: (s: Santri) => s.catatan || '' }
+      { id: 'indukMhd', label: 'INDUK MHD', colKey: 'indukMhd', isAlwaysVisible: false, getValue: (s: Santri) => s.indukMhd || '' },
+      { id: 'indukWustho', label: 'INDUK WUSTHO', colKey: 'indukWustho', isAlwaysVisible: false, getValue: (s: Santri) => s.indukWustho || '' },
+      { id: 'indukUlya', label: 'INDUK ULYA', colKey: 'indukUlya', isAlwaysVisible: false, getValue: (s: Santri) => s.indukUlya || '' },
+      { id: 'noKk', label: 'No. KK', colKey: 'noKk', isAlwaysVisible: false, getValue: (s: Santri) => s.noKk || '' },
+      { id: 'tempatLahir', label: 'Tempat Lahir', colKey: 'tempatLahir', isAlwaysVisible: false, getValue: (s: Santri) => s.tempatLahir || '' },
+      { id: 'tanggalLahir', label: 'Tanggal Lahir', colKey: 'tanggalLahir', isAlwaysVisible: false, getValue: (s: Santri) => s.tanggalLahir || '' },
+      { id: 'gender', label: 'Gender', colKey: 'gender', isAlwaysVisible: false, getValue: (s: Santri) => s.gender || '' },
+      { id: 'pendidikanTerakhir', label: 'Pendidikan Terakhir', colKey: 'pendidikanTerakhir', isAlwaysVisible: false, getValue: (s: Santri) => s.pendidikanTerakhir || '' },
+      { id: 'pendidikanFormal', label: 'Pendidikan Formal', colKey: 'pendidikanFormal', isAlwaysVisible: false, getValue: (s: Santri) => {
+        const formalInfo = getSantriFormalEducationInfo(s, lembagasList, kelasList);
+        return formalInfo.filterDisplay || (formalInfo.isFormal && formalInfo.lembaga 
+          ? `${(formalInfo.lembaga.kode?.trim() || formalInfo.lembaga.nama.trim())} - ${formalInfo.display}` 
+          : formalInfo.display);
+      }},
+      { id: 'anakKe', label: 'Anak Ke', colKey: 'anakKe', isAlwaysVisible: false, getValue: (s: Santri) => s.anakKe !== undefined ? String(s.anakKe) : '' },
+      { id: 'dariBersaudara', label: 'Jumlah Saudara', colKey: 'dariBersaudara', isAlwaysVisible: false, getValue: (s: Santri) => s.dariBersaudara !== undefined ? String(s.dariBersaudara) : '' },
+      { id: 'namaAyah', label: 'Nama Ayah', colKey: 'namaAyah', isAlwaysVisible: false, getValue: (s: Santri) => s.namaAyah || '' },
+      { id: 'nikAyah', label: 'NIK Ayah', colKey: 'nikAyah', isAlwaysVisible: false, getValue: (s: Santri) => s.nikAyah || '' },
+      { id: 'pekerjaanAyah', label: 'Pekerjaan Ayah', colKey: 'pekerjaanAyah', isAlwaysVisible: false, getValue: (s: Santri) => s.pekerjaanAyah || '' },
+      { id: 'pendidikanAyah', label: 'Pendidikan Ayah', colKey: 'pendidikanAyah', isAlwaysVisible: false, getValue: (s: Santri) => s.pendidikanAyah || '' },
+      { id: 'namaIbu', label: 'Nama Ibu', colKey: 'namaIbu', isAlwaysVisible: false, getValue: (s: Santri) => s.namaIbu || '' },
+      { id: 'nikIbu', label: 'NIK Ibu', colKey: 'nikIbu', isAlwaysVisible: false, getValue: (s: Santri) => s.nikIbu || '' },
+      { id: 'pekerjaanIbu', label: 'Pekerjaan Ibu', colKey: 'pekerjaanIbu', isAlwaysVisible: false, getValue: (s: Santri) => s.pekerjaanIbu || '' },
+      { id: 'pendidikanIbu', label: 'Pendidikan Ibu', colKey: 'pendidikanIbu', isAlwaysVisible: false, getValue: (s: Santri) => s.pendidikanIbu || '' },
+      { id: 'alamat', label: 'Alamat', colKey: 'alamat', isAlwaysVisible: false, getValue: (s: Santri) => s.alamat || '' },
+      { id: 'rt', label: 'RT', colKey: 'rt', isAlwaysVisible: false, getValue: (s: Santri) => s.rt || '' },
+      { id: 'rw', label: 'RW', colKey: 'rw', isAlwaysVisible: false, getValue: (s: Santri) => s.rw || '' },
+      { id: 'desa', label: 'Desa / Kelurahan', colKey: 'desa', isAlwaysVisible: false, getValue: (s: Santri) => s.desa || '' },
+      { id: 'kecamatan', label: 'Kecamatan', colKey: 'kecamatan', isAlwaysVisible: false, getValue: (s: Santri) => s.kecamatan || '' },
+      { id: 'kabupaten', label: 'Kabupaten / Kota', colKey: 'kabupaten', isAlwaysVisible: false, getValue: (s: Santri) => s.kabupaten || '' },
+      { id: 'provinsi', label: 'Provinsi', colKey: 'provinsi', isAlwaysVisible: false, getValue: (s: Santri) => s.provinsi || '' },
+      { id: 'jarakRumah', label: 'Jarak (km)', colKey: 'jarakRumah', isAlwaysVisible: false, getValue: (s: Santri) => s.jarakRumah !== undefined ? String(s.jarakRumah) : '' },
+      { id: 'noHp', label: 'No. HP Wali', colKey: 'noHp', isAlwaysVisible: false, getValue: (s: Santri) => s.noHp || '' },
+      { id: 'statusDomisili', label: 'Status Domisili', colKey: 'statusDomisili', isAlwaysVisible: false, getValue: (s: Santri) => s.statusDomisili || '' },
+      { id: 'tanggalMasuk', label: 'Tgl Masuk', colKey: 'tanggalMasuk', isAlwaysVisible: false, getValue: (s: Santri) => s.tanggalMasuk || '' },
+      { id: 'tanggalKeluar', label: 'Tgl Keluar', colKey: 'tanggalKeluar', isAlwaysVisible: false, getValue: (s: Santri) => s.tanggalKeluar || '' },
+      { id: 'statusKeanggotaan', label: 'Status', colKey: 'statusKeanggotaan', isAlwaysVisible: false, getValue: (s: Santri) => s.statusKeanggotaan || 'Aktif' },
+      { id: 'statusEmis', label: 'Emis', colKey: 'statusEmis', isAlwaysVisible: false, getValue: (s: Santri) => s.statusEmis || 'Belum' },
+      { id: 'statusVerval', label: 'Verval', colKey: 'statusVerval', isAlwaysVisible: false, getValue: (s: Santri) => s.statusVerval || 'Proses' },
+      { id: 'catatan', label: 'Catatan', colKey: 'catatan', isAlwaysVisible: false, getValue: (s: Santri) => s.catatan || '' }
     ];
 
-    // Filter columns that are visible
-    const activeColumns = exportColumns.filter(col => col.isAlwaysVisible || (col.colKey && visibleColumns[col.colKey]));
+    return allTableColumns.filter(col => col.isAlwaysVisible || isColumnDisplayed(col.colKey));
+  };
 
-    const headers = activeColumns.map(col => col.label);
-    const rows = sortedSantri.map(s => activeColumns.map(col => col.getValue(s)));
+  const handleExportExcelSantri = (customFileName?: string) => {
+    // Ambil kolom yang persis sesuai dengan tampilan tabel saat ini
+    const activeColumns = getActiveTableExportColumns();
+
+    const headers = ['No', ...activeColumns.map(col => col.label)];
+    const rows = sortedSantri.map((s, idx) => [String(idx + 1), ...activeColumns.map(col => col.getValue(s))]);
 
     const dateStr = new Date().toISOString().split('T')[0];
     const defaultName = `Data_Santri_${dateStr}.xls`;
@@ -904,49 +974,8 @@ export default function SekretarisView({
       return;
     }
 
-    // Definisi kolom ekspor yang sesuai urutan data
-    const exportColumns = [
-      { id: 'nis', label: 'NIS', isAlwaysVisible: true, getValue: (s: Santri) => s.nis || '' },
-      { id: 'nama', label: 'Nama Lengkap', isAlwaysVisible: true, getValue: (s: Santri) => s.nama || '' },
-      { id: 'nisn', label: 'NISN', isAlwaysVisible: false, colKey: 'nisn', getValue: (s: Santri) => s.nisn || '' },
-      { id: 'indukMhd', label: 'INDUK MHD', isAlwaysVisible: false, colKey: 'indukMhd', getValue: (s: Santri) => s.indukMhd || '' },
-      { id: 'indukWustho', label: 'INDUK WUSTHO', isAlwaysVisible: false, colKey: 'indukWustho', getValue: (s: Santri) => s.indukWustho || '' },
-      { id: 'indukUlya', label: 'INDUK ULYA', isAlwaysVisible: false, colKey: 'indukUlya', getValue: (s: Santri) => s.indukUlya || '' },
-      { id: 'nik', label: 'NIK', isAlwaysVisible: false, colKey: 'nik', getValue: (s: Santri) => s.nik || '' },
-      { id: 'noKk', label: 'No. KK', isAlwaysVisible: false, colKey: 'noKk', getValue: (s: Santri) => s.noKk || '' },
-      { id: 'tempatLahir', label: 'Tempat Lahir', isAlwaysVisible: true, getValue: (s: Santri) => s.tempatLahir || '' },
-      { id: 'tanggalLahir', label: 'Tanggal Lahir', isAlwaysVisible: true, getValue: (s: Santri) => s.tanggalLahir || '' },
-      { id: 'gender', label: 'Gender', isAlwaysVisible: false, colKey: 'gender', getValue: (s: Santri) => s.gender || '' },
-      { id: 'pendidikanTerakhir', label: 'Pendidikan Terakhir', isAlwaysVisible: false, colKey: 'pendidikanTerakhir', getValue: (s: Santri) => s.pendidikanTerakhir || '' },
-      { id: 'pendidikanFormal', label: 'Pendidikan Formal', isAlwaysVisible: false, colKey: 'pendidikanFormal', getValue: (s: Santri) => formatClassNameOnly(s.pendidikanFormal || s.kelas) },
-      { id: 'anakKe', label: 'Anak Ke', isAlwaysVisible: false, colKey: 'anakKe', getValue: (s: Santri) => s.anakKe !== undefined ? String(s.anakKe) : '' },
-      { id: 'dariBersaudara', label: 'Jumlah Saudara', isAlwaysVisible: false, colKey: 'dariBersaudara', getValue: (s: Santri) => s.dariBersaudara !== undefined ? String(s.dariBersaudara) : '' },
-      { id: 'namaAyah', label: 'Nama Ayah', isAlwaysVisible: false, colKey: 'namaAyah', getValue: (s: Santri) => s.namaAyah || '' },
-      { id: 'nikAyah', label: 'NIK Ayah', isAlwaysVisible: false, colKey: 'nikAyah', getValue: (s: Santri) => s.nikAyah || '' },
-      { id: 'pekerjaanAyah', label: 'Pekerjaan Ayah', isAlwaysVisible: false, colKey: 'pekerjaanAyah', getValue: (s: Santri) => s.pekerjaanAyah || '' },
-      { id: 'pendidikanAyah', label: 'Pendidikan Ayah', isAlwaysVisible: false, colKey: 'pendidikanAyah', getValue: (s: Santri) => s.pendidikanAyah || '' },
-      { id: 'namaIbu', label: 'Nama Ibu', isAlwaysVisible: false, colKey: 'namaIbu', getValue: (s: Santri) => s.namaIbu || '' },
-      { id: 'nikIbu', label: 'NIK Ibu', isAlwaysVisible: false, colKey: 'nikIbu', getValue: (s: Santri) => s.nikIbu || '' },
-      { id: 'pekerjaanIbu', label: 'Pekerjaan Ibu', isAlwaysVisible: false, colKey: 'pekerjaanIbu', getValue: (s: Santri) => s.pekerjaanIbu || '' },
-      { id: 'pendidikanIbu', label: 'Pendidikan Ibu', isAlwaysVisible: false, colKey: 'pendidikanIbu', getValue: (s: Santri) => s.pendidikanIbu || '' },
-      { id: 'alamat', label: 'Alamat', isAlwaysVisible: false, colKey: 'alamat', getValue: (s: Santri) => s.alamat || '' },
-      { id: 'rt', label: 'RT', isAlwaysVisible: false, colKey: 'rt', getValue: (s: Santri) => s.rt || '' },
-      { id: 'rw', label: 'RW', isAlwaysVisible: false, colKey: 'rw', getValue: (s: Santri) => s.rw || '' },
-      { id: 'desa', label: 'Desa / Kelurahan', isAlwaysVisible: true, getValue: (s: Santri) => s.desa || '' },
-      { id: 'kecamatan', label: 'Kecamatan', isAlwaysVisible: true, getValue: (s: Santri) => s.kecamatan || '' },
-      { id: 'kabupaten', label: 'Kabupaten / Kota', isAlwaysVisible: true, getValue: (s: Santri) => s.kabupaten || '' },
-      { id: 'provinsi', label: 'Provinsi', isAlwaysVisible: true, getValue: (s: Santri) => s.provinsi || '' },
-      { id: 'jarakRumah', label: 'Jarak Rumah (km)', isAlwaysVisible: false, colKey: 'jarakRumah', getValue: (s: Santri) => s.jarakRumah !== undefined ? String(s.jarakRumah) : '' },
-      { id: 'noHp', label: 'No. HP Wali', isAlwaysVisible: false, colKey: 'noHp', getValue: (s: Santri) => s.noHp || '' },
-      { id: 'statusDomisili', label: 'Status Domisili', isAlwaysVisible: false, colKey: 'statusDomisili', getValue: (s: Santri) => s.statusDomisili || '' },
-      { id: 'statusKeanggotaan', label: 'Status Keanggotaan', isAlwaysVisible: false, colKey: 'statusKeanggotaan', getValue: (s: Santri) => s.statusKeanggotaan || '' },
-      { id: 'tanggalMasuk', label: 'Tanggal Masuk', isAlwaysVisible: false, colKey: 'tanggalMasuk', getValue: (s: Santri) => s.tanggalMasuk || '' },
-      { id: 'tanggalKeluar', label: 'Tanggal Keluar', isAlwaysVisible: false, colKey: 'tanggalKeluar', getValue: (s: Santri) => s.tanggalKeluar || '' },
-      { id: 'statusVerval', label: 'Status Verval', isAlwaysVisible: false, colKey: 'statusVerval', getValue: (s: Santri) => s.statusVerval || 'Proses' },
-      { id: 'catatan', label: 'Catatan', isAlwaysVisible: true, getValue: (s: Santri) => s.catatan || '' }
-    ];
-
-    const activeColumns = exportColumns.filter(col => col.isAlwaysVisible || (col.colKey && visibleColumns[col.colKey]));
+    // Ambil kolom yang persis sesuai dengan tampilan tabel saat ini
+    const activeColumns = getActiveTableExportColumns();
 
     let html = `
       <html>
@@ -1145,7 +1174,7 @@ export default function SekretarisView({
   const isDomisiliDisabled = statusFilter !== 'semua' && statusFilter !== 'Aktif';
 
   // Filter Data
-  const filteredSantri = santriList.filter((s) => {
+  const baseFilterSantri = santriList.filter((s) => {
     // Enforcement of gender view permission
     const isGenderViewable = s.gender === 'Putra' ? canViewPutra : canViewPutri;
     if (!isGenderViewable) return false;
@@ -1171,7 +1200,9 @@ export default function SekretarisView({
     const matchesEmis = emisFilter === 'semua' 
       || (emisFilter === 'Terdaftar' ? s.statusEmis === 'Terdaftar' 
       : (emisFilter === 'Invalid' ? s.statusEmis === 'Invalid' 
-      : (s.statusEmis !== 'Terdaftar' && s.statusEmis !== 'Invalid')));
+      : (emisFilter === 'Keluar' ? s.statusEmis === 'Keluar'
+      : (emisFilter === 'Lulus' ? s.statusEmis === 'Lulus'
+      : (!s.statusEmis || s.statusEmis === 'Belum')))));
 
     let matchesAge = true;
     if (ageFilterConfig.enabled) {
@@ -1199,19 +1230,26 @@ export default function SekretarisView({
       }
     }
 
+    return matchesSearch && matchesStatus && matchesGender && matchesDomisili && matchesEmis && matchesAge;
+  });
+
+  const filteredSantri = baseFilterSantri.filter((s) => {
     // Excel Column Filters
-    let matchesExcelColumnFilters = true;
     for (const [colKey, allowedVals] of Object.entries(excelColumnFilters)) {
       if (allowedVals && allowedVals.length > 0) {
-        const val = getColumnValueString(s, colKey, ageFilterConfig);
-        if (!allowedVals.includes(val)) {
-          matchesExcelColumnFilters = false;
-          break;
+        const val = getColumnValueString(s, colKey, ageFilterConfig, lembagasList, kelasList);
+        const isMatch = allowedVals.includes(val) || (colKey === 'pendidikanFormal' && allowedVals.some(av => {
+          const normVal = val.trim().toLowerCase();
+          const normAv = av.trim().toLowerCase();
+          return normVal === normAv || normVal.endsWith(` - ${normAv}`) || normAv.endsWith(` - ${normVal}`);
+        }));
+        if (!isMatch) {
+          return false;
         }
       }
     }
 
-    return matchesSearch && matchesStatus && matchesGender && matchesDomisili && matchesEmis && matchesAge && matchesExcelColumnFilters;
+    return true;
   });
 
   // Sort Data
@@ -1224,6 +1262,14 @@ export default function SekretarisView({
       const ageB = calculateAgeOnDate(b.tanggalLahir, refDate) ?? -1;
       if (ageA < ageB) return sortDirection === 'asc' ? -1 : 1;
       if (ageA > ageB) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    }
+
+    if (sortKey === 'pendidikanFormal') {
+      const valA = getColumnValueString(a, 'pendidikanFormal', ageFilterConfig, lembagasList, kelasList).toLowerCase();
+      const valB = getColumnValueString(b, 'pendidikanFormal', ageFilterConfig, lembagasList, kelasList).toLowerCase();
+      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
       return 0;
     }
 
@@ -1443,8 +1489,6 @@ export default function SekretarisView({
     });
   }, [filteredSantri, genderFilter, statusFilter]);
 
-
-
   return (
     <div className="space-y-6">
       
@@ -1521,29 +1565,59 @@ export default function SekretarisView({
             </p>
           </div>
 
-          {/* Top Segmented Layout Tabs & Export Button */}
+          {/* Top Segmented Layout Tabs & Action Buttons */}
           {subTab !== 'overview' && (
-            <div className="flex items-center gap-2 self-start sm:self-auto">
-              {viewMode === 'table' && (
-                <button
-                  id="btn-toggle-monitoring"
-                  onClick={() => setIsMonitoringMode(prev => !prev)}
-                  className={`flex h-9 w-9 items-center justify-center rounded-xl font-display text-xs font-bold transition-all border cursor-pointer ${
-                    isMonitoringMode
-                      ? 'bg-rose-500 text-white border-rose-500 shadow-sm ring-2 ring-rose-200'
-                      : 'bg-slate-100 text-slate-500 border-transparent hover:bg-slate-200 hover:text-slate-800'
-                  }`}
-                  title={isMonitoringMode ? 'Nonaktifkan Mode Monitoring Data' : 'Aktifkan Mode Monitoring Data'}
-                >
-                  <Activity className="h-4 w-4" />
-                </button>
-              )}
+            <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-2">
+              {/* Tombol Lain (Monitoring, Ekspor, Tambah Santri Mobile) - Di kiri pada desktop, di kanan pada mobile */}
+              <div className="order-2 sm:order-1 flex items-center gap-2 justify-end">
+                {/* Tombol Monitoring (jika mode tabel - rounded-full) */}
+                {viewMode === 'table' && (
+                  <button
+                    id="btn-toggle-monitoring"
+                    onClick={() => setIsMonitoringMode(prev => !prev)}
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-display text-xs font-bold transition-all border cursor-pointer hover:scale-105 active:scale-95 shadow-xs ${
+                      isMonitoringMode
+                        ? 'bg-rose-500 text-white border-rose-500 shadow-sm ring-2 ring-rose-200'
+                        : 'bg-slate-100 text-slate-600 border-transparent hover:bg-slate-200 hover:text-slate-800'
+                    }`}
+                    title={isMonitoringMode ? 'Nonaktifkan Mode Monitoring Data' : 'Aktifkan Mode Monitoring Data'}
+                  >
+                    <Activity className="h-5 w-5" />
+                  </button>
+                )}
 
-              <div className="inline-flex rounded-xl bg-slate-100 p-1 gap-1">
+                {/* Tombol Ekspor (rounded-full) */}
+                <button
+                  id="btn-export-trigger"
+                  onClick={() => setIsExportModalOpen(true)}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600 hover:bg-emerald-50 hover:text-emerald-800 transition-all shadow-xs cursor-pointer hover:scale-105 active:scale-95"
+                  title="Ekspor Data"
+                >
+                  <Download className="h-5 w-5" />
+                </button>
+
+                {/* Tambah Santri Mobile Button (rounded-full) */}
+                {subTab === 'santri' && !isMonitoringMode && canWriteCurrentFilter && (
+                  <button
+                    id="btn-add-santri-mobile"
+                    onClick={() => {
+                      setEditingSantri(null);
+                      setIsAddSantriOpen(true);
+                    }}
+                    className="flex sm:hidden h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all shadow-xs bg-emerald-700 text-white hover:bg-emerald-800 hover:scale-105 active:scale-95 cursor-pointer"
+                    title="Tambah Santri"
+                  >
+                    <Plus className="h-5 w-5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Tombol Mode Tampilan (Tabel / Kartu) - Di kiri pada mobile, PALING KANAN pada desktop */}
+              <div className="order-1 sm:order-2 sm:order-last inline-flex rounded-full bg-slate-100 p-1 gap-1 shrink-0">
                 <button
                   id="tab-view-table"
                   onClick={() => setViewMode('table')}
-                  className={`flex h-9 w-9 items-center justify-center rounded-lg font-display text-xs font-bold tracking-tight transition-all cursor-pointer ${
+                  className={`flex h-9 w-9 items-center justify-center rounded-full font-display text-xs font-bold tracking-tight transition-all cursor-pointer ${
                     viewMode === 'table'
                       ? 'bg-white text-emerald-800 shadow-sm'
                       : 'text-slate-500 hover:text-slate-800'
@@ -1555,7 +1629,7 @@ export default function SekretarisView({
                 <button
                   id="tab-view-card"
                   onClick={() => setViewMode('card')}
-                  className={`flex h-9 w-9 items-center justify-center rounded-lg font-display text-xs font-bold tracking-tight transition-all cursor-pointer ${
+                  className={`flex h-9 w-9 items-center justify-center rounded-full font-display text-xs font-bold tracking-tight transition-all cursor-pointer ${
                     viewMode === 'card'
                       ? 'bg-white text-emerald-800 shadow-sm'
                       : 'text-slate-500 hover:text-slate-800'
@@ -1565,30 +1639,6 @@ export default function SekretarisView({
                   <LayoutGrid className="h-4 w-4" />
                 </button>
               </div>
-
-              <button
-                id="btn-export-trigger"
-                onClick={() => setIsExportModalOpen(true)}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600 hover:bg-emerald-50 hover:text-emerald-800 transition-all shadow-xs cursor-pointer hover:scale-105 active:scale-95"
-                title="Ekspor Data"
-              >
-                <Download className="h-5 w-5" />
-              </button>
-
-              {/* Tambah Santri Mobile Button next to export */}
-              {subTab === 'santri' && !isMonitoringMode && canWriteCurrentFilter && (
-                <button
-                  id="btn-add-santri-mobile"
-                  onClick={() => {
-                    setEditingSantri(null);
-                    setIsAddSantriOpen(true);
-                  }}
-                  className="flex md:hidden h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all shadow-xs bg-emerald-700 text-white hover:bg-emerald-800 hover:scale-105 active:scale-95 cursor-pointer"
-                  title="Tambah Santri"
-                >
-                  <Plus className="h-5 w-5" />
-                </button>
-              )}
             </div>
           )}
         </div>
@@ -1808,9 +1858,9 @@ export default function SekretarisView({
           </div>
         )}
 
-        {/* Main Controls Card (Search, View Toggle, Filter Button) */}
+        {/* Main Controls (Search, View Toggle, Filter Button) - Flat layout without nested container */}
         {subTab !== 'overview' && (
-          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-md sm:p-5 flex flex-col gap-3">
+          <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-3 md:flex-row md:items-start justify-between">
           
           {/* Left Column: Search Box + Filter & Monitoring Tabs (in monitoring mode) */}
@@ -1885,52 +1935,66 @@ export default function SekretarisView({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Cari nama, NIS, NISN, NIK, asal kota, atau kamar santri..."
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50/50 py-3 pl-11 pr-4 text-sm text-slate-800 placeholder-slate-400 transition-all focus:border-emerald-500 focus:bg-white focus:ring-1 focus:ring-emerald-500 outline-none"
+                  className="w-full h-11 rounded-full border border-slate-200 bg-white py-2.5 pl-11 pr-10 text-sm text-slate-800 placeholder-slate-400 transition-all focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-500/20 outline-none shadow-2xs"
                 />
                 {searchQuery && (
                   <button 
                     onClick={() => setSearchQuery('')}
-                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600"
+                    className="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 hover:text-slate-600 cursor-pointer"
                   >
                     <X className="h-4 w-4" />
                   </button>
                 )}
               </div>
 
-              {/* Filter Button (Sejajar horizontal di sebelah kanan Kotak Cari) */}
+              {/* Filter Button (Hanya Ikon, Sudut Lengkung Sempurna) */}
               <button
                 id="btn-filter-toggle"
                 type="button"
-                onClick={() => setShowFilters(!showFilters)}
-                className={`flex h-11 items-center justify-center gap-1.5 rounded-xl border px-3.5 sm:px-4 font-display text-xs font-bold transition-all hover:bg-slate-50 shrink-0 whitespace-nowrap cursor-pointer ${
+                onClick={() => setShowFilters(true)}
+                className={`relative h-11 w-11 shrink-0 items-center justify-center rounded-full border transition-all shadow-2xs cursor-pointer active:scale-95 ${
                   isSelectionMode ? 'hidden' : 'flex'
                 } ${
-                  showFilters || statusFilter !== 'semua' || genderFilter !== 'semua' || domisiliFilter !== 'semua' || emisFilter !== 'semua' || ageFilterConfig.enabled || activeExcelFilterCount > 0
-                    ? 'border-emerald-200 bg-emerald-50/30 text-emerald-800'
-                    : 'border-slate-200 bg-white text-slate-600'
+                  totalActiveFilterCount > 0
+                    ? 'border-emerald-300 bg-emerald-50 text-emerald-800 font-bold'
+                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                 }`}
-                title="Filter Data"
+                title="Pengaturan Filter"
               >
-                <Filter className="h-4 w-4 text-current" />
-                <span>Filter</span>
-                {activeExcelFilterCount > 0 && (
-                  <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-emerald-600 px-1 text-[10px] font-bold text-white shrink-0">
-                    {activeExcelFilterCount}
+                <Filter className="h-5 w-5 text-current" />
+                {totalActiveFilterCount > 0 && (
+                  <span className="absolute -top-1 -right-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-emerald-600 px-1 text-[10px] font-extrabold text-white shadow-xs">
+                    {totalActiveFilterCount}
                   </span>
                 )}
               </button>
 
-              {/* Mobile Sort Button (Card mode & Santri subtab) */}
-              {viewMode === 'card' && subTab === 'santri' && (
-                <div className={`relative shrink-0 md:hidden ${isSelectionMode ? 'hidden' : 'block'}`}>
+              {/* Tombol Atur Visibilitas Kolom (Sebelah Kanan Tombol Filter - Hanya Ikon, Sudut Lengkung Sempurna) */}
+              {viewMode === 'table' && subTab === 'santri' && !isMonitoringMode && (
+                <button
+                  id="btn-column-visibility-modal-trigger"
+                  type="button"
+                  onClick={() => setIsColumnModalOpen(true)}
+                  className={`h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-emerald-50 hover:text-emerald-800 transition-all shadow-2xs cursor-pointer active:scale-95 ${
+                    isSelectionMode ? 'hidden' : 'flex'
+                  }`}
+                  title="Atur Visibilitas Kolom"
+                >
+                  <SlidersHorizontal className="h-5 w-5 text-current" />
+                </button>
+              )}
+
+              {/* Mobile Sort Button (Santri subtab - Hanya Tampil di Mode Tampilan Kartu) */}
+              {subTab === 'santri' && viewMode === 'card' && (
+                <div className={`relative shrink-0 sm:hidden ${isSelectionMode ? 'hidden' : 'block'}`}>
                   <button
                     id="btn-sort-card-toggle-mobile"
                     type="button"
                     onClick={() => setShowSortDropdown(!showSortDropdown)}
-                    className={`h-11 w-11 flex items-center justify-center rounded-xl border font-display text-xs font-bold transition-all hover:bg-slate-50 ${
+                    className={`h-11 w-11 flex items-center justify-center rounded-full border font-display text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95 ${
                       showSortDropdown
-                        ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                        : 'border-slate-200 bg-white text-slate-600'
+                        ? 'border-emerald-300 bg-emerald-50 text-emerald-800 ring-2 ring-emerald-500/20'
+                        : 'border-slate-200 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                     }`}
                     title="Urutkan"
                   >
@@ -2002,24 +2066,23 @@ export default function SekretarisView({
             </div>
           </div>
 
-          <div className={`${isSelectionMode ? 'flex' : 'hidden md:flex'} items-center justify-between sm:justify-end gap-1.5 sm:gap-2.5 md:gap-3 w-full md:w-auto flex-nowrap overflow-visible py-0.5`}>
+          <div className={`${isSelectionMode ? 'flex' : 'hidden sm:flex'} items-center justify-between sm:justify-end gap-1.5 sm:gap-2.5 md:gap-3 w-full sm:w-auto flex-nowrap overflow-visible py-0.5`}>
 
-            {/* Sort Button (Only for Card mode & Santri subtab) */}
-            {viewMode === 'card' && subTab === 'santri' && (
-              <div className={`relative flex-1 sm:flex-none shrink-0 ${isSelectionMode ? 'hidden sm:block' : 'block'}`}>
+            {/* Sort Button (Hanya Tampil di Mode Tampilan Kartu) */}
+            {subTab === 'santri' && viewMode === 'card' && (
+              <div className={`relative shrink-0 ${isSelectionMode ? 'hidden sm:block' : 'block'}`}>
                 <button
                   id="btn-sort-card-toggle"
                   type="button"
                   onClick={() => setShowSortDropdown(!showSortDropdown)}
-                  className={`w-full flex flex-row h-11 items-center justify-center gap-1 sm:gap-1.5 rounded-xl border px-1.5 sm:px-3.5 font-display text-[10px] xs:text-[11px] sm:text-xs font-bold transition-all hover:bg-slate-50 whitespace-nowrap ${
+                  className={`h-11 w-11 shrink-0 flex items-center justify-center rounded-full border font-display text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95 ${
                     showSortDropdown
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                      : 'border-slate-200 bg-white text-slate-600'
+                      ? 'border-emerald-300 bg-emerald-50 text-emerald-800 ring-2 ring-emerald-500/20'
+                      : 'border-slate-200 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                   }`}
                   title="Urutkan"
                 >
-                  <ArrowUpDown className="h-4 w-4 text-current" />
-                  <span className="inline">Urutkan</span>
+                  <ArrowUpDown className="h-5 w-5 text-current" />
                 </button>
                 
                 {/* Sort Options Dropdown */}
@@ -2034,7 +2097,7 @@ export default function SekretarisView({
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: 10 }}
-                        className="absolute left-1/2 -translate-x-1/2 sm:left-auto sm:right-0 sm:translate-x-0 mt-2 w-52 sm:w-56 rounded-2xl border border-slate-100 bg-white p-3 shadow-xl z-50 text-slate-700 font-sans"
+                        className="absolute right-0 mt-2 w-52 sm:w-56 rounded-2xl border border-slate-100 bg-white p-3 shadow-xl z-50 text-slate-700 font-sans"
                       >
                         <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2.5 mb-2 pb-1 border-b border-slate-50">
                           Urutkan Berdasarkan
@@ -2075,139 +2138,7 @@ export default function SekretarisView({
                                     <ArrowDown className="h-3.5 w-3.5 text-emerald-700 shrink-0" />
                                   )
                                 )}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </motion.div>
-                    </>
-                  )}
-                </AnimatePresence>
-              </div>
-            )}
-
-
-
-            {/* Column Configuration (Only for Table mode & Santri subtab when NOT in Monitoring Mode) */}
-            {viewMode === 'table' && subTab === 'santri' && !isMonitoringMode && (
-              <div 
-                ref={columnConfigRef}
-                className={`relative flex-1 sm:flex-none shrink-0 ${isSelectionMode ? 'hidden sm:block' : 'block'}`}
-              >
-                <button
-                  id="btn-column-visibility-toggle"
-                  type="button"
-                  onClick={() => setShowColumnConfig(!showColumnConfig)}
-                  className={`w-full flex flex-row h-11 items-center justify-center gap-1 sm:gap-1.5 rounded-xl border px-1.5 sm:px-3.5 font-display text-[10px] xs:text-[11px] sm:text-xs font-bold transition-all hover:bg-slate-50 whitespace-nowrap ${
-                    showColumnConfig
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                      : 'border-slate-200 bg-white text-slate-600'
-                  }`}
-                  title="Pengatur Kolom"
-                >
-                  <Settings className="h-4 w-4 text-current" />
-                  <span className="inline">Kolom</span>
-                </button>
-                
-                {/* Column Visibility Selector Dropdown Popover */}
-                  <AnimatePresence>
-                    {showColumnConfig && (
-                      <>
-                        <div 
-                          className="fixed inset-0 z-40 bg-transparent" 
-                          onClick={() => setShowColumnConfig(false)} 
-                        />
-                        <motion.div
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: 10 }}
-                          className="absolute left-1/2 -translate-x-1/2 sm:left-auto sm:right-0 sm:translate-x-0 mt-2 w-56 sm:w-64 rounded-2xl border border-slate-100 bg-white p-4 shadow-xl z-50 text-slate-700"
-                        >
-                          <div className="mb-3 border-b border-slate-100 pb-2.5 flex items-center justify-between gap-2">
-                            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                              <Eye className="h-3.5 w-3.5 text-emerald-600" />
-                              Visibilitas
-                            </h4>
-                            {(() => {
-                              const allChecked = Object.values(visibleColumns).every(Boolean);
-                              const isIndeterminate = Object.values(visibleColumns).some(Boolean) && !allChecked;
-                              return (
-                                <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-emerald-700 hover:text-emerald-800 select-none">
-                                  <input
-                                    type="checkbox"
-                                    checked={allChecked}
-                                    ref={(el) => {
-                                      if (el) el.indeterminate = isIndeterminate;
-                                    }}
-                                    onChange={(e) => {
-                                      const val = e.target.checked;
-                                      const nextCols: Record<string, boolean> = {};
-                                      Object.keys(visibleColumns).forEach((k) => {
-                                        nextCols[k] = val;
-                                      });
-                                      setVisibleColumns(nextCols);
-                                    }}
-                                    className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
-                                  />
-                                  <span>{allChecked ? 'Batal Semua' : 'Pilih Semua'}</span>
-                                </label>
-                              );
-                            })()}
-                          </div>
-                          <div className="max-h-60 overflow-y-auto space-y-2 pr-1 scrollbar-thin">
-                            {Object.keys(visibleColumns).map((colKey) => {
-                              const labels: Record<string, string> = {
-                                indukMhd: 'Induk MHD',
-                                indukWustho: 'Induk Wustho',
-                                indukUlya: 'Induk Ulya',
-                                noKk: 'No. KK',
-                                tempatLahir: 'Tempat Lahir',
-                                tanggalLahir: 'Tanggal Lahir',
-                                gender: 'Gender',
-                                pendidikanTerakhir: 'Pendidikan Terakhir',
-                                anakKe: 'Anak Ke',
-                                dariBersaudara: 'Jumlah Saudara',
-                                namaAyah: 'Nama Ayah',
-                                nikAyah: 'NIK Ayah',
-                                pekerjaanAyah: 'Pekerjaan Ayah',
-                                pendidikanAyah: 'Pendidikan Ayah',
-                                namaIbu: 'Nama Ibu',
-                                nikIbu: 'NIK Ibu',
-                                pekerjaanIbu: 'Pekerjaan Ibu',
-                                pendidikanIbu: 'Pendidikan Ibu',
-                                alamat: 'Alamat',
-                                rt: 'RT',
-                                rw: 'RW',
-                                desa: 'Desa / Kelurahan',
-                                kecamatan: 'Kecamatan',
-                                kabupaten: 'Kabupaten / Kota',
-                                provinsi: 'Provinsi',
-                                jarakRumah: 'Jarak Rumah',
-                                noHp: 'Nomor HP',
-                                statusDomisili: 'Status Domisili',
-                                tanggalMasuk: 'Tanggal Masuk',
-                                tanggalKeluar: 'Tanggal Keluar',
-                                statusVerval: 'Status Verval',
-                                catatan: 'Catatan',
-                              };
-                              return (
-                                <label 
-                                  key={colKey} 
-                                  className="flex items-center gap-2.5 px-1 py-0.5 rounded-lg hover:bg-slate-50 cursor-pointer text-xs font-medium"
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={visibleColumns[colKey]}
-                                    onChange={(e) => {
-                                      setVisibleColumns({
-                                        ...visibleColumns,
-                                        [colKey]: e.target.checked
-                                      });
-                                    }}
-                                    className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                                  />
-                                  {labels[colKey] || colKey}
-                                </label>
+                                </button>
                               );
                             })}
                           </div>
@@ -2216,9 +2147,9 @@ export default function SekretarisView({
                     )}
                   </AnimatePresence>
                 </div>
-            )}
+              )}
 
-            {/* Add Record Button */}
+            {/* Add Record Button - Lengkungan sudut lengkung sempurna */}
             {subTab === 'santri' && !isMonitoringMode && canWriteCurrentFilter && !isSelectionMode && (
               <button
                 id="btn-add-santri"
@@ -2226,299 +2157,29 @@ export default function SekretarisView({
                   setEditingSantri(null);
                   setIsAddSantriOpen(true);
                 }}
-                className="hidden md:flex flex-row flex-[2] sm:flex-none h-11 items-center justify-center gap-1 sm:gap-1.5 rounded-xl px-1.5 sm:px-4 font-display text-[10px] xs:text-[11px] sm:text-xs font-bold transition-all shrink-0 whitespace-nowrap bg-emerald-700 text-white shadow-sm hover:bg-emerald-800 active:scale-95 cursor-pointer"
-                title="Tambah data"
+                className="hidden sm:flex flex-row h-11 items-center justify-center gap-2 rounded-full px-5 font-display text-xs font-bold transition-all shrink-0 whitespace-nowrap bg-emerald-700 text-white shadow-sm hover:bg-emerald-800 active:scale-95 cursor-pointer"
+                title="Tambah Data Santri"
               >
                 <Plus className="h-4 w-4 shrink-0" />
-                <span className="hidden sm:inline">Tambah Data Santri</span>
-                <span className="sm:hidden">Data Santri</span>
+                <span>Tambah Data Santri</span>
               </button>
             )}
           </div>
           </div>
-
-        {/* Expandable Advanced Filters Drawer in UI */}
-        <AnimatePresence>
-          {showFilters && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ ease: 'linear', duration: 0.05 }}
-              className="mt-4 border-t border-slate-100 pt-4"
-            >
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Status Keanggotaan</label>
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setShowStatusFilterDropdown(!showStatusFilterDropdown)}
-                      className={`w-full flex flex-row h-11 items-center justify-between gap-1.5 rounded-xl border px-3 text-xs font-medium transition-all hover:bg-slate-50 whitespace-nowrap ${
-                        showStatusFilterDropdown
-                          ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                          : 'border-slate-200 bg-white text-slate-700'
-                      }`}
-                    >
-                      <span>
-                        {statusFilter === 'semua' ? 'Semua Status' : statusFilter}
-                      </span>
-                      <ChevronDown className="h-4 w-4 opacity-60 shrink-0" />
-                    </button>
-
-                    <AnimatePresence>
-                      {showStatusFilterDropdown && (
-                        <>
-                          <div 
-                            className="fixed inset-0 z-40" 
-                            onClick={() => setShowStatusFilterDropdown(false)} 
-                          />
-                          <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: 10 }}
-                            className="absolute left-0 mt-2 w-full min-w-[200px] rounded-2xl border border-slate-100 bg-white p-2.5 shadow-xl z-50 text-slate-700 font-sans"
-                          >
-                            <div className="space-y-1">
-                              {[
-                                { value: 'semua', label: 'Semua Status' },
-                                { value: 'Aktif', label: 'Aktif' },
-                                { value: 'Alumni', label: 'Alumni' },
-                                { value: 'Meninggal', label: 'Meninggal' }
-                              ].map((opt) => {
-                                const isActive = statusFilter === opt.value;
-                                return (
-                                  <button
-                                    key={opt.value}
-                                    type="button"
-                                    onClick={() => {
-                                      setStatusFilter(opt.value);
-                                      setShowStatusFilterDropdown(false);
-                                    }}
-                                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-left text-xs font-medium transition-colors ${
-                                      isActive
-                                        ? 'bg-emerald-50 text-emerald-800 font-semibold'
-                                        : 'hover:bg-slate-50 text-slate-600'
-                                    }`}
-                                  >
-                                    <span>{opt.label}</span>
-                                    {isActive && <Check className="h-3.5 w-3.5 text-emerald-700 shrink-0" />}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </motion.div>
-                        </>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Status Domisili</label>
-                  <div className={`relative ${isDomisiliDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                    <button
-                      type="button"
-                      disabled={isDomisiliDisabled}
-                      onClick={() => setShowDomisiliFilterDropdown(!showDomisiliFilterDropdown)}
-                      className={`w-full flex flex-row h-11 items-center justify-between gap-1.5 rounded-xl border px-3 text-xs font-medium transition-all whitespace-nowrap ${
-                        isDomisiliDisabled
-                          ? 'border-slate-200 bg-slate-100/70 text-slate-400 pointer-events-none'
-                          : showDomisiliFilterDropdown
-                          ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                          : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                      }`}
-                    >
-                      <span>
-                        {isDomisiliDisabled ? 'Tidak Berlaku' : (domisiliFilter === 'semua' ? 'Semua Domisili' : domisiliFilter)}
-                      </span>
-                      <ChevronDown className="h-4 w-4 opacity-60 shrink-0" />
-                    </button>
-
-                    <AnimatePresence>
-                      {showDomisiliFilterDropdown && !isDomisiliDisabled && (
-                        <>
-                          <div 
-                            className="fixed inset-0 z-40" 
-                            onClick={() => setShowDomisiliFilterDropdown(false)} 
-                          />
-                          <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: 10 }}
-                            className="absolute left-0 mt-2 w-full min-w-[200px] rounded-2xl border border-slate-100 bg-white p-2.5 shadow-xl z-50 text-slate-700 font-sans"
-                          >
-                            <div className="space-y-1">
-                              {[
-                                { value: 'semua', label: 'Semua Domisili' },
-                                { value: 'Muqim', label: 'Muqim' },
-                                { value: 'Kampung', label: 'Kampung' }
-                              ].map((opt) => {
-                                const isActive = domisiliFilter === opt.value;
-                                return (
-                                  <button
-                                    key={opt.value}
-                                    type="button"
-                                    onClick={() => {
-                                      setDomisiliFilter(opt.value);
-                                      setShowDomisiliFilterDropdown(false);
-                                    }}
-                                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-left text-xs font-medium transition-colors ${
-                                      isActive
-                                        ? 'bg-emerald-50 text-emerald-800 font-semibold'
-                                        : 'hover:bg-slate-50 text-slate-600'
-                                    }`}
-                                  >
-                                    <span>{opt.label}</span>
-                                    {isActive && <Check className="h-3.5 w-3.5 text-emerald-700 shrink-0" />}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </motion.div>
-                        </>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Filter Umur</label>
-                  <button
-                    type="button"
-                    onClick={() => setIsAgeModalOpen(true)}
-                    className={`w-full flex flex-row h-11 items-center justify-between gap-1.5 rounded-xl border px-3 text-xs font-medium transition-all hover:bg-slate-50 whitespace-nowrap cursor-pointer ${
-                      ageFilterConfig.enabled
-                        ? 'border-emerald-300 bg-emerald-50/80 text-emerald-800 font-bold'
-                        : 'border-slate-200 bg-white text-slate-700'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 truncate">
-                      <Calendar className="h-4 w-4 text-emerald-600 shrink-0" />
-                      <span className="truncate">
-                        {ageFilterConfig.enabled ? (
-                          ageFilterConfig.mode === 'exact'
-                            ? `Umur: ${ageFilterConfig.exactAge || 0} Thn`
-                            : ageFilterConfig.mode === 'min'
-                            ? `Umur: ≥ ${ageFilterConfig.minAge || 0} Thn`
-                            : ageFilterConfig.mode === 'max'
-                            ? `Umur: ≤ ${ageFilterConfig.maxAge || 0} Thn`
-                            : `Umur: ${ageFilterConfig.minAge || '0'} - ${ageFilterConfig.maxAge || '∞'} Thn`
-                        ) : (
-                          'Semua Umur'
-                        )}
-                      </span>
-                    </div>
-                    <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-lg border shrink-0 ${
-                      ageFilterConfig.enabled 
-                        ? 'bg-emerald-600 text-white border-emerald-600' 
-                        : 'bg-slate-100 text-slate-600 border-slate-200'
-                    }`}>
-                      {ageFilterConfig.enabled ? 'Aktif' : 'Atur'}
-                    </span>
-                  </button>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Status EMIS</label>
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setShowEmisFilterDropdown(!showEmisFilterDropdown)}
-                      className={`w-full flex flex-row h-11 items-center justify-between gap-1.5 rounded-xl border px-3 text-xs font-medium transition-all hover:bg-slate-50 whitespace-nowrap ${
-                        showEmisFilterDropdown
-                          ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                          : 'border-slate-200 bg-white text-slate-700'
-                      }`}
-                    >
-                      <span>
-                        {emisFilter === 'semua' 
-                          ? 'Semua Status EMIS' 
-                          : (emisFilter === 'Terdaftar' 
-                            ? 'EMIS Terdaftar' 
-                            : (emisFilter === 'Invalid' 
-                              ? 'EMIS Invalid' 
-                              : 'Belum Terdaftar'))}
-                      </span>
-                      <ChevronDown className="h-4 w-4 opacity-60 shrink-0" />
-                    </button>
-
-                    <AnimatePresence>
-                      {showEmisFilterDropdown && (
-                        <>
-                          <div 
-                            className="fixed inset-0 z-40" 
-                            onClick={() => setShowEmisFilterDropdown(false)} 
-                          />
-                          <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: 10 }}
-                            className="absolute left-0 mt-2 w-full min-w-[200px] rounded-2xl border border-slate-100 bg-white p-2.5 shadow-xl z-50 text-slate-700 font-sans"
-                          >
-                            <div className="space-y-1">
-                              {[
-                                { value: 'semua', label: 'Semua Status EMIS' },
-                                { value: 'Terdaftar', label: 'EMIS Terdaftar' },
-                                { value: 'Invalid', label: 'EMIS Invalid' },
-                                { value: 'Belum', label: 'Belum Terdaftar' }
-                              ].map((opt) => {
-                                const isActive = emisFilter === opt.value;
-                                return (
-                                  <button
-                                    key={opt.value}
-                                    type="button"
-                                    onClick={() => {
-                                      setEmisFilter(opt.value);
-                                      setShowEmisFilterDropdown(false);
-                                    }}
-                                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-left text-xs font-medium transition-colors ${
-                                      isActive
-                                        ? 'bg-emerald-50 text-emerald-800 font-semibold'
-                                        : 'hover:bg-slate-50 text-slate-600'
-                                    }`}
-                                  >
-                                    <span>{opt.label}</span>
-                                    {isActive && <Check className="h-3.5 w-3.5 text-emerald-700 shrink-0" />}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </motion.div>
-                        </>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                </div>
-
-                <div className="flex items-end sm:col-span-2 lg:col-span-1">
-                  <button
-                    id="btn-reset-filters"
-                    onClick={() => {
-                      setStatusFilter('semua');
-                      setGenderFilter(canViewPutra && canViewPutri ? 'semua' : (canViewPutra ? 'Putra' : 'Putri'));
-                      setDomisiliFilter('semua');
-                      setEmisFilter('semua');
-                      setSearchQuery('');
-                      setAgeFilterConfig(DEFAULT_AGE_FILTER_CONFIG);
-                      setExcelColumnFilters({});
-                    }}
-                    className="w-full h-11 rounded-xl border border-slate-200 bg-slate-50 py-2 text-center text-xs font-bold text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors"
-                  >
-                    Atur Ulang Filter
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+        </div>
       )}
 
       {/* VIEW RENDERER (TABLE, CARD, or OVERVIEW MODE) */}
       <div className="min-h-[400px]">
         {subTab === 'overview' ? (
-          <OverviewSubModule santriList={santriList} />
+          <OverviewSubModule 
+            santriList={santriList} 
+            onSelectSantri={setSelectedSantri}
+            onAddSantriClick={() => {
+              setEditingSantri(null);
+              setIsAddSantriOpen(true);
+            }}
+          />
         ) : (
           filteredSantri.length === 0 ? (
             <EmptyState message="Santri tidak ditemukan dengan kriteria pencarian ini." />
@@ -2526,6 +2187,7 @@ export default function SekretarisView({
             <SantriTableView
               paginatedSantri={paginatedSantri}
               allSantri={filteredSantri}
+              unfilteredSantriList={baseFilterSantri}
               startIndex={startIndex}
               isSelectionMode={isSelectionMode}
               selectedSantriIds={selectedSantriIds}
@@ -2553,6 +2215,8 @@ export default function SekretarisView({
               mandatoryKeys={mandatoryKeys}
               excelColumnFilters={excelColumnFilters}
               onApplyExcelFilter={handleApplyExcelFilter}
+              lembagasList={lembagasList}
+              kelasList={kelasList}
             />
           ) : (
             <SantriCardView
@@ -2786,6 +2450,39 @@ export default function SekretarisView({
         config={ageFilterConfig}
         onApply={(newConfig) => setAgeFilterConfig(newConfig)}
         onReset={() => setAgeFilterConfig(DEFAULT_AGE_FILTER_CONFIG)}
+      />
+
+      {/* Modal Pengatur Visibilitas Kolom */}
+      <ColumnVisibilityModal
+        isOpen={isColumnModalOpen}
+        onClose={() => setIsColumnModalOpen(false)}
+        visibleColumns={visibleColumns}
+        setVisibleColumns={setVisibleColumns}
+      />
+
+      {/* Bottom Sheet Pengaturan Filter */}
+      <FilterBottomSheet
+        isOpen={showFilters}
+        onClose={() => setShowFilters(false)}
+        statusFilter={statusFilter}
+        setStatusFilter={setStatusFilter}
+        domisiliFilter={domisiliFilter}
+        setDomisiliFilter={setDomisiliFilter}
+        isDomisiliDisabled={isDomisiliDisabled}
+        emisFilter={emisFilter}
+        setEmisFilter={setEmisFilter}
+        ageFilterConfig={ageFilterConfig}
+        onOpenAgeModal={() => setIsAgeModalOpen(true)}
+        activeExcelFilterCount={activeExcelFilterCount}
+        onResetFilters={() => {
+          setStatusFilter('semua');
+          setGenderFilter(canViewPutra && canViewPutri ? 'semua' : (canViewPutra ? 'Putra' : 'Putri'));
+          setDomisiliFilter('semua');
+          setEmisFilter('semua');
+          setSearchQuery('');
+          setAgeFilterConfig(DEFAULT_AGE_FILTER_CONFIG);
+          setExcelColumnFilters({});
+        }}
       />
 
       {/* Floating Success Toast Notification */}

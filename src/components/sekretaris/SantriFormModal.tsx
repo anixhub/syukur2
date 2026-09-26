@@ -5,7 +5,7 @@ import {
   X, ChevronLeft, ChevronRight, Upload, Trash2, UserPlus, 
   FileText, User, GraduationCap, CheckCircle2, Eye, AlertTriangle, AlertCircle, Sparkles, RotateCcw, Lock
 } from 'lucide-react';
-import { Santri, Lembaga, Kelas, isDefaultClass } from '../../types';
+import { Santri, Lembaga, Kelas, isDefaultClass, isCalonClass } from '../../types';
 import { 
   PROVINSI_OPTIONS, KABUPATEN_MAP, KECAMATAN_MAP, DESA_MAP, 
   PUTRA_AVATAR, PUTRI_AVATAR 
@@ -13,7 +13,7 @@ import {
 import { BirthDatePicker } from './BirthDatePicker';
 import { SearchableSelect } from './SearchableSelect';
 import { uploadFileToStorage, fetchTableData } from '../../lib/api';
-import { formatBigDigit, processUploadedFile, parseCatatanInvalid, formatCatatanWithInvalid, parseCatatanInvalidParts, formatCatatanParts } from '../../lib/utils';
+import { formatBigDigit, processUploadedFile, parseCatatanInvalid, formatCatatanWithInvalid, parseCatatanInvalidParts, formatCatatanParts, isMatchLembagaStrict, getDefaultCalonClassName } from '../../lib/utils';
 
 function escapeHtml(str: string): string {
   if (!str) return '';
@@ -419,6 +419,7 @@ const initialFormState = {
   // Identitas
   nama: '',
   nis: '',
+  nism: '',
   nisn: '',
   indukMhd: '',
   indukWustho: '',
@@ -453,9 +454,9 @@ const initialFormState = {
   noHp: '',
 
   // Status & Administrasi
-  statusKeanggotaan: 'Aktif' as 'Aktif' | 'Alumni' | 'Meninggal',
+  statusKeanggotaan: 'Aktif' as 'Aktif' | 'Alumni' | 'Meninggal' | 'Mutasi',
   statusDomisili: 'Muqim' as 'Muqim' | 'Kampung',
-  statusEmis: 'Belum' as 'Terdaftar' | 'Invalid' | 'Belum',
+  statusEmis: 'Belum' as 'Terdaftar' | 'Invalid' | 'Belum' | 'Keluar' | 'Lulus',
   statusVerval: 'Proses' as 'Sukses' | 'Proses',
   kelas: '',
   kamar: '',
@@ -563,19 +564,20 @@ export default function SantriFormModal({
     if (!santri) return { formalLembagaId: '', formalClassId: 'calon' };
     const formalLembagas = lembagas.filter(l => getLembagaJenis(l) === 'Formal');
 
-    if (santri.pendidikanFormal) {
+    if (santri.pendidikanFormal && santri.pendidikanFormal.trim() !== '' && santri.pendidikanFormal !== '-' && santri.pendidikanFormal !== 'TIDAK TERDAFTAR' && santri.pendidikanFormal !== 'Belum / Non-Formal') {
       const parts = santri.pendidikanFormal.split(' - ');
       const lemName = parts[0]?.trim();
       const clsName = parts[1]?.trim();
 
       if (lemName) {
         const matchLem = formalLembagas.find(l => 
+          isMatchLembagaStrict(l, lemName) ||
           l.nama.toLowerCase() === lemName.toLowerCase() ||
           (l.kode && l.kode.toLowerCase() === lemName.toLowerCase())
         );
         if (matchLem) {
           let matchClassId = 'calon';
-          if (clsName && clsName.toLowerCase() !== 'calon peserta didik' && clsName.toLowerCase() !== 'calon pelajar') {
+          if (clsName && !isCalonClass(clsName)) {
             const matchCls = kelas.find(k => 
               getLemId(k) === String(matchLem.id) &&
               k.nama.trim().toLowerCase() === clsName.toLowerCase()
@@ -590,15 +592,17 @@ export default function SantriFormModal({
     if (santri.kelas) {
       const santriClasses = santri.kelas.split(',').map(x => x.trim()).filter(Boolean);
       for (const cName of santriClasses) {
-        const matchCls = kelas.find(k => k.nama.trim().toLowerCase() === cName.toLowerCase());
+        const lowerC = cName.toLowerCase();
+        // Ignore generic classes so they do not falsely map to the first institution in the table
+        if (isCalonClass(lowerC) || lowerC === 'tanpa kelas') {
+          continue;
+        }
+        const matchCls = kelas.find(k => k.nama.trim().toLowerCase() === lowerC);
         if (matchCls) {
           const lemId = getLemId(matchCls);
           const matchLem = formalLembagas.find(l => String(l.id) === lemId);
           if (matchLem) {
-            const matchClassId = (cName.toLowerCase() === 'calon peserta didik' || cName.toLowerCase() === 'calon pelajar')
-              ? 'calon'
-              : String(matchCls.id);
-            return { formalLembagaId: String(matchLem.id), formalClassId: matchClassId };
+            return { formalLembagaId: String(matchLem.id), formalClassId: String(matchCls.id) };
           }
         }
       }
@@ -919,6 +923,7 @@ export default function SantriFormModal({
         setForm({
           nama: editingSantri.nama || '',
           nis: editingSantri.nis || '',
+          nism: editingSantri.nism || '',
           nisn: formatBigDigit(editingSantri.nisn),
           indukMhd: editingSantri.indukMhd || '',
           indukWustho: editingSantri.indukWustho || '',
@@ -1371,8 +1376,8 @@ export default function SantriFormModal({
     if (form.pendidikanFormalLembagaId) {
       const targetLembaga = lembagasList.find(l => String(l.id) === String(form.pendidikanFormalLembagaId));
       if (targetLembaga) {
-        let targetClassName = 'Calon Peserta Didik';
-        if (form.statusEmis === 'Terdaftar' && form.pendidikanFormalClassId && form.pendidikanFormalClassId !== 'calon') {
+        let targetClassName = getDefaultCalonClassName(targetLembaga, form.gender);
+        if (form.pendidikanFormalClassId && form.pendidikanFormalClassId !== 'calon') {
           const targetClass = kelasList.find(k => 
             String(k.id) === String(form.pendidikanFormalClassId) || 
             k.nama.toLowerCase() === form.pendidikanFormalClassId.toLowerCase()
@@ -1407,7 +1412,7 @@ export default function SantriFormModal({
     for (const internalId of internalLembagaIds) {
       const hasClassForThisInternal = finalClasses.some(clsName => {
         const lower = clsName.toLowerCase();
-        if (lower === 'calon peserta didik' || lower === 'calon pelajar') return true;
+        if (isCalonClass(lower)) return true;
         const cls = kelasList.find(k => k.nama.toLowerCase() === lower);
         if (cls) {
           return getLemId(cls) === internalId;
@@ -1416,24 +1421,25 @@ export default function SantriFormModal({
       });
 
       if (!hasClassForThisInternal) {
-        const defaultClass = kelasList.find(k => getLemId(k) === internalId && isDefaultClass(k));
+        const lemObj = lembagasList.find(l => String(l.id) === internalId);
+        const defaultClass = kelasList.find(k => getLemId(k) === internalId && (isDefaultClass(k) || isCalonClass(k.nama)));
         if (defaultClass) {
           finalClasses.push(defaultClass.nama);
         } else {
-          finalClasses.push('Calon Peserta Didik');
+          finalClasses.push(getDefaultCalonClassName(lemObj, form.gender));
         }
       }
     }
 
-    // If santri has a specific class (e.g. "7A"), strip out any leftover "Calon Peserta Didik"
+    // If santri has a specific class (e.g. "7A"), strip out any leftover candidate classes
     const hasSpecificClass = finalClasses.some(c => {
       const lower = c.trim().toLowerCase();
-      return lower !== 'calon peserta didik' && lower !== 'calon pelajar' && lower !== 'tanpa kelas';
+      return !isCalonClass(lower) && lower !== 'tanpa kelas';
     });
     if (hasSpecificClass) {
       finalClasses = finalClasses.filter(c => {
         const lower = c.trim().toLowerCase();
-        return lower !== 'calon peserta didik' && lower !== 'calon pelajar';
+        return !isCalonClass(lower);
       });
     }
 
@@ -1443,6 +1449,7 @@ export default function SantriFormModal({
     const entry: Santri = {
       id: editingSantri ? editingSantri.id : `S${Date.now()}`,
       nis: generatedNis,
+      nism: editingSantri ? editingSantri.nism : undefined,
       nama: form.nama,
       kelas: finalKelasString,
       kamar: form.kamar,
@@ -1453,9 +1460,11 @@ export default function SantriFormModal({
       tanggalMasuk: form.tanggalMasuk,
       
       nisn: form.nisn,
-      indukMhd: form.indukMhd,
-      indukWustho: form.indukWustho,
-      indukUlya: form.indukUlya,
+      indukMhd: editingSantri ? (editingSantri.indukMhd || '') : '',
+      indukWustho: editingSantri ? (editingSantri.indukWustho || '') : '',
+      indukUlya: editingSantri ? (editingSantri.indukUlya || '') : '',
+      tanggalMasukLembaga: editingSantri?.tanggalMasukLembaga,
+      tahunMasukLembaga: editingSantri?.tahunMasukLembaga,
       nik: form.nik,
       noKk: form.noKk,
       tempatLahir: form.tempatLahir,
@@ -2196,42 +2205,38 @@ export default function SantriFormModal({
                           )}
                         </div>
 
-                        <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4 border-t border-slate-100 pt-3">
-                          <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">INDUK MHD</label>
-                            <input
-                              type="text"
-                              id="indukMhd-input"
-                              value={form.indukMhd}
-                              onChange={(e) => setForm(prev => ({ ...prev, indukMhd: e.target.value }))}
-                              placeholder="No. Induk MHD"
-                              className="select-text w-full rounded-xl border border-slate-200 bg-white p-3 text-sm outline-none focus:border-emerald-500 font-mono"
-                            />
+                        {/* Informasi Nomor Induk Lembaga & NISM (Eksklusif Modul Pendidikan) */}
+                        <div className="sm:col-span-2 bg-slate-50/90 rounded-2xl p-4 border border-slate-200">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 mb-3">
+                            <span className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1.5">
+                              <Lock className="h-3.5 w-3.5 text-slate-500" />
+                              Nomor Induk Lembaga & NISM
+                            </span>
+                            <span className="text-[10px] font-bold text-amber-800 bg-amber-100/90 px-2 py-0.5 rounded-md border border-amber-200 self-start sm:self-auto">
+                              Dikelola di Modul Pendidikan
+                            </span>
                           </div>
-
-                          <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">INDUK WUSTHO</label>
-                            <input
-                              type="text"
-                              id="indukWustho-input"
-                              value={form.indukWustho}
-                              onChange={(e) => setForm(prev => ({ ...prev, indukWustho: e.target.value }))}
-                              placeholder="No. Induk Wustho"
-                              className="select-text w-full rounded-xl border border-slate-200 bg-white p-3 text-sm outline-none focus:border-emerald-500 font-mono"
-                            />
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                            <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                              <span className="block text-[10px] font-bold text-slate-400 uppercase">NISM</span>
+                              <span className="font-mono font-bold text-slate-700 break-all">{form.nism || '-'}</span>
+                            </div>
+                            <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                              <span className="block text-[10px] font-bold text-slate-400 uppercase">INDUK MHD</span>
+                              <span className="font-mono font-bold text-slate-700 break-all">{form.indukMhd || '-'}</span>
+                            </div>
+                            <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                              <span className="block text-[10px] font-bold text-slate-400 uppercase">INDUK WUSTHO</span>
+                              <span className="font-mono font-bold text-slate-700 break-all">{form.indukWustho || '-'}</span>
+                            </div>
+                            <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                              <span className="block text-[10px] font-bold text-slate-400 uppercase">INDUK ULYA</span>
+                              <span className="font-mono font-bold text-slate-700 break-all">{form.indukUlya || '-'}</span>
+                            </div>
                           </div>
-
-                          <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">INDUK ULYA</label>
-                            <input
-                              type="text"
-                              id="indukUlya-input"
-                              value={form.indukUlya}
-                              onChange={(e) => setForm(prev => ({ ...prev, indukUlya: e.target.value }))}
-                              placeholder="No. Induk Ulya"
-                              className="select-text w-full rounded-xl border border-slate-200 bg-white p-3 text-sm outline-none focus:border-emerald-500 font-mono"
-                            />
-                          </div>
+                          <p className="text-[11px] text-slate-500 mt-2.5">
+                            * Pengeditan dan pembentukan NISM serta Nomor Induk Lembaga (MHD, Wustho, Ulya) hanya dapat dilakukan melalui <strong>Modul Pendidikan</strong>.
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -2325,7 +2330,7 @@ export default function SantriFormModal({
                                     ...prev,
                                     statusEmis: val,
                                     catatan: prev.statusEmis === 'Invalid' ? extraNote : prev.catatan,
-                                    ...(val === 'Belum' ? { pendidikanFormalClassId: 'calon', statusVerval: 'Proses' } : {})
+                                    ...(val === 'Belum' ? { statusVerval: 'Proses' } : {})
                                   };
                                 });
                               }
@@ -2334,6 +2339,8 @@ export default function SantriFormModal({
                           >
                             <option value="Terdaftar">Terdaftar</option>
                             <option value="Invalid">Invalid</option>
+                            <option value="Keluar">Keluar</option>
+                            <option value="Lulus">Lulus</option>
                             <option value="Belum">Belum</option>
                           </select>
                         </div>
@@ -2402,41 +2409,32 @@ export default function SantriFormModal({
                             </div>
 
                             <select
-                              value={form.statusEmis === 'Terdaftar' ? (form.pendidikanFormalClassId || 'calon') : 'calon'}
+                              value={form.pendidikanFormalClassId || 'calon'}
                               onChange={(e) => {
-                                if (form.statusEmis !== 'Terdaftar') {
-                                  setForm(prev => ({ ...prev, pendidikanFormalClassId: 'calon' }));
-                                  return;
-                                }
                                 setForm(prev => ({ ...prev, pendidikanFormalClassId: e.target.value }));
                               }}
                               className="w-full rounded-xl border border-slate-200 bg-white p-3.5 text-sm focus:border-emerald-500 outline-none cursor-pointer"
                             >
-                              <option value="calon">Calon Peserta Didik</option>
+                              {(() => {
+                                const selectedFormalLem = lembagasList.find(l => String(l.id) === String(form.pendidikanFormalLembagaId));
+                                const calonLabel = getDefaultCalonClassName(selectedFormalLem, form.gender);
+                                return <option value="calon">{calonLabel}</option>;
+                              })()}
                               {kelasList
                                 .filter(k => 
                                   getLemId(k) === String(form.pendidikanFormalLembagaId) &&
-                                  k.nama.trim().toLowerCase() !== 'calon peserta didik' &&
-                                  k.nama.trim().toLowerCase() !== 'calon pelajar'
+                                  !isCalonClass(k.nama.trim().toLowerCase())
                                 )
                                 .map(k => (
                                   <option 
                                     key={k.id} 
                                     value={k.id}
-                                    disabled={form.statusEmis !== 'Terdaftar'}
                                   >
-                                    {k.nama} {form.statusEmis !== 'Terdaftar' ? '(Perlu EMIS Terdaftar)' : ''}
+                                    {k.nama}
                                   </option>
                                 ))
                               }
                             </select>
-
-                            {form.statusEmis !== 'Terdaftar' && (
-                              <div className="flex items-center gap-1.5 text-amber-700 bg-amber-50 p-2 rounded-lg border border-amber-200/60 text-xs font-medium">
-                                <span>⚠️</span>
-                                <span>Status EMIS belum Terdaftar. Hanya kelas <strong>Calon Peserta Didik</strong> yang dapat dipilih.</span>
-                              </div>
-                            )}
                           </div>
                         )}
 

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { 
   ResponsiveContainer, 
   PieChart, 
@@ -10,7 +10,6 @@ import {
   XAxis, 
   YAxis, 
   CartesianGrid, 
-  Legend as ChartLegend,
   AreaChart,
   Area
 } from 'recharts';
@@ -19,86 +18,203 @@ import {
   UserPlus, 
   UserMinus, 
   TrendingUp, 
-  Activity, 
   GraduationCap, 
-  UserX,
   Calendar,
   Mars,
   Venus,
-  Home,
-  MapPin
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  Clock,
+  Sparkles,
+  ArrowRight
 } from 'lucide-react';
 import { Santri } from '../../types';
 import { renderSantriAvatar } from '../SekretarisHelper';
 
 interface OverviewSubModuleProps {
   santriList: Santri[];
+  onSelectSantri?: (santri: Santri) => void;
+  onAddSantriClick?: () => void;
 }
 
-export default function OverviewSubModule({ santriList }: OverviewSubModuleProps) {
-  // Helper for parsing dates robustly
-  const getYearMonth = (dateStr: string | undefined | null): string | null => {
-    if (!dateStr) return null;
-    const trimmed = dateStr.trim();
-    if (!trimmed) return null;
-    
-    // check for YYYY-MM-DD
-    if (/^\d{4}-\d{2}/.test(trimmed)) {
-      return trimmed.substring(0, 7); // YYYY-MM
+// Robust helper for parsing dates to YYYY-MM
+export const getYearMonth = (dateStr: string | undefined | null): string | null => {
+  if (!dateStr) return null;
+  const trimmed = String(dateStr).trim();
+  if (!trimmed || trimmed === '-' || trimmed === 'null' || trimmed === 'undefined') return null;
+  
+  // check for YYYY-MM-DD or YYYY/MM/DD or YYYY.MM.DD
+  const yyyyMm = trimmed.match(/^(\d{4})[-\/.](\d{1,2})/);
+  if (yyyyMm) {
+    const y = yyyyMm[1];
+    const m = yyyyMm[2].padStart(2, '0');
+    return `${y}-${m}`;
+  }
+  
+  // check for DD-MM-YYYY or DD/MM/YYYY or DD.MM.YYYY
+  const ddMmYyyy = trimmed.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/);
+  if (ddMmYyyy) {
+    const y = ddMmYyyy[3];
+    const m = ddMmYyyy[2].padStart(2, '0');
+    return `${y}-${m}`;
+  }
+
+  // Fallback: standard Date parsing (supports ISO strings like 2026-09-03T...)
+  const parsed = new Date(trimmed);
+  if (!isNaN(parsed.getTime())) {
+    const y = parsed.getFullYear();
+    const m = String(parsed.getMonth() + 1).padStart(2, '0');
+    if (y >= 1990 && y <= 2100) {
+      return `${y}-${m}`;
     }
-    
-    // check for DD-MM-YYYY
-    if (/^\d{2}-\d{2}-\d{4}/.test(trimmed)) {
-      const parts = trimmed.split('-');
-      return `${parts[2]}-${parts[1]}`; // YYYY-MM
+  }
+  
+  return null;
+};
+
+// Helper for real-time current month (YYYY-MM)
+export const getRealTimeCurrentYearMonth = (): string => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+};
+
+export const formatMonthIndo = (yearMonth: string): string => {
+  if (!yearMonth || !yearMonth.includes('-')) return '-';
+  const [year, month] = yearMonth.split('-');
+  const monthsIndo = [
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+  ];
+  const monthIdx = parseInt(month, 10) - 1;
+  return `${monthsIndo[monthIdx] || ''} ${year}`;
+};
+
+export const formatLiveTimestamp = (date: Date): string => {
+  const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+  const dayName = days[date.getDay()];
+  const day = date.getDate();
+  const monthName = months[date.getMonth()];
+  const year = date.getFullYear();
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  return `${dayName}, ${day} ${monthName} ${year} • ${hours}:${minutes}:${seconds} WIB`;
+};
+
+export default function OverviewSubModule({ 
+  santriList, 
+  onSelectSantri, 
+  onAddSantriClick 
+}: OverviewSubModuleProps) {
+  // Live on-time system clock
+  const [currentTime, setCurrentTime] = useState<Date>(new Date());
+  
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 10000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // System real-time current month (e.g. "2026-09")
+  const realTimeCurrentMonth = useMemo(() => getRealTimeCurrentYearMonth(), []);
+
+  // All available months discovered in the santri data + current real-time month
+  const availableMonths = useMemo(() => {
+    const monthSet = new Set<string>();
+    // Always include current real-time month
+    monthSet.add(realTimeCurrentMonth);
+
+    santriList.forEach(s => {
+      const mMasuk = getYearMonth(s.tanggalMasuk);
+      if (mMasuk) monthSet.add(mMasuk);
+      const mKeluar = getYearMonth(s.tanggalKeluar);
+      if (mKeluar) monthSet.add(mKeluar);
+    });
+
+    const list = Array.from(monthSet);
+    list.sort(); // ascending e.g. "2024-01", "2026-07", "2026-09"
+    return list;
+  }, [santriList, realTimeCurrentMonth]);
+
+  // Selected month defaults to real-time current month (Ontime)
+  const [selectedMonth, setSelectedMonth] = useState<string>(realTimeCurrentMonth);
+
+  // Check if currently viewing the ontime / live current month
+  const isOntime = selectedMonth === realTimeCurrentMonth;
+
+  // Month navigation handlers
+  const currentMonthIdx = availableMonths.indexOf(selectedMonth);
+  const handlePrevMonth = () => {
+    if (currentMonthIdx > 0) {
+      setSelectedMonth(availableMonths[currentMonthIdx - 1]);
+    } else {
+      // Calculate previous month mathematically if not in availableMonths
+      const [y, m] = selectedMonth.split('-').map(Number);
+      let prevM = m - 1;
+      let prevY = y;
+      if (prevM <= 0) {
+        prevM = 12;
+        prevY -= 1;
+      }
+      const prevMonthStr = `${prevY}-${String(prevM).padStart(2, '0')}`;
+      setSelectedMonth(prevMonthStr);
     }
-    
-    return null;
   };
+
+  const handleNextMonth = () => {
+    if (currentMonthIdx >= 0 && currentMonthIdx < availableMonths.length - 1) {
+      setSelectedMonth(availableMonths[currentMonthIdx + 1]);
+    } else {
+      // Calculate next month mathematically
+      const [y, m] = selectedMonth.split('-').map(Number);
+      let nextM = m + 1;
+      let nextY = y;
+      if (nextM > 12) {
+        nextM = 1;
+        nextY += 1;
+      }
+      const nextMonthStr = `${nextY}-${String(nextM).padStart(2, '0')}`;
+      setSelectedMonth(nextMonthStr);
+    }
+  };
+
+  // Find the latest historical month with actual admissions if current month is empty
+  const latestMonthWithMasukData = useMemo(() => {
+    const monthsWithMasuk = santriList
+      .map(s => getYearMonth(s.tanggalMasuk))
+      .filter(Boolean) as string[];
+    if (monthsWithMasuk.length === 0) return null;
+    monthsWithMasuk.sort();
+    return monthsWithMasuk[monthsWithMasuk.length - 1];
+  }, [santriList]);
 
   const totalSantri = santriList.length;
 
-  // 1. Row 1 calculations
+  // 1. Overall Status calculations (All-time data)
   const totalAktif = useMemo(() => santriList.filter(s => s.statusKeanggotaan === 'Aktif').length, [santriList]);
   const totalAlumni = useMemo(() => santriList.filter(s => s.statusKeanggotaan === 'Alumni').length, [santriList]);
   const totalMeninggal = useMemo(() => santriList.filter(s => s.statusKeanggotaan === 'Meninggal').length, [santriList]);
+  const totalMutasi = useMemo(() => santriList.filter(s => s.statusKeanggotaan === 'Mutasi').length, [santriList]);
 
-  const pieDataAll = useMemo(() => [
-    { name: 'Aktif', value: totalAktif, color: '#10b981' }, // Emerald 500
-    { name: 'Alumni', value: totalAlumni + totalMeninggal, color: '#6366f1' }, // Indigo 500
-  ], [totalAktif, totalAlumni, totalMeninggal]);
-
-  // Determine current active/latest month
-  const currentMonthStr = useMemo(() => {
-    const months = santriList
-      .map(s => s.tanggalMasuk)
-      .filter(Boolean)
-      .map(d => getYearMonth(d))
-      .filter(Boolean) as string[];
-    
-    if (months.length === 0) return '2026-07';
-    
-    months.sort();
-    const latestMonth = months[months.length - 1];
-    
-    const actualCurrentMonth = '2026-07';
-    const hasActualMonth = months.includes(actualCurrentMonth);
-    return hasActualMonth ? actualCurrentMonth : latestMonth;
-  }, [santriList]);
-
-  const formatMonthIndo = (yearMonth: string) => {
-    const [year, month] = yearMonth.split('-');
-    const monthsIndo = [
-      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+  const pieDataAll = useMemo(() => {
+    const data = [
+      { name: 'Aktif', value: totalAktif, color: '#10b981' }, // Emerald 500
+      { name: 'Alumni', value: totalAlumni + totalMeninggal, color: '#6366f1' }, // Indigo 500
     ];
-    const monthIdx = parseInt(month, 10) - 1;
-    return `${monthsIndo[monthIdx] || '' } ${year}`;
-  };
+    if (totalMutasi > 0) {
+      data.push({ name: 'Mutasi', value: totalMutasi, color: '#f59e0b' });
+    }
+    return data;
+  }, [totalAktif, totalAlumni, totalMeninggal, totalMutasi]);
 
-  // Generate 6 months timeline for fluctuations
+  // Generate 6 months timeline for fluctuations ending at selectedMonth (or current real-time month)
   const fluctuationData = useMemo(() => {
-    const [currYear, currMonth] = currentMonthStr.split('-').map(Number);
+    const [currYear, currMonth] = selectedMonth.split('-').map(Number);
     
     const monthsList: string[] = [];
     for (let i = 5; i >= 0; i--) {
@@ -128,32 +244,32 @@ export default function OverviewSubModule({ santriList }: OverviewSubModuleProps
         'Santri Keluar': keluar,
       };
     });
-  }, [santriList, currentMonthStr]);
+  }, [santriList, selectedMonth]);
 
-  // Bottom lists filtering calculations
+  // Selected Month santri filtering calculations
   const newSantriBulanIni = useMemo(() => {
-    return santriList.filter(s => s.tanggalMasuk && getYearMonth(s.tanggalMasuk) === currentMonthStr);
-  }, [santriList, currentMonthStr]);
+    return santriList.filter(s => s.tanggalMasuk && getYearMonth(s.tanggalMasuk) === selectedMonth);
+  }, [santriList, selectedMonth]);
 
   const keluarSantriBulanIni = useMemo(() => {
-    return santriList.filter(s => s.tanggalKeluar && getYearMonth(s.tanggalKeluar) === currentMonthStr);
-  }, [santriList, currentMonthStr]);
+    return santriList.filter(s => s.tanggalKeluar && getYearMonth(s.tanggalKeluar) === selectedMonth);
+  }, [santriList, selectedMonth]);
 
   const masukPutraBulanIni = useMemo(() => {
-    return santriList.filter(s => s.tanggalMasuk && getYearMonth(s.tanggalMasuk) === currentMonthStr && s.gender === 'Putra').length;
-  }, [santriList, currentMonthStr]);
+    return santriList.filter(s => s.tanggalMasuk && getYearMonth(s.tanggalMasuk) === selectedMonth && s.gender === 'Putra').length;
+  }, [santriList, selectedMonth]);
 
   const masukPutriBulanIni = useMemo(() => {
-    return santriList.filter(s => s.tanggalMasuk && getYearMonth(s.tanggalMasuk) === currentMonthStr && s.gender === 'Putri').length;
-  }, [santriList, currentMonthStr]);
+    return santriList.filter(s => s.tanggalMasuk && getYearMonth(s.tanggalMasuk) === selectedMonth && s.gender === 'Putri').length;
+  }, [santriList, selectedMonth]);
 
   const keluarPutraBulanIni = useMemo(() => {
-    return santriList.filter(s => s.tanggalKeluar && getYearMonth(s.tanggalKeluar) === currentMonthStr && s.gender === 'Putra').length;
-  }, [santriList, currentMonthStr]);
+    return santriList.filter(s => s.tanggalKeluar && getYearMonth(s.tanggalKeluar) === selectedMonth && s.gender === 'Putra').length;
+  }, [santriList, selectedMonth]);
 
   const keluarPutriBulanIni = useMemo(() => {
-    return santriList.filter(s => s.tanggalKeluar && getYearMonth(s.tanggalKeluar) === currentMonthStr && s.gender === 'Putri').length;
-  }, [santriList, currentMonthStr]);
+    return santriList.filter(s => s.tanggalKeluar && getYearMonth(s.tanggalKeluar) === selectedMonth && s.gender === 'Putri').length;
+  }, [santriList, selectedMonth]);
 
   const [genderFilterBaru, setGenderFilterBaru] = useState<'Semua' | 'Putra' | 'Putri'>('Semua');
   const [genderFilterKeluar, setGenderFilterKeluar] = useState<'Semua' | 'Putra' | 'Putri'>('Semua');
@@ -236,6 +352,137 @@ export default function OverviewSubModule({ santriList }: OverviewSubModuleProps
 
   return (
     <div className="space-y-6">
+      {/* REAL-TIME ONTIME CONTROL & STATUS HEADER */}
+      <div className="bg-white border border-slate-200/80 rounded-2xl p-4 sm:p-5 shadow-xs">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          
+          {/* Left: Title, Live Pulse & Timestamp */}
+          <div className="space-y-1">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+                Overview Kesekretariatan
+              </h2>
+              
+              {/* Ontime Realtime Status Badge */}
+              <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black border transition-all ${
+                isOntime 
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700 shadow-3xs' 
+                  : 'bg-amber-50 border-amber-200 text-amber-700'
+              }`}>
+                <span className="relative flex h-2 w-2">
+                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                    isOntime ? 'bg-emerald-400' : 'bg-amber-400'
+                  }`} />
+                  <span className={`relative inline-flex rounded-full h-2 w-2 ${
+                    isOntime ? 'bg-emerald-600' : 'bg-amber-600'
+                  }`} />
+                </span>
+                <span>{isOntime ? 'Data Ontime (Realtime)' : `Arsip: ${formatMonthIndo(selectedMonth)}`}</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
+              <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+              <span>Sinkronisasi Terkini: {formatLiveTimestamp(currentTime)}</span>
+            </p>
+          </div>
+
+          {/* Right: Period / Month Selector */}
+          <div className="flex items-center flex-wrap gap-2">
+            <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-xl border border-slate-200 shadow-3xs">
+              <button
+                type="button"
+                onClick={handlePrevMonth}
+                className="h-8 w-8 rounded-lg flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-white active:scale-95 transition-all cursor-pointer"
+                title="Bulan Sebelumnya"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+
+              <div className="relative">
+                <select
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  className="appearance-none bg-white border border-slate-200 text-slate-800 text-xs font-bold rounded-lg pl-3 pr-7 py-1.5 hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 cursor-pointer shadow-3xs"
+                >
+                  {availableMonths.map(m => (
+                    <option key={m} value={m}>
+                      {formatMonthIndo(m)} {m === realTimeCurrentMonth ? ' • (Bulan Ini / Ontime)' : ''}
+                    </option>
+                  ))}
+                  {/* If selected month is not in availableMonths yet, show it */}
+                  {!availableMonths.includes(selectedMonth) && (
+                    <option value={selectedMonth}>{formatMonthIndo(selectedMonth)}</option>
+                  )}
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+              </div>
+
+              <button
+                type="button"
+                onClick={handleNextMonth}
+                className="h-8 w-8 rounded-lg flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-white active:scale-95 transition-all cursor-pointer"
+                title="Bulan Berikutnya"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Quick Button to Jump to Current Real-time Month */}
+            {!isOntime && (
+              <button
+                type="button"
+                onClick={() => setSelectedMonth(realTimeCurrentMonth)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-3xs active:scale-95 cursor-pointer"
+                title="Kembali ke Bulan Berjalan (Ontime)"
+              >
+                <Clock className="h-3.5 w-3.5" />
+                <span>Bulan Ini (Ontime)</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Quick Summary Chips Banner */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-2.5 pt-4 mt-4 border-t border-slate-100">
+          <div className="bg-slate-50 border border-slate-150/70 p-2.5 rounded-xl">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Total Santri</span>
+            <span className="text-base sm:text-lg font-black text-slate-900">{totalSantri}</span>
+          </div>
+
+          <div className="bg-emerald-50/50 border border-emerald-150 p-2.5 rounded-xl">
+            <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">Santri Aktif</span>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-base sm:text-lg font-black text-emerald-800">{totalAktif}</span>
+              <span className="text-[10px] font-semibold text-emerald-600">({activePutra} Pa • {activePutri} Pi)</span>
+            </div>
+          </div>
+
+          <div className="bg-indigo-50/50 border border-indigo-150 p-2.5 rounded-xl">
+            <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider block">Alumni & Meninggal</span>
+            <span className="text-base sm:text-lg font-black text-indigo-800">{totalAlumni + totalMeninggal}</span>
+          </div>
+
+          <div className="bg-blue-50/50 border border-blue-150 p-2.5 rounded-xl">
+            <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider block">
+              Masuk ({formatMonthIndo(selectedMonth).split(' ')[0]})
+            </span>
+            <span className="text-base sm:text-lg font-black text-blue-800">
+              +{masukPutraBulanIni + masukPutriBulanIni}
+            </span>
+          </div>
+
+          <div className="bg-rose-50/50 border border-rose-150 p-2.5 rounded-xl col-span-2 sm:col-span-1">
+            <span className="text-[10px] font-bold text-rose-700 uppercase tracking-wider block">
+              Keluar ({formatMonthIndo(selectedMonth).split(' ')[0]})
+            </span>
+            <span className="text-base sm:text-lg font-black text-rose-800">
+              -{keluarPutraBulanIni + keluarPutriBulanIni}
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* SECTION 1: Top Row */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         {/* Left: Aesthetic Pie Chart - All Santri by Status */}
@@ -288,9 +535,19 @@ export default function OverviewSubModule({ santriList }: OverviewSubModuleProps
 
         {/* Right: Rectangular Fluctuation Chart (Area Chart) */}
         <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-xs lg:col-span-3 flex flex-col justify-between">
-          <div>
-            <span className="text-[10px] font-black text-indigo-600 uppercase tracking-wider block mb-1">Statistik Bulanan</span>
-            <h3 className="text-sm font-bold text-slate-800">Fluktuasi Santri Masuk & Keluar</h3>
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-[10px] font-black text-indigo-600 uppercase tracking-wider block mb-1">
+                Statistik Bulanan ({fluctuationData[0]?.label} - {fluctuationData[fluctuationData.length - 1]?.label})
+              </span>
+              <h3 className="text-sm font-bold text-slate-800">Fluktuasi Santri Masuk & Keluar</h3>
+            </div>
+
+            {isOntime && (
+              <span className="text-[10px] font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                Live Ontime
+              </span>
+            )}
           </div>
 
           <div className="h-48 w-full my-3">
@@ -301,11 +558,11 @@ export default function OverviewSubModule({ santriList }: OverviewSubModuleProps
               >
                 <defs>
                   <linearGradient id="colorMasuk" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2}/>
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.25}/>
                     <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
                   </linearGradient>
                   <linearGradient id="colorKeluar" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.2}/>
+                    <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.25}/>
                     <stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
@@ -324,8 +581,8 @@ export default function OverviewSubModule({ santriList }: OverviewSubModuleProps
                 <ChartTooltip 
                   contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '11px', fontWeight: 'bold' }}
                 />
-                <Area type="monotone" dataKey="Santri Masuk" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorMasuk)" />
-                <Area type="monotone" dataKey="Santri Keluar" stroke="#f43f5e" strokeWidth={2} fillOpacity={1} fill="url(#colorKeluar)" />
+                <Area type="monotone" dataKey="Santri Masuk" stroke="#3b82f6" strokeWidth={2.5} fillOpacity={1} fill="url(#colorMasuk)" />
+                <Area type="monotone" dataKey="Santri Keluar" stroke="#f43f5e" strokeWidth={2.5} fillOpacity={1} fill="url(#colorKeluar)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -335,7 +592,9 @@ export default function OverviewSubModule({ santriList }: OverviewSubModuleProps
             {/* Box 1: Santri Masuk */}
             <div className="bg-blue-50/30 border border-blue-100 p-2.5 rounded-xl flex items-center justify-between">
               <div className="min-w-0">
-                <span className="text-[9px] font-bold text-blue-600 uppercase tracking-wider block mb-0.5">Santri Masuk ({formatMonthIndo(currentMonthStr)})</span>
+                <span className="text-[9px] font-bold text-blue-600 uppercase tracking-wider block mb-0.5">
+                  Santri Masuk ({formatMonthIndo(selectedMonth)})
+                </span>
                 <div className="flex items-baseline gap-1 leading-none">
                   <span className="text-lg font-black text-blue-700">{masukPutraBulanIni + masukPutriBulanIni}</span>
                   <span className="text-[9px] text-blue-400 font-bold uppercase tracking-wider">Santri</span>
@@ -359,7 +618,9 @@ export default function OverviewSubModule({ santriList }: OverviewSubModuleProps
             {/* Box 2: Santri Keluar */}
             <div className="bg-rose-50/30 border border-rose-100 p-2.5 rounded-xl flex items-center justify-between">
               <div className="min-w-0">
-                <span className="text-[9px] font-bold text-rose-600 uppercase tracking-wider block mb-0.5">Santri Keluar ({formatMonthIndo(currentMonthStr)})</span>
+                <span className="text-[9px] font-bold text-rose-600 uppercase tracking-wider block mb-0.5">
+                  Santri Keluar ({formatMonthIndo(selectedMonth)})
+                </span>
                 <div className="flex items-baseline gap-1 leading-none">
                   <span className="text-lg font-black text-rose-700">{keluarPutraBulanIni + keluarPutriBulanIni}</span>
                   <span className="text-[9px] text-rose-400 font-bold uppercase tracking-wider">Santri</span>
@@ -621,17 +882,19 @@ export default function OverviewSubModule({ santriList }: OverviewSubModuleProps
         </div>
       </div>
 
-      {/* Daftar Santri Baru & Keluar Bulan Ini */}
+      {/* SECTION 4: Daftar Santri Baru & Keluar Bulan Ini */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Kotak Daftar Santri Baru */}
-        <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex flex-col h-[380px]">
+        <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex flex-col h-[400px]">
           <div className="flex items-center justify-between border-b border-slate-50 pb-3 mb-3">
             <div>
               <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse" />
+                <span className={`h-2 w-2 rounded-full ${isOntime ? 'bg-indigo-500 animate-pulse' : 'bg-slate-400'}`} />
                 Daftar Santri Baru Bulan Ini
               </h3>
-              <p className="text-[11px] text-slate-400 mt-0.5">Daftar santri yang masuk pada {formatMonthIndo(currentMonthStr)}</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Santri masuk pada periode {formatMonthIndo(selectedMonth)} {isOntime ? '(Ontime)' : ''}
+              </p>
             </div>
             <span className="text-xs font-black text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg">
               {filteredNewSantri.length} Santri
@@ -643,20 +906,29 @@ export default function OverviewSubModule({ santriList }: OverviewSubModuleProps
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1.5">Filter Gender:</span>
             <div className="flex rounded-lg bg-slate-200/60 p-0.5 text-[10px]">
               <button 
+                type="button"
                 onClick={() => setGenderFilterBaru('Semua')} 
-                className={`px-3 py-1 rounded-md font-bold transition-all ${genderFilterBaru === 'Semua' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                className={`px-3 py-1 rounded-md font-bold transition-all cursor-pointer ${
+                  genderFilterBaru === 'Semua' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                }`}
               >
                 Semua
               </button>
               <button 
+                type="button"
                 onClick={() => setGenderFilterBaru('Putra')} 
-                className={`px-3 py-1 rounded-md font-bold transition-all ${genderFilterBaru === 'Putra' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                className={`px-3 py-1 rounded-md font-bold transition-all cursor-pointer ${
+                  genderFilterBaru === 'Putra' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                }`}
               >
                 Putra
               </button>
               <button 
+                type="button"
                 onClick={() => setGenderFilterBaru('Putri')} 
-                className={`px-3 py-1 rounded-md font-bold transition-all ${genderFilterBaru === 'Putri' ? 'bg-pink-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                className={`px-3 py-1 rounded-md font-bold transition-all cursor-pointer ${
+                  genderFilterBaru === 'Putri' ? 'bg-pink-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                }`}
               >
                 Putri
               </button>
@@ -665,25 +937,60 @@ export default function OverviewSubModule({ santriList }: OverviewSubModuleProps
 
           <div className="flex-1 overflow-y-auto pr-1 space-y-2 scrollbar-thin">
             {filteredNewSantri.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center p-4">
-                <p className="text-xs font-bold text-slate-400">Tidak ada santri baru dengan filter ini</p>
+              <div className="h-full flex flex-col items-center justify-center text-center p-4 space-y-2.5">
+                <p className="text-xs font-bold text-slate-400">
+                  Belum ada santri baru tercatat pada {formatMonthIndo(selectedMonth)}
+                </p>
+                {isOntime && latestMonthWithMasukData && latestMonthWithMasukData !== realTimeCurrentMonth && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMonth(latestMonthWithMasukData)}
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-xl transition-all cursor-pointer"
+                  >
+                    <span>Lihat data {formatMonthIndo(latestMonthWithMasukData)}</span>
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                {onAddSantriClick && (
+                  <button
+                    type="button"
+                    onClick={onAddSantriClick}
+                    className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 hover:underline cursor-pointer"
+                  >
+                    + Daftarkan Santri Baru
+                  </button>
+                )}
               </div>
             ) : (
               filteredNewSantri.map((s, idx) => (
-                <div key={s.id || idx} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-all">
+                <div 
+                  key={s.id || idx} 
+                  onClick={() => onSelectSantri?.(s)}
+                  className={`flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-all ${
+                    onSelectSantri ? 'cursor-pointer hover:bg-slate-100/80 active:scale-[0.99]' : ''
+                  }`}
+                  title={onSelectSantri ? "Klik untuk melihat detail santri" : undefined}
+                >
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="h-9 w-9 shrink-0">
                       {renderSantriAvatar(s, "h-full w-full")}
                     </div>
                     <div className="min-w-0">
-                      <h4 className="text-xs font-bold text-slate-800 truncate">{s.nama}</h4>
+                      <div className="flex items-center gap-1.5">
+                        <h4 className="text-xs font-bold text-slate-800 truncate">{s.nama}</h4>
+                        <span className={`text-[9px] font-black px-1.5 py-0.2 rounded ${
+                          s.gender === 'Putra' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'
+                        }`}>
+                          {s.gender === 'Putra' ? 'PA' : 'PI'}
+                        </span>
+                      </div>
                       <p className="text-[10px] text-slate-400 font-semibold mt-0.5 truncate">
                         NIS: {s.nis || '-'} • {[s.desa, s.kecamatan, s.kabupaten].filter(Boolean).join(', ') || s.asal || '-'}
                       </p>
                     </div>
                   </div>
                   <div className="text-right shrink-0">
-                    <span className="text-[10px] font-black text-slate-500 bg-white border border-slate-150 px-2 py-1 rounded-md block">
+                    <span className="text-[10px] font-black text-slate-600 bg-white border border-slate-200 px-2 py-1 rounded-md block shadow-3xs">
                       {s.tanggalMasuk || '-'}
                     </span>
                   </div>
@@ -694,14 +1001,16 @@ export default function OverviewSubModule({ santriList }: OverviewSubModuleProps
         </div>
 
         {/* Kotak Daftar Santri Keluar */}
-        <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex flex-col h-[380px]">
+        <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex flex-col h-[400px]">
           <div className="flex items-center justify-between border-b border-slate-50 pb-3 mb-3">
             <div>
               <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-rose-500 animate-pulse" />
+                <span className={`h-2 w-2 rounded-full ${isOntime ? 'bg-rose-500 animate-pulse' : 'bg-slate-400'}`} />
                 Daftar Santri Keluar Bulan Ini
               </h3>
-              <p className="text-[11px] text-slate-400 mt-0.5">Daftar santri yang berhenti/alumni/keluar pada {formatMonthIndo(currentMonthStr)}</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Santri berhenti/alumni/keluar pada {formatMonthIndo(selectedMonth)} {isOntime ? '(Ontime)' : ''}
+              </p>
             </div>
             <span className="text-xs font-black text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg">
               {filteredKeluarSantri.length} Santri
@@ -713,20 +1022,29 @@ export default function OverviewSubModule({ santriList }: OverviewSubModuleProps
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1.5">Filter Gender:</span>
             <div className="flex rounded-lg bg-slate-200/60 p-0.5 text-[10px]">
               <button 
+                type="button"
                 onClick={() => setGenderFilterKeluar('Semua')} 
-                className={`px-3 py-1 rounded-md font-bold transition-all ${genderFilterKeluar === 'Semua' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                className={`px-3 py-1 rounded-md font-bold transition-all cursor-pointer ${
+                  genderFilterKeluar === 'Semua' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                }`}
               >
                 Semua
               </button>
               <button 
+                type="button"
                 onClick={() => setGenderFilterKeluar('Putra')} 
-                className={`px-3 py-1 rounded-md font-bold transition-all ${genderFilterKeluar === 'Putra' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                className={`px-3 py-1 rounded-md font-bold transition-all cursor-pointer ${
+                  genderFilterKeluar === 'Putra' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                }`}
               >
                 Putra
               </button>
               <button 
+                type="button"
                 onClick={() => setGenderFilterKeluar('Putri')} 
-                className={`px-3 py-1 rounded-md font-bold transition-all ${genderFilterKeluar === 'Putri' ? 'bg-pink-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                className={`px-3 py-1 rounded-md font-bold transition-all cursor-pointer ${
+                  genderFilterKeluar === 'Putri' ? 'bg-pink-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                }`}
               >
                 Putri
               </button>
@@ -736,24 +1054,40 @@ export default function OverviewSubModule({ santriList }: OverviewSubModuleProps
           <div className="flex-1 overflow-y-auto pr-1 space-y-2 scrollbar-thin">
             {filteredKeluarSantri.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center p-4">
-                <p className="text-xs font-bold text-slate-400">Tidak ada santri keluar dengan filter ini</p>
+                <p className="text-xs font-bold text-slate-400">
+                  Tidak ada santri keluar pada {formatMonthIndo(selectedMonth)}
+                </p>
               </div>
             ) : (
               filteredKeluarSantri.map((s, idx) => (
-                <div key={s.id || idx} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-all">
+                <div 
+                  key={s.id || idx} 
+                  onClick={() => onSelectSantri?.(s)}
+                  className={`flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-all ${
+                    onSelectSantri ? 'cursor-pointer hover:bg-slate-100/80 active:scale-[0.99]' : ''
+                  }`}
+                  title={onSelectSantri ? "Klik untuk melihat detail santri" : undefined}
+                >
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="h-9 w-9 shrink-0">
                       {renderSantriAvatar(s, "h-full w-full")}
                     </div>
                     <div className="min-w-0">
-                      <h4 className="text-xs font-bold text-slate-800 truncate">{s.nama}</h4>
+                      <div className="flex items-center gap-1.5">
+                        <h4 className="text-xs font-bold text-slate-800 truncate">{s.nama}</h4>
+                        <span className={`text-[9px] font-black px-1.5 py-0.2 rounded ${
+                          s.gender === 'Putra' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'
+                        }`}>
+                          {s.gender === 'Putra' ? 'PA' : 'PI'}
+                        </span>
+                      </div>
                       <p className="text-[10px] text-slate-400 font-semibold mt-0.5 truncate">
                         NIS: {s.nis || '-'} • {[s.desa, s.kecamatan, s.kabupaten].filter(Boolean).join(', ') || s.asal || '-'}
                       </p>
                     </div>
                   </div>
                   <div className="text-right shrink-0">
-                    <span className="text-[10px] font-black text-slate-500 bg-white border border-slate-150 px-2 py-1 rounded-md block">
+                    <span className="text-[10px] font-black text-rose-600 bg-white border border-rose-200 px-2 py-1 rounded-md block shadow-3xs">
                       {s.tanggalKeluar || '-'}
                     </span>
                   </div>

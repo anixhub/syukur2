@@ -1,33 +1,27 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'motion/react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { motion } from 'motion/react';
 import { 
-  X, 
   Home, 
   FileText, 
   Wallet, 
   BookOpen, 
   Users, 
-  ShieldAlert, 
-  ChevronDown, 
-  ChevronRight, 
-  BookOpenCheck,
-  Settings, 
-  LogOut,
-  ChevronLeft,
-  Shield,
-  Building,
-  Globe,
-  Database,
-  User,
-  HelpCircle,
-  Instagram,
-  Mail,
+  Shield, 
+  MessageSquare,
   MessageCircle,
-  Send,
-  Check
+  ChevronDown,
+  ChevronLeft,
+  Search,
+  MoreHorizontal,
+  Settings,
+  HelpCircle,
+  LogOut,
+  X,
+  User,
+  ExternalLink
 } from 'lucide-react';
-import { DEFAULT_ROLES, getPermissionsForRole, normalizeRoleId } from '../lib/permissions';
+import { getPermissionsForRole, normalizeRoleId } from '../lib/permissions';
+import SettingsModal, { SettingsTab } from './SettingsModal';
 
 interface DrawerProps {
   isOpen: boolean;
@@ -38,159 +32,82 @@ interface DrawerProps {
   isSelectionMode?: boolean;
   onLogout?: () => void;
   onOpenHelp?: () => void;
+  onOpenChat?: () => void;
+  isChatOpen?: boolean;
+  unreadChatCount?: number;
+  hasMentionNotification?: boolean;
+  onSearchModeChange?: (isSearching: boolean) => void;
+  santriList?: any[];
+  onSelectSantri?: (santri: any) => void;
 }
 
-export interface MenuItem {
+interface MenuItemDef {
   id: string;
   label: string;
-  desc: string;
-  icon: React.ComponentType<any>;
-  color: string;
-  hoverBg: string;
-  activeColor: string;
-  submenus: { id: string; label: string }[];
+  icon: React.ComponentType<{ className?: string }>;
+  submenus?: { id: string; label: string }[];
 }
 
-const MENU_ITEMS: MenuItem[] = [
+const MENU_ITEMS: MenuItemDef[] = [
   { 
     id: 'home', 
     label: 'Home', 
-    desc: 'Ringkasan & Informasi Umum', 
-    icon: Home, 
-    color: 'text-blue-600',
-    hoverBg: 'hover:bg-blue-50/70',
-    activeColor: 'bg-blue-50/80 text-blue-700 border-blue-200',
-    submenus: [
-      { id: 'dashboard', label: 'Dashboard Utama' }
-    ] 
+    icon: Home,
+    submenus: []
+  },
+  { 
+    id: 'group_chat', 
+    label: 'Group Chat', 
+    icon: MessageCircle,
+    submenus: []
   },
   { 
     id: 'sekretaris', 
     label: 'Sekretaris', 
-    desc: 'Direktori & Data Santri', 
-    icon: FileText, 
-    color: 'text-emerald-600',
-    hoverBg: 'hover:bg-emerald-50/70',
-    activeColor: 'bg-emerald-50/80 text-emerald-700 border-emerald-200',
+    icon: FileText,
     submenus: [
       { id: 'overview', label: 'Overview' },
       { id: 'santri', label: 'Data Induk Santri' }
-    ] 
+    ]
   },
   { 
     id: 'bendahara', 
     label: 'Bendahara', 
-    desc: 'Syahriah & Arus Kas', 
-    icon: Wallet, 
-    color: 'text-amber-600',
-    hoverBg: 'hover:bg-amber-50/70',
-    activeColor: 'bg-amber-50/80 text-amber-700 border-amber-200',
-    submenus: [] 
+    icon: Wallet,
+    submenus: [
+      { id: 'wallet', label: 'Wallet' },
+      { id: 'syahriah', label: 'Syahriah' }
+    ]
   },
   { 
     id: 'pendidikan', 
     label: 'Pendidikan', 
-    desc: 'Jadwal Kelas & Kurikulum', 
-    icon: BookOpen, 
-    color: 'text-indigo-600',
-    hoverBg: 'hover:bg-indigo-50/70',
-    activeColor: 'bg-indigo-50/80 text-indigo-700 border-indigo-200',
+    icon: BookOpen,
     submenus: [
       { id: 'lembaga', label: 'Aktivitas Akademik' },
       { id: 'akademik', label: 'Data Akademik' }
-    ] 
+    ]
   },
   { 
     id: 'humasy', 
     label: 'Humasy', 
-    desc: 'Kelola Kamar Santri', 
-    icon: Users, 
-    color: 'text-purple-600',
-    hoverBg: 'hover:bg-purple-50/70',
-    activeColor: 'bg-purple-50/80 text-purple-700 border-purple-200',
+    icon: Users,
     submenus: [
       { id: 'kamar', label: 'Kelola Kamar' },
       { id: 'datakamar', label: 'Data Kamar Santri' }
-    ] 
+    ]
   },
   { 
     id: 'keamanan', 
     label: 'Keamanan', 
-    desc: 'Disiplin & Ketertiban', 
-    icon: ShieldAlert, 
-    color: 'text-rose-600',
-    hoverBg: 'hover:bg-rose-50/70',
-    activeColor: 'bg-rose-50/80 text-rose-700 border-rose-200',
+    icon: Shield,
     submenus: [
       { id: 'overview', label: 'Overview' },
       { id: 'catatan', label: 'Data Pelanggaran' },
       { id: 'riwayat', label: 'Log Kasus' },
       { id: 'bukuinduk', label: 'Buku Induk Sanksi' },
       { id: 'perizinan', label: 'Perizinan' }
-    ] 
-  },
-];
-
-const SETTINGS_MENU_ITEMS: MenuItem[] = [
-  {
-    id: 'keamanan',
-    label: 'Profil dan Akun',
-    desc: 'Atur foto profil, nama pengguna & sandi',
-    icon: User,
-    color: 'text-rose-600',
-    hoverBg: 'hover:bg-rose-50/70',
-    activeColor: 'bg-rose-50/80 text-rose-700 border-rose-200',
-    submenus: []
-  },
-  {
-    id: 'profil',
-    label: 'Profil Pesantren',
-    desc: 'Informasi identitas pesantren',
-    icon: Building,
-    color: 'text-blue-600',
-    hoverBg: 'hover:bg-blue-50/70',
-    activeColor: 'bg-blue-50/80 text-blue-700 border-blue-200',
-    submenus: []
-  },
-  {
-    id: 'akses',
-    label: 'Panel Akses & Otoritas',
-    desc: 'Pengaturan hak akses peran',
-    icon: Shield,
-    color: 'text-emerald-600',
-    hoverBg: 'hover:bg-emerald-50/70',
-    activeColor: 'bg-emerald-50/80 text-emerald-700 border-emerald-200',
-    submenus: []
-  },
-  {
-    id: 'kelola_akun',
-    label: 'Kelola Akun Pengguna',
-    desc: 'Persetujuan pendaftaran akun pengurus',
-    icon: Users,
-    color: 'text-rose-600',
-    hoverBg: 'hover:bg-rose-50/70',
-    activeColor: 'bg-rose-50/80 text-rose-700 border-rose-200',
-    submenus: []
-  },
-  {
-    id: 'feedback',
-    label: 'Feedback & Masukan',
-    desc: 'Kotak masuk masukan dari pengurus',
-    icon: MessageCircle,
-    color: 'text-purple-600',
-    hoverBg: 'hover:bg-purple-50/70',
-    activeColor: 'bg-purple-50/80 text-purple-700 border-purple-200',
-    submenus: []
-  },
-  {
-    id: 'database',
-    label: 'Database & Backup',
-    desc: 'Cadangan dan pengelolaan data',
-    icon: Database,
-    color: 'text-indigo-600',
-    hoverBg: 'hover:bg-indigo-50/70',
-    activeColor: 'bg-indigo-50/80 text-indigo-700 border-indigo-200',
-    submenus: []
+    ]
   }
 ];
 
@@ -202,20 +119,33 @@ export default function Drawer({
   onChangeModule, 
   isSelectionMode = false,
   onLogout,
-  onOpenHelp
+  onOpenHelp,
+  onOpenChat,
+  isChatOpen = false,
+  unreadChatCount = 0,
+  hasMentionNotification = false,
+  onSearchModeChange,
+  santriList = [],
+  onSelectSantri
 }: DrawerProps) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchMode, setIsSearchMode] = useState<boolean>(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [openAccordion, setOpenAccordion] = useState<string | null>(activeModule);
-  const isPengaturanMode = activeModule === 'pengaturan';
-  const [isProfilePopupOpen, setIsProfilePopupOpen] = useState(false);
-  const [displayName, setDisplayName] = useState(() => localStorage.getItem('smartsantri_active_display_name') || 'Admin Utama');
-  const [avatar, setAvatar] = useState(() => localStorage.getItem('smartsantri_profile_avatar') || '');
-  const [currentUsername, setCurrentUsername] = useState(() => localStorage.getItem('smartsantri_active_username') || 'superadmin@attaroqqy.com');
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [settingsModalTab, setSettingsModalTab] = useState<SettingsTab>('general');
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+
+  const [displayName, setDisplayName] = useState(() => localStorage.getItem('smartsantri_active_display_name') || 'Mang Daud');
+  const [avatarUrl, setAvatarUrl] = useState(() => localStorage.getItem('smartsantri_profile_avatar') || '');
+  const [activeRole, setActiveRole] = useState(() => localStorage.getItem('smartsantri_active_role') || 'superadmin');
 
   useEffect(() => {
     const handleUpdate = () => {
-      setDisplayName(localStorage.getItem('smartsantri_active_display_name') || 'Admin Utama');
-      setAvatar(localStorage.getItem('smartsantri_profile_avatar') || '');
-      setCurrentUsername(localStorage.getItem('smartsantri_active_username') || 'superadmin@attaroqqy.com');
+      setDisplayName(localStorage.getItem('smartsantri_active_display_name') || 'Mang Daud');
+      setAvatarUrl(localStorage.getItem('smartsantri_profile_avatar') || '');
+      setActiveRole(localStorage.getItem('smartsantri_active_role') || 'superadmin');
     };
     window.addEventListener('smartsantri_profile_updated', handleUpdate);
     window.addEventListener('storage', handleUpdate);
@@ -225,13 +155,45 @@ export default function Drawer({
     };
   }, []);
 
-  const activeRole = localStorage.getItem('smartsantri_active_role') || 'superadmin';
+  // Reset search when drawer closes
+  useEffect(() => {
+    if (!isOpen) {
+      setIsSearchMode(false);
+      setSearchQuery('');
+      if (onSearchModeChange) onSearchModeChange(false);
+    }
+  }, [isOpen]);
+
+  const handleExitSearch = () => {
+    setIsSearchMode(false);
+    setSearchQuery('');
+    if (onSearchModeChange) onSearchModeChange(false);
+  };
+
+  // Close profile dropdown when clicked outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
+        setShowProfileMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Sync accordion when activeModule changes
+  useEffect(() => {
+    if (activeModule) {
+      setOpenAccordion(activeModule);
+    }
+  }, [activeModule]);
+
   const permissions = getPermissionsForRole(activeRole);
 
-  const getFilteredMenuItems = () => {
+  const filteredMenuItems = useMemo(() => {
     if (normalizeRoleId(activeRole) === 'superadmin') return MENU_ITEMS;
     return MENU_ITEMS.filter(item => {
-      if (item.id === 'home') return true;
+      if (item.id === 'home' || item.id === 'group_chat') return true;
       if (!permissions) return false;
 
       if (item.id === 'sekretaris') {
@@ -270,325 +232,435 @@ export default function Drawer({
       }
       return false;
     });
-  };
-  const footerRef = useRef<HTMLDivElement>(null);
+  }, [activeRole, permissions]);
 
-  // Sync active accordion when activeModule changes externally
-  useEffect(() => {
-    if (activeModule) {
-      setOpenAccordion(activeModule);
-    }
-  }, [activeModule]);
+  // Search filter for normal menu
+  const searchedItems = useMemo(() => {
+    if (!searchQuery.trim()) return filteredMenuItems;
+    const q = searchQuery.toLowerCase().trim();
+    return filteredMenuItems.filter(item => 
+      item.label.toLowerCase().includes(q) ||
+      item.submenus?.some(s => s.label.toLowerCase().includes(q))
+    );
+  }, [searchQuery, filteredMenuItems]);
 
-  // Lock body scroll when mobile fullscreen sidebar is open
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [isOpen]);
-
-  // Click outside to close profile popup on mobile
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (footerRef.current && !footerRef.current.contains(event.target as Node)) {
-        setIsProfilePopupOpen(false);
+  // Matched menus & submenus for full search mode
+  const matchedMenus = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    const q = searchQuery.toLowerCase().trim();
+    const results: { module: string; subTab?: string; title: string; category: string; icon: any }[] = [];
+    filteredMenuItems.forEach(item => {
+      if (item.id === 'group_chat') return;
+      if (item.label.toLowerCase().includes(q)) {
+        results.push({
+          module: item.id,
+          subTab: item.submenus?.[0]?.id,
+          title: item.label,
+          category: 'Modul Utama',
+          icon: item.icon
+        });
       }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+      item.submenus?.forEach(sub => {
+        if (sub.label.toLowerCase().includes(q) && !results.some(r => r.module === item.id && r.subTab === sub.id)) {
+          results.push({
+            module: item.id,
+            subTab: sub.id,
+            title: sub.label,
+            category: item.label,
+            icon: item.icon
+          });
+        }
+      });
+    });
+    return results;
+  }, [searchQuery, filteredMenuItems]);
 
-  const handleMenuClick = (menuId: string, defaultSub?: string) => {
+  // Matched santri list for full search mode
+  const matchedSantri = useMemo(() => {
+    if (!searchQuery.trim() || !santriList || santriList.length === 0) return [];
+    const q = searchQuery.toLowerCase().trim();
+    return santriList.filter(s => {
+      const nama = (s.namaLengkap || s.nama || '').toLowerCase();
+      const nis = (s.nis || '').toLowerCase();
+      const nism = (s.nism || '').toLowerCase();
+      const kamar = (s.kamar || s.namaKamar || '').toLowerCase();
+      const asrama = (s.asrama || '').toLowerCase();
+      return nama.includes(q) || nis.includes(q) || nism.includes(q) || kamar.includes(q) || asrama.includes(q);
+    });
+  }, [searchQuery, santriList]);
+
+  const handleMenuClick = (item: MenuItemDef) => {
     if (isSelectionMode) return;
-    if (openAccordion === menuId) {
-      setOpenAccordion(null);
+
+    if (item.id === 'group_chat') {
+      onClose();
+      if (onOpenChat) onOpenChat();
+      return;
+    }
+
+    if (item.submenus && item.submenus.length > 0) {
+      if (openAccordion === item.id) {
+        setOpenAccordion(null);
+      } else {
+        setOpenAccordion(item.id);
+      }
     } else {
-      setOpenAccordion(menuId);
+      onChangeModule(item.id, undefined);
+      onClose();
     }
   };
+
+  const initialLetter = (displayName || 'A').charAt(0).toUpperCase();
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          {/* Backdrop Overlay */}
-          <motion.div
-            id="mobile-drawer-backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="fixed inset-0 z-45 bg-slate-900/40 backdrop-blur-xs"
-          />
+    <motion.aside 
+      id="mobile-sidebar-drawer"
+      initial={false}
+      animate={
+        isOpen
+          ? { x: '0%', opacity: 1 }
+          : { x: '-100%', opacity: 0 }
+      }
+      transition={{ type: 'tween', ease: [0.25, 1, 0.5, 1], duration: 0.32 }}
+      className={`w-full h-full bg-white flex flex-col z-0 absolute left-0 top-0 select-none md:hidden ${
+        isOpen ? 'pointer-events-auto' : 'pointer-events-none'
+      }`}
+    >
+      {/* Header with Search */}
+      <div className={`p-4 pt-8 transition-all duration-300 ease-out ${
+        isSearchMode ? 'w-full pr-4' : 'w-[80%]'
+      }`}>
+        <div className="flex items-center gap-2.5 w-full mt-4">
+          {isSearchMode && (
+            <button
+              type="button"
+              onClick={handleExitSearch}
+              className="p-2 -ml-2 text-gray-700 hover:text-gray-950 hover:bg-gray-100 active:bg-gray-200 rounded-full transition-colors shrink-0 cursor-pointer"
+              aria-label="Kembali"
+              title="Kembali ke menu"
+            >
+              <ChevronLeft className="w-6 h-6 text-gray-800" />
+            </button>
+          )}
 
-          {/* Sliding Sidebar Drawer from Left */}
-          <motion.aside
-            id="mobile-sliding-sidebar"
-            initial={{ x: '-100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '-100%' }}
-            transition={{ type: 'spring', damping: 25, stiffness: 220 }}
-            className="fixed top-0 bottom-0 left-0 z-50 flex h-full w-[70%] max-w-[320px] flex-col bg-white overflow-hidden shadow-2xl rounded-r-2xl border-r border-slate-100"
-          >
-            {/* Header */}
-            <div className="flex h-16 items-center justify-between px-5 border-b border-slate-100 shrink-0">
-              {isPengaturanMode ? (
-                <button
-                  onClick={() => {
-                    onChangeModule('home');
-                    onClose();
-                  }}
-                  className="flex items-center gap-1.5 text-xs font-black text-slate-700 hover:text-rose-600 transition-colors cursor-pointer"
-                  title="Kembali ke Beranda"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                  <span>Pengaturan</span>
-                </button>
-              ) : (
-                <div className="flex items-center gap-2 text-xs font-black text-slate-700">
-                  <BookOpenCheck className="h-4.5 w-4.5 text-emerald-600" />
-                  <span>AttarOkey 4.0</span>
+          <div className="relative flex-1">
+            <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none">
+              <Search className="w-4 h-4 text-gray-400" />
+            </span>
+            <input 
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onFocus={() => {
+                if (!isSearchMode) {
+                  setIsSearchMode(true);
+                  if (onSearchModeChange) onSearchModeChange(true);
+                }
+              }}
+              onClick={() => {
+                if (!isSearchMode) {
+                  setIsSearchMode(true);
+                  if (onSearchModeChange) onSearchModeChange(true);
+                }
+              }}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  handleExitSearch();
+                }
+              }}
+              className="w-full bg-gray-100 rounded-full py-2.5 pl-10 pr-10 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:bg-white text-sm border-none placeholder-gray-400 text-gray-800 transition-all" 
+              placeholder="Cari menu atau data santri" 
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  searchInputRef.current?.focus();
+                }}
+                className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600 p-1 cursor-pointer"
+                title="Hapus teks"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* When in Search Mode: Full-screen Search Results (Sidebar is hidden) */}
+      {isSearchMode ? (
+        <div className="flex-1 min-h-0 w-full overflow-y-auto px-4 py-2 space-y-4 scrollbar-thin overscroll-contain">
+          {!searchQuery.trim() ? (
+            <div className="space-y-4 pt-2">
+              <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 px-1">
+                Pencarian Cepat
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { label: 'Data Induk Santri', mod: 'sekretaris', sub: 'santri' },
+                  { label: 'Syahriah & Kas', mod: 'bendahara', sub: '' },
+                  { label: 'Aktivitas Akademik', mod: 'pendidikan', sub: 'lembaga' },
+                  { label: 'Kelola Kamar', mod: 'humasy', sub: 'kamar' },
+                  { label: 'Perizinan & Sanksi', mod: 'keamanan', sub: 'overview' },
+                  { label: 'Pengaturan Akun', mod: 'pengaturan', sub: 'keamanan' },
+                ].map((tag) => {
+                  const isTagActive = activeModule === tag.mod && (!tag.sub || activeSubTab === tag.sub);
+                  return (
+                    <button
+                      key={tag.label}
+                      type="button"
+                      onClick={() => {
+                        onChangeModule(tag.mod, tag.sub);
+                      }}
+                      className={`px-3 py-2 rounded-full text-xs font-medium transition-colors cursor-pointer ${
+                        isTagActive
+                          ? 'bg-blue-600 text-white font-semibold shadow-xs'
+                          : 'bg-gray-100 text-gray-700 hover:bg-blue-50 hover:text-blue-600 active:bg-blue-100'
+                      }`}
+                    >
+                      {tag.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="text-xs text-gray-400 px-1 pt-2">
+                Ketik nama menu, fitur aplikasi, atau nama santri untuk memulai pencarian.
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Menu & Halaman Results */}
+              {matchedMenus.length > 0 && (
+                <div className="space-y-1">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 px-1 mb-2">
+                    Menu & Navigasi ({matchedMenus.length})
+                  </div>
+                  {matchedMenus.map((item, idx) => {
+                    const Icon = item.icon;
+                    const isItemActive = activeModule === item.module && (!item.subTab || activeSubTab === item.subTab);
+                    return (
+                      <button
+                        key={`${item.module}-${item.subTab || idx}`}
+                        type="button"
+                        onClick={() => {
+                          onChangeModule(item.module, item.subTab);
+                        }}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer group ${
+                          isItemActive 
+                            ? 'bg-blue-50/90 text-blue-700 font-semibold ring-1 ring-blue-200/80 shadow-2xs' 
+                            : 'hover:bg-gray-100 active:bg-blue-50 text-gray-800'
+                        }`}
+                      >
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors shrink-0 ${
+                          isItemActive 
+                            ? 'bg-blue-600 text-white' 
+                            : 'bg-gray-100 group-hover:bg-blue-100 text-gray-600 group-hover:text-blue-600'
+                        }`}>
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className={`text-sm truncate ${
+                            isItemActive ? 'font-bold text-blue-700' : 'font-medium text-gray-800 group-hover:text-blue-600'
+                          }`}>
+                            {item.title}
+                          </div>
+                          <div className="text-xs text-gray-400 truncate">
+                            {item.category}
+                          </div>
+                        </div>
+                        {isItemActive && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0" />
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
 
-              {/* Close full screen menu */}
-              <button
-                id="btn-close-drawer"
-                onClick={onClose}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-400 transition-all hover:bg-slate-50 hover:text-slate-600 active:scale-95 cursor-pointer"
-                aria-label="Tutup Menu"
-              >
-                <X className="h-5.5 w-5.5" />
-              </button>
-            </div>
-
-            {/* Menu List */}
-            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
-              <nav className="space-y-1">
-                {(isPengaturanMode 
-                  ? (activeRole === 'superadmin' 
-                      ? SETTINGS_MENU_ITEMS 
-                      : SETTINGS_MENU_ITEMS.filter(item => item.id === 'keamanan' || item.id === 'database'))
-                  : getFilteredMenuItems()
-                ).map((item) => {
-                  const IconComponent = item.icon;
-                  const isModuleActive = isPengaturanMode ? (activeSubTab === item.id) : (activeModule === item.id);
-                  const isAccordionOpen = openAccordion === item.id;
-
-                  return (
-                    <div key={item.id} className="relative">
-                      {/* Main Menu Button */}
-                      <button
-                        type="button"
-                        disabled={isSelectionMode && !isModuleActive}
-                        onClick={() => {
-                          if (isPengaturanMode) {
-                            onChangeModule('pengaturan', item.id);
-                            onClose();
-                          } else if (item.submenus.length === 0) {
-                            onChangeModule(item.id, undefined);
-                            onClose();
-                          } else {
-                            handleMenuClick(item.id, item.submenus[0]?.id);
-                          }
-                        }}
-                        className={`flex w-full items-center gap-3 px-3 py-2 rounded-xl text-left transition-all duration-150 outline-none border ${
-                          isSelectionMode
-                            ? isModuleActive 
-                              ? `${item.activeColor} font-bold shadow-xs cursor-default` 
-                              : 'opacity-40 cursor-not-allowed border-transparent'
-                            : isModuleActive 
-                              ? `${item.activeColor} font-bold shadow-xs cursor-pointer` 
-                              : `text-slate-600 ${item.hoverBg} hover:text-slate-900 border-transparent cursor-pointer`
-                        }`}
-                      >
-                        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
-                          isModuleActive 
-                            ? 'bg-gradient-to-tr from-emerald-600 to-emerald-500 text-white shadow-xs' 
-                            : `${item.color} bg-slate-50/80`
-                        }`}>
-                          <IconComponent className="h-4.5 w-4.5" />
-                        </div>
-
-                        <div className="flex-1 min-w-0 flex items-center justify-between">
-                          <div className="flex flex-col min-w-0">
-                            <span className="font-display text-xs font-bold text-slate-800 tracking-tight leading-normal">
-                              {item.label}
-                            </span>
-                          </div>
-                          
-                          {item.submenus.length > 0 && (
-                            <ChevronDown className={`h-4 w-4 text-slate-400 shrink-0 transition-transform duration-250 ${
-                              isAccordionOpen ? 'rotate-180 text-slate-600' : ''
-                            }`} />
-                          )}
-                        </div>
-                      </button>
-
-                      {/* Submenu Accordion */}
-                      <AnimatePresence initial={false}>
-                        {isAccordionOpen && item.submenus.length > 0 && (
-                          <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            transition={{ duration: 0.2, ease: 'easeInOut' }}
-                            className="overflow-hidden"
-                          >
-                            <div className="pl-5 pr-2 py-1.5 space-y-1.5 border-l-2 border-slate-100 ml-7 my-1.5">
-                              {item.submenus.map((sub) => {
-                                const isSubActive = isModuleActive && activeSubTab === sub.id;
-                                return (
-                                  <button
-                                    key={sub.id}
-                                    type="button"
-                                    disabled={isSelectionMode && !isSubActive}
-                                    onClick={() => {
-                                      if (isSelectionMode && !isSubActive) return;
-                                      onChangeModule(item.id, sub.id);
-                                      onClose(); // Close full screen drawer on select
-                                    }}
-                                    className={`flex items-center justify-between w-full text-left py-2 px-4 rounded-xl font-display text-xs font-bold tracking-tight transition-all duration-150 border ${
-                                      isSelectionMode
-                                        ? isSubActive
-                                          ? 'bg-emerald-50 border-emerald-100 text-emerald-850 cursor-default'
-                                          : 'text-slate-300 border-transparent cursor-not-allowed'
-                                        : isSubActive
-                                          ? 'bg-emerald-50 border-emerald-100 text-emerald-850 cursor-pointer shadow-xs'
-                                          : 'text-slate-500 border-transparent hover:bg-slate-50 hover:text-slate-800 cursor-pointer'
-                                    }`}
-                                  >
-                                    <span>{sub.label}</span>
-                                    <ChevronRight className={`h-3 w-3 shrink-0 transition-transform ${
-                                      isSubActive ? 'text-emerald-700 translate-x-0.5' : 'text-slate-300'
-                                    }`} />
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  );
-                })}
-              </nav>
-            </div>
-
-            {/* Profile Footer (Premium styled adaptive view) */}
-            <div 
-              className="border-t border-slate-100 p-4 shrink-0 relative bg-slate-50/50" 
-              ref={footerRef}
-            >
-              <AnimatePresence>
-                {isProfilePopupOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 15, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 15, scale: 0.95 }}
-                    transition={{ duration: 0.15, ease: 'easeOut' }}
-                    className="absolute bottom-full left-4 right-4 mb-3 bg-white rounded-2xl shadow-xl z-50 p-3 font-sans border-0 outline-none ring-0"
-                  >
-                    <div className="px-3 py-2 border-b border-slate-50 mb-2 flex items-center gap-2.5">
-                      <div className="h-7 w-7 rounded-full overflow-hidden bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-[10px] font-bold text-white shrink-0 shadow-inner">
-                        {avatar ? (
-                          <img src={avatar} alt={displayName} className="h-full w-full object-cover" referrerPolicy="no-referrer" />
-                        ) : (
-                          displayName.substring(0, 2).toUpperCase()
-                        )}
-                      </div>
-                      <div className="min-w-0 text-left">
-                        <p className="text-xs font-extrabold text-slate-800 truncate">{displayName}</p>
-                        <p className="text-[10px] text-slate-400 font-medium truncate">{currentUsername}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="space-y-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsProfilePopupOpen(false);
-                          onClose();
-                          onChangeModule('pengaturan', 'keamanan');
-                        }}
-                        className="flex w-full items-center gap-2.5 py-2 px-3 rounded-xl text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-colors font-display text-xs font-bold outline-none focus:outline-none"
-                      >
-                        <Settings className="h-4 w-4" />
-                        <span>Pengaturan</span>
-                      </button>
-                      
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setIsProfilePopupOpen(false);
-                          onClose();
-                          if (onOpenHelp) onOpenHelp();
-                        }}
-                        className="flex w-full items-center gap-2.5 py-2 px-3 rounded-xl text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-colors font-display text-xs font-bold outline-none focus:outline-none"
-                      >
-                        <HelpCircle className="h-4 w-4 text-blue-500" />
-                        <span>Pusat Bantuan</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsProfilePopupOpen(false);
-                          onClose();
-                          localStorage.removeItem('smartsantri_is_logged_in');
-                          localStorage.removeItem('smartsantri_active_role');
-                          localStorage.removeItem('smartsantri_active_username');
-                          localStorage.removeItem('smartsantri_active_display_name');
-                          localStorage.removeItem('smartsantri_profile_avatar');
-                          if (onLogout) {
-                            onLogout();
-                          } else {
-                            window.location.reload();
-                          }
-                        }}
-                        className="flex w-full items-center gap-2.5 py-2 px-3 rounded-xl text-rose-600 hover:bg-rose-50/50 hover:text-rose-700 transition-colors font-display text-xs font-extrabold outline-none focus:outline-none"
-                      >
-                        <LogOut className="h-4 w-4" />
-                        <span>Keluar</span>
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
- 
-              {/* Mobile Profile Trigger (Matches sidebar style - no outline/border) */}
-              <div 
-                onClick={() => setIsProfilePopupOpen(!isProfilePopupOpen)}
-                className="flex items-center justify-between gap-3 p-2 rounded-xl hover:bg-slate-100/60 transition-all cursor-pointer select-none outline-none focus:outline-none active:outline-none focus:ring-0 active:ring-0"
-              >
-                <div className="flex items-center gap-3 min-w-0 outline-none focus:outline-none active:outline-none">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 font-display text-xs font-bold text-white shadow-sm overflow-hidden outline-none focus:outline-none active:outline-none">
-                    {avatar ? (
-                      <img src={avatar} alt={displayName} className="h-full w-full object-cover" referrerPolicy="no-referrer" />
-                    ) : (
-                      displayName.substring(0, 2).toUpperCase()
-                    )}
+              {/* Santri Results */}
+              {matchedSantri.length > 0 && (
+                <div className="space-y-1">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 px-1 mb-2">
+                    Data Santri ({matchedSantri.length})
                   </div>
-                  <div className="text-left min-w-0">
-                    <p className="text-xs font-extrabold text-slate-800 truncate">{displayName}</p>
-                    <p className="text-[10px] text-slate-400 font-medium truncate mt-0.5">{currentUsername}</p>
+                  {matchedSantri.map((santri) => (
+                    <button
+                      key={santri.id || santri.nis}
+                      type="button"
+                      onClick={() => {
+                        if (onSelectSantri) {
+                          onSelectSantri(santri);
+                        } else {
+                          onChangeModule('sekretaris', 'santri');
+                        }
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-100 active:bg-blue-50 text-left transition-colors cursor-pointer group"
+                    >
+                      <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs shrink-0">
+                        {(santri.namaLengkap || santri.nama || 'S').charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-gray-800 group-hover:text-blue-600 truncate">
+                          {santri.namaLengkap || santri.nama}
+                        </div>
+                        <div className="text-xs text-gray-400 truncate flex items-center gap-2">
+                          <span>NIS: {santri.nis || santri.nism || '-'}</span>
+                          <span>•</span>
+                          <span>{santri.kamar || santri.namaKamar || 'Kamar -'}</span>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 shrink-0">
+                        {santri.statusSantri || 'Aktif'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* No Results */}
+              {matchedMenus.length === 0 && matchedSantri.length === 0 && (
+                <div className="py-12 text-center text-gray-400 space-y-2">
+                  <Search className="w-8 h-8 mx-auto text-gray-300 stroke-[1.5]" />
+                  <div className="text-sm font-medium text-gray-600">
+                    Tidak ada hasil untuk "{searchQuery}"
+                  </div>
+                  <div className="text-xs text-gray-400 max-w-xs mx-auto">
+                    Pastikan ejaan kata kunci benar atau coba cari nama menu dan santri lainnya.
                   </div>
                 </div>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
+          {/* Navigation Menu */}
+          <nav className="flex-1 overflow-y-auto px-4 py-2 space-y-1 w-[80%]">
+            {searchedItems.map((item) => {
+              const Icon = item.icon;
+              const isChat = item.id === 'group_chat';
+              const isActive = isChatOpen ? isChat : (!isChat && activeModule === item.id);
+              const isExpanded = (openAccordion === item.id) || (searchQuery.trim().length > 0 && item.submenus && item.submenus.length > 0);
+              const hasSubmenus = item.submenus && item.submenus.length > 0;
 
-                <ChevronDown className={`h-4 w-4 text-slate-400 shrink-0 transition-transform ${
-                  isProfilePopupOpen ? 'rotate-180 text-slate-600' : ''
-                }`} />
+              return (
+                <div key={item.id}>
+                  <a
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleMenuClick(item);
+                    }}
+                    className={`block px-3 py-3 rounded-lg hover:bg-gray-100 text-base font-medium transition-colors ${
+                      isActive ? 'bg-blue-50' : ''
+                    }`}
+                  >
+                    <div className="w-full">
+                      <div className="flex items-center gap-3 w-full">
+                        <span className={isActive ? 'text-blue-600' : 'text-gray-500'}>
+                          <Icon className="w-5 h-5 shrink-0" />
+                        </span>
+                        <span className={isActive ? 'text-blue-600' : 'text-gray-800'}>
+                          {item.label}
+                        </span>
+                        {item.id === 'group_chat' && (unreadChatCount > 0 || hasMentionNotification) && (
+                          <span className="ml-auto flex h-5 min-w-[20px] px-1.5 items-center justify-center rounded-full bg-emerald-500 text-white font-bold text-xs shadow-xs animate-pulse">
+                            {hasMentionNotification ? '@' : (unreadChatCount > 99 ? '99+' : unreadChatCount)}
+                          </span>
+                        )}
+                        {hasSubmenus && (
+                          <span 
+                            className={`text-gray-400 text-sm ml-auto transition-transform duration-200 ${
+                              isExpanded ? 'rotate-180 text-blue-600' : ''
+                            }`}
+                          >
+                            <ChevronDown className="w-4 h-4" />
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Submenu List when expanded */}
+                      {hasSubmenus && isExpanded && (
+                        <ul className="mt-2 space-y-1 w-full pl-8">
+                          {item.submenus!.map((sub) => {
+                            const isSubActive = isActive && (activeSubTab === sub.id || (!activeSubTab && sub.id === item.submenus![0].id));
+                            return (
+                              <li
+                                key={sub.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onChangeModule(item.id, sub.id);
+                                  onClose();
+                                }}
+                                className={`py-2 text-sm cursor-pointer transition-colors ${
+                                  isSubActive 
+                                    ? 'text-blue-600 font-semibold' 
+                                    : 'text-gray-500 hover:text-gray-800'
+                                }`}
+                              >
+                                {sub.label}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </div>
+                  </a>
+                </div>
+              );
+            })}
+          </nav>
+
+          {/* User Profile Bottom Container */}
+          <div className="p-3 w-[85%] mt-auto pb-4">
+            <div 
+              onClick={() => {
+                setShowSettingsModal(true);
+                onClose();
+              }}
+              className="p-2.5 flex items-center justify-between bg-transparent hover:bg-slate-100 active:bg-slate-200 rounded-2xl cursor-pointer transition-colors"
+              title="Buka Pengaturan"
+              id="mobile-drawer-profile-container"
+            >
+              <div className="flex items-center space-x-3 min-w-0 flex-1">
+                {/* Avatar */}
+                <div className="w-8 h-8 rounded-full bg-[#9E362B] text-white font-medium text-xs flex items-center justify-center shrink-0 shadow-xs uppercase overflow-hidden">
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt={displayName} className="w-full h-full object-cover" />
+                  ) : (
+                    (displayName.trim().slice(0, 2) || 'MD').toUpperCase()
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="font-bold text-xs text-slate-900 block truncate">
+                    {displayName}
+                  </span>
+                  <span className="text-[10px] text-slate-400 capitalize block -mt-0.5 truncate">
+                    {activeRole === 'superadmin' ? 'Super Admin' : (activeRole || 'Pengurus')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Three dots button */}
+              <div 
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg shrink-0"
+                aria-label="Pengaturan"
+              >
+                <MoreHorizontal className="w-4 h-4" />
               </div>
             </div>
-          </motion.aside>
+          </div>
+
+          <SettingsModal
+            isOpen={showSettingsModal}
+            onClose={() => setShowSettingsModal(false)}
+            defaultTab={settingsModalTab}
+            onLogout={onLogout}
+          />
         </>
       )}
-    </AnimatePresence>
+    </motion.aside>
   );
 }

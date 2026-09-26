@@ -1,5 +1,8 @@
 // Client-side Database API Helper & WebSocket Realtime Manager
-import { formatBigDigit, mergeIdField } from "./utils";
+import { formatBigDigit, mergeIdField, camelToSnake, snakeToCamel, getApiUrl } from "./utils";
+import { enqueueOfflineMutation, getOfflineQueue } from "./offlineSync";
+
+export { camelToSnake, snakeToCamel, getApiUrl };
 
 export interface SupabaseStatus {
   connected: boolean;
@@ -125,38 +128,6 @@ export async function getSupabaseStatus(): Promise<SupabaseStatus> {
   return { connected: true, type: "mysql_realtime", url: null, reason: "connected" };
 }
 
-// Convert camelCase string/object to snake_case
-export function camelToSnake(obj: any): any {
-  if (obj === null || obj === undefined) return obj;
-  if (typeof obj !== 'object' || obj instanceof Date || obj instanceof File || obj instanceof Blob) return obj;
-  if (Array.isArray(obj)) return obj.map(camelToSnake);
-  
-  const result: any = {};
-  for (const key of Object.keys(obj)) {
-    const snakeKey = key
-      .replace(/([A-Z])/g, "_$1")
-      .replace(/([0-9]+)/g, "_$1")
-      .replace(/_+/g, "_")
-      .toLowerCase();
-    result[snakeKey] = camelToSnake(obj[key]);
-  }
-  return result;
-}
-
-// Convert snake_case string/object to camelCase
-export function snakeToCamel(obj: any): any {
-  if (obj === null || obj === undefined) return obj;
-  if (typeof obj !== 'object' || obj instanceof Date || obj instanceof File || obj instanceof Blob) return obj;
-  if (Array.isArray(obj)) return obj.map(snakeToCamel);
-  
-  const result: any = {};
-  for (const key of Object.keys(obj)) {
-    const camelKey = key.replace(/_([a-z0-9])/g, (g) => g[1].toUpperCase());
-    result[camelKey] = snakeToCamel(obj[key]);
-  }
-  return result;
-}
-
 // Helper to write to localStorage safely
 export function safeLocalStorageSetItem(key: string, value: string): boolean {
   try {
@@ -194,89 +165,119 @@ async function safeJsonParse(res: Response): Promise<any> {
   }
 }
 
-// Helper to resolve dynamic API URLs supporting subpath hosting and absolute origin for cross-device compatibility
-export function getApiUrl(endpoint: string): string {
-  if (!endpoint) return '';
-  const trimmed = endpoint.trim();
-  
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    try {
-      const urlObj = new URL(trimmed);
-      let p = urlObj.pathname + urlObj.search;
-      if (p.startsWith('/uploads/')) {
-        p = p.replace('/uploads/', '/api/uploads/');
-      }
-      return p;
-    } catch (e) {
-      return trimmed;
-    }
-  }
-
-  if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
-    return trimmed;
-  }
-
-  let cleanEndpoint = trimmed.startsWith('/') ? trimmed : '/' + trimmed;
-  if (cleanEndpoint.startsWith('/uploads/')) {
-    cleanEndpoint = cleanEndpoint.replace('/uploads/', '/api/uploads/');
-  }
-  
-  return cleanEndpoint;
-}
+// In-flight deduplication map for simultaneous table queries
+const inFlightTableFetches = new Map<string, Promise<any>>();
 
 // Fetch list of items from table
 export async function fetchTableData<T>(table: string, localKey?: string, defaultValue: T[] = []): Promise<T[]> {
-  try {
-    const url = getApiUrl(`/api/db/${table}?_t=${Date.now()}`);
-    const res = await fetch(url, {
-      cache: 'no-store',
-      headers: {
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache'
-      }
-    });
-    if (res.ok) {
-      const result = await safeJsonParse(res);
-      if (result.success && Array.isArray(result.data)) {
-        const camelCasedData = snakeToCamel(result.data) as T[];
-        const uniqueMap = new Map<any, T>();
-        camelCasedData.forEach((item: any) => {
-          if (item && item.id !== undefined && item.id !== null) {
-            const key = String(item.id);
-            uniqueMap.set(key, { ...item, id: key });
-          } else if (item) {
-            uniqueMap.set(Math.random().toString(), item);
-          }
-        });
-        const fetchedData = Array.from(uniqueMap.values());
-        if (localKey) {
-          safeLocalStorageSetItem(localKey, JSON.stringify(fetchedData));
-        }
-        return fetchedData;
-      }
-    }
-  } catch (err) {
-    console.warn(`Fetch query failed for table ${table}.`, err);
+  const dedupKey = `${table}:${localKey || ''}`;
+  if (inFlightTableFetches.has(dedupKey)) {
+    return inFlightTableFetches.get(dedupKey)!;
   }
 
-  if (localKey) {
+  const fetchPromise = (async () => {
     try {
-      const localStr = localStorage.getItem(localKey);
-      if (localStr) {
-        const parsed = JSON.parse(localStr);
-        if (Array.isArray(parsed)) {
-          return parsed;
+      const url = getApiUrl(`/api/db/${table}?_t=${Date.now()}`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const res = await fetch(url, {
+        cache: 'no-store',
+        signal: controller.signal,
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const result = await safeJsonParse(res);
+        if (result.success && Array.isArray(result.data)) {
+          const camelCasedData = snakeToCamel(result.data) as T[];
+          const uniqueMap = new Map<any, T>();
+          camelCasedData.forEach((item: any) => {
+            if (item && item.id !== undefined && item.id !== null) {
+              const key = String(item.id);
+              uniqueMap.set(key, { ...item, id: key });
+            } else if (item) {
+              uniqueMap.set(Math.random().toString(), item);
+            }
+          });
+          const fetchedData = Array.from(uniqueMap.values());
+
+          // If server returned non-empty data, update localStorage
+          if (fetchedData.length > 0) {
+            if (localKey) {
+              safeLocalStorageSetItem(localKey, JSON.stringify(fetchedData));
+            }
+            return fetchedData;
+          }
+
+          // If server returned empty array (0 items), check if localStorage has existing cached data
+          if (localKey) {
+            try {
+              const localStr = localStorage.getItem(localKey);
+              if (localStr) {
+                const localList = JSON.parse(localStr);
+                if (Array.isArray(localList) && localList.length > 0) {
+                  console.log(`[Perlindungan Data] Server mengembalikan data kosong untuk tabel '${table}', tetapi localStorage memiliki ${localList.length} item. Menggunakan data lokal dan menyinkronkan ulang ke server.`);
+                  // Auto-sync back to server in background
+                  fetch(getApiUrl(`/api/db/${table}`), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(camelToSnake(localList))
+                  }).catch(() => {});
+                  return localList;
+                }
+              }
+            } catch (e) {}
+            if (defaultValue && defaultValue.length > 0) {
+              safeLocalStorageSetItem(localKey, JSON.stringify(defaultValue));
+              fetch(getApiUrl(`/api/db/${table}`), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(camelToSnake(defaultValue))
+              }).catch(() => {});
+              return defaultValue;
+            }
+            safeLocalStorageSetItem(localKey, JSON.stringify([]));
+          } else if (defaultValue && defaultValue.length > 0) {
+            return defaultValue;
+          }
+          return fetchedData;
         }
       }
-    } catch (e) {}
-  }
+    } catch (err) {
+      console.warn(`Fetch query failed for table ${table}.`, err);
+    }
 
-  return defaultValue;
+    if (localKey) {
+      try {
+        const localStr = localStorage.getItem(localKey);
+        if (localStr) {
+          const parsed = JSON.parse(localStr);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
+        }
+      } catch (e) {}
+    }
+
+    return defaultValue;
+  })().finally(() => {
+    // Release in-flight lock after execution
+    setTimeout(() => {
+      inFlightTableFetches.delete(dedupKey);
+    }, 150);
+  });
+
+  inFlightTableFetches.set(dedupKey, fetchPromise);
+  return fetchPromise;
 }
 
 // Insert single row
 export async function insertTableRow<T extends { id?: any }>(table: string, localKey: string, row: T): Promise<T> {
   let remoteRow = { ...row };
+  let remoteSucceeded = false;
   try {
     const snakeCasedRow = camelToSnake(row);
     const res = await fetch(getApiUrl(`/api/db/${table}`), {
@@ -287,6 +288,7 @@ export async function insertTableRow<T extends { id?: any }>(table: string, loca
     if (res.ok) {
       const result = await safeJsonParse(res);
       if (result.success && result.data) {
+        remoteSucceeded = true;
         const camelRemote = snakeToCamel(result.data);
         const remoteObj = Array.isArray(camelRemote) ? camelRemote[0] : camelRemote;
         if (remoteObj && typeof remoteObj === 'object') {
@@ -309,6 +311,17 @@ export async function insertTableRow<T extends { id?: any }>(table: string, loca
     console.warn(`Insert failed for ${table}, storing locally.`, err);
   }
 
+  // If server call didn't succeed, enqueue for offline sync
+  if (!remoteSucceeded) {
+    enqueueOfflineMutation({
+      table,
+      localKey,
+      type: 'insert',
+      recordId: row.id,
+      payload: row,
+    });
+  }
+
   if (localKey && remoteRow) {
     try {
       const localStr = localStorage.getItem(localKey);
@@ -328,6 +341,7 @@ export async function insertTableRows<T extends { id?: any }>(table: string, loc
   if (!rows || rows.length === 0) return [];
   
   let finalRows = [...rows];
+  let remoteSucceeded = false;
   try {
     const snakeCasedRows = camelToSnake(rows);
     const res = await fetch(getApiUrl(`/api/db/${table}`), {
@@ -338,6 +352,7 @@ export async function insertTableRows<T extends { id?: any }>(table: string, loc
     if (res.ok) {
       const result = await safeJsonParse(res);
       if (result.success && result.data) {
+        remoteSucceeded = true;
         const fetched = result.data;
         const remoteRows = (Array.isArray(fetched) ? snakeToCamel(fetched) : [snakeToCamel(fetched)]) as T[];
         if (remoteRows && remoteRows.length > 0) {
@@ -347,6 +362,15 @@ export async function insertTableRows<T extends { id?: any }>(table: string, loc
     }
   } catch (err) {
     console.warn(`Batch insert failed for ${table}, storing locally.`, err);
+  }
+
+  if (!remoteSucceeded) {
+    enqueueOfflineMutation({
+      table,
+      localKey,
+      type: 'insert_batch',
+      payload: rows,
+    });
   }
 
   if (localKey && finalRows.length > 0) {
@@ -372,6 +396,7 @@ export async function updateTableRow<T extends { id?: any }>(
   updatedData: Partial<T>
 ): Promise<T> {
   let remoteRow = { id, ...updatedData } as T;
+  let remoteSucceeded = false;
   try {
     const snakeCasedData = camelToSnake(updatedData);
     const res = await fetch(getApiUrl(`/api/db/${table}/${id}`), {
@@ -382,6 +407,7 @@ export async function updateTableRow<T extends { id?: any }>(
     if (res.ok) {
       const result = await safeJsonParse(res);
       if (result.success && result.data) {
+        remoteSucceeded = true;
         const camelRemote = snakeToCamel(result.data);
         const cleanedRemote: any = {};
         if (camelRemote && typeof camelRemote === 'object') {
@@ -403,6 +429,16 @@ export async function updateTableRow<T extends { id?: any }>(
     console.warn(`Update failed for ${table}/${id}, updating locally.`, err);
   }
 
+  if (!remoteSucceeded) {
+    enqueueOfflineMutation({
+      table,
+      localKey,
+      type: 'update',
+      recordId: id,
+      payload: updatedData,
+    });
+  }
+
   if (localKey) {
     try {
       const localStr = localStorage.getItem(localKey);
@@ -422,10 +458,23 @@ export async function updateTableRow<T extends { id?: any }>(
 
 // Delete single row
 export async function deleteTableRow(table: string, localKey: string, id: string | number): Promise<boolean> {
+  let remoteSucceeded = false;
   try {
-    await fetch(getApiUrl(`/api/db/${table}/${id}`), { method: "DELETE" });
+    const res = await fetch(getApiUrl(`/api/db/${table}/${id}`), { method: "DELETE" });
+    if (res.ok || res.status === 404) {
+      remoteSucceeded = true;
+    }
   } catch (err) {
     console.warn(`Delete failed for ${table}/${id}, deleting locally.`, err);
+  }
+
+  if (!remoteSucceeded) {
+    enqueueOfflineMutation({
+      table,
+      localKey,
+      type: 'delete',
+      recordId: id,
+    });
   }
 
   if (localKey) {

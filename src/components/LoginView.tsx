@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Eye, EyeOff, LogIn, Flag, Shield, Info, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { Eye, EyeOff, LogIn, Flag, Info, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { fetchTableData, insertTableRow, updateTableRow, getApiUrl } from '../lib/api';
 import { fetchAndSyncPermissionsFromSupabase, normalizeRoleId } from '../lib/permissions';
 import { AppCredentials } from '../types';
@@ -97,6 +97,8 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
     setLoading(true);
 
     const normalizedEmail = email.trim().toLowerCase();
+    const usernameWithoutDomain = normalizedEmail.includes('@') ? normalizedEmail.split('@')[0].trim() : normalizedEmail;
+    const emailWithDomain = normalizedEmail.includes('@') ? normalizedEmail : `${normalizedEmail}@attaroqqy.com`;
 
     // Simulate small latency for premium feels
     await new Promise(resolve => setTimeout(resolve, 500));
@@ -110,7 +112,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       const response = await fetch(getApiUrl("/api/auth/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: normalizedEmail, password })
+        body: JSON.stringify({ username: email.trim(), password })
       });
 
       const text = await response.text();
@@ -152,14 +154,21 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
         }
       }
 
-      // Find matching credential
-      let found = creds.find((c: any) => 
-        (c.username && c.username.trim().toLowerCase() === normalizedEmail) ||
-        (c.id === 'superadmin' && normalizedEmail === defaultUser.toLowerCase())
-      );
+      // Find matching credential flexibly
+      let found = creds.find((c: any) => {
+        const uName = String(c.username || "").trim().toLowerCase();
+        const uId = String(c.id || "").trim().toLowerCase();
+        return (
+          uName === normalizedEmail ||
+          uName === usernameWithoutDomain ||
+          uName === emailWithDomain ||
+          uId === normalizedEmail ||
+          uId === usernameWithoutDomain
+        );
+      });
 
       // Check default superadmin fallback
-      if (!found && normalizedEmail === defaultUser.toLowerCase()) {
+      if (!found && (normalizedEmail === defaultUser.toLowerCase() || normalizedEmail === 'superadmin')) {
         found = {
           id: 'superadmin',
           username: defaultUser,
@@ -171,31 +180,33 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       }
 
       if (!found) {
-        setErrorMsg('Email atau Kata Sandi salah atau akun Anda tidak terdaftar.');
+        setErrorMsg(`Akun '${email.trim()}' tidak ditemukan. Pastikan Username atau Email Anda sesuai.`);
         setLoading(false);
         return;
       }
 
       // Check password
-      const storedPassword = found.password || (found.id === 'superadmin' ? defaultPass : '');
-      if (storedPassword && storedPassword !== password) {
-        setErrorMsg('Email atau Kata Sandi salah.');
+      const storedPassword = String(found.password || (found.id === 'superadmin' ? defaultPass : '')).trim();
+      const inputPassword = String(password || "").trim();
+      if (storedPassword && storedPassword !== inputPassword) {
+        setErrorMsg('Kata Sandi salah. Harap periksa kembali huruf besar dan kecil kata sandi Anda.');
         setLoading(false);
         return;
       }
 
       // Check account status
-      if (found.status === 'pending') {
+      const statusLower = String(found.status || "").trim().toLowerCase();
+      if (statusLower === 'pending' || statusLower === 'menunggu') {
         setErrorMsg('Akun Anda masih menunggu persetujuan pendaftaran dari Superadmin.');
         setLoading(false);
         return;
       }
-      if (found.status === 'rejected') {
+      if (statusLower === 'rejected' || statusLower === 'ditolak') {
         setErrorMsg('Permohonan pendaftaran akun Anda ditolak oleh Superadmin.');
         setLoading(false);
         return;
       }
-      if (found.status === 'reset_requested') {
+      if (statusLower === 'reset_requested' || statusLower === 'minta_reset') {
         needsCancelReset = true;
       }
 
@@ -722,17 +733,18 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
 
                 {/* Login Form */}
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  {/* Email field */}
+                  {/* Email / Username field */}
                   <div className="space-y-1.5">
                     <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider">
-                      Email
+                      Email / Username
                     </label>
                     <input
-                      type="email"
+                      type="text"
+                      autoComplete="username"
                       required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="nama@email.com"
+                      placeholder="Username atau email (cth: superadmin@attaroqqy.com)"
                       className="w-full px-4 py-3 rounded-xl border border-slate-200 font-sans text-sm focus:outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 transition-all placeholder:text-slate-300 font-semibold"
                     />
                   </div>
@@ -839,12 +851,17 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
         <div className="hidden md:block relative bg-slate-900 overflow-hidden">
           {/* Overlay gradient to soften the contrast */}
           <div className="absolute inset-0 bg-gradient-to-r from-white/10 to-transparent z-10" />
-          <img
-            src="login_bg.jpeg"
-            alt="Lansekap Pondok Pesantren"
-            referrerPolicy="no-referrer"
-            className="absolute inset-0 w-full h-full object-cover select-none scale-105 hover:scale-100 transition-transform duration-[4000ms]"
-          />
+          <picture className="absolute inset-0 w-full h-full">
+            <source srcSet="login_bg.webp" type="image/webp" />
+            <img
+              src="login_bg.jpeg"
+              alt="Lansekap Pondok Pesantren"
+              loading="lazy"
+              decoding="async"
+              referrerPolicy="no-referrer"
+              className="w-full h-full object-cover select-none scale-105 hover:scale-100 transition-transform duration-[4000ms]"
+            />
+          </picture>
           {/* Minimal Caption */}
           <div className="absolute bottom-6 right-6 left-6 text-right z-20 drop-shadow-md">
             <p className="text-[10px] font-bold text-white/70 uppercase tracking-widest">

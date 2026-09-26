@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Plus, Trash2, Edit, ChevronRight, Users, Award, X, Search, Compass, Tag, BookOpen, AlertCircle, ChevronLeft, ArrowLeftRight, LayoutGrid, List, MoreVertical, ArrowUpDown, Download, FileSpreadsheet, Printer, CheckSquare, Eye, ArrowUp, ArrowDown, ChevronDown, Info, Folder
 } from 'lucide-react';
-import { KategoriRombel, KelompokRombel, RombelAssignment, Santri, isEmisTerdaftar } from '../../types';
+import { KategoriRombel, KelompokRombel, RombelAssignment, Santri } from '../../types';
 import SantriDetailModal from '../sekretaris/SantriDetailModal';
 import { ExportModal } from '../ExportModal';
 import { getPesantrenProfile } from '../SekretarisHelper';
@@ -232,12 +232,12 @@ export default function RombelSub({
       <body>
         <table style="width: 100%;">
           <tr>
-            <td colspan="4" class="title" style="text-align: center; font-size: 16px; font-weight: bold; color: #059669; height: 35px; vertical-align: middle;">
+            <td colspan="5" class="title" style="text-align: center; font-size: 16px; font-weight: bold; color: #059669; height: 35px; vertical-align: middle;">
               DATA ROMBEL SANTRI ${selectedGender.toUpperCase()} - ${profile.namaPesantren.toUpperCase()}
             </td>
           </tr>
           <tr>
-            <td colspan="4" class="meta" style="text-align: center; font-size: 10px; color: #64748b;">
+            <td colspan="5" class="meta" style="text-align: center; font-size: 10px; color: #64748b;">
               Laporan terkelompok per Kategori dan per Kelompok Rombel (${selectedGender}) • Tanggal Unduh: ${new Date().toLocaleDateString('id-ID')} ${new Date().toLocaleTimeString('id-ID')}
             </td>
           </tr>
@@ -253,7 +253,7 @@ export default function RombelSub({
       html += `
         <table style="width: 100%; margin-bottom: 15px;">
           <tr class="lembaga-header">
-            <td colspan="4" style="background-color: #059669; color: #ffffff; font-size: 13px; font-weight: bold; height: 28px; padding: 6px 12px; vertical-align: middle; text-align: center;">
+            <td colspan="5" style="background-color: #059669; color: #ffffff; font-size: 13px; font-weight: bold; height: 28px; padding: 6px 12px; vertical-align: middle; text-align: center;">
               KATEGORI ROMBEL: ${cat.nama.toUpperCase()}
             </td>
           </tr>
@@ -267,22 +267,23 @@ export default function RombelSub({
         html += `
           <table style="width: 100%; border: 1px solid #cbd5e1; margin-bottom: 20px;">
             <tr class="class-header">
-              <td colspan="4" style="background-color: #ecfdf5; color: #064e3b; font-size: 11px; font-weight: bold; height: 24px; padding: 5px 10px; vertical-align: middle; border: 1px solid #cbd5e1; text-align: center;">
+              <td colspan="5" style="background-color: #ecfdf5; color: #064e3b; font-size: 11px; font-weight: bold; height: 24px; padding: 5px 10px; vertical-align: middle; border: 1px solid #cbd5e1; text-align: center;">
                 Nama Kelompok: ${grp.nama} &nbsp;|&nbsp; Pembimbing: ${grp.pembimbing} &nbsp;|&nbsp; Kuota: ${grp.kuota || '-'} &nbsp;|&nbsp; Jumlah: ${members.length} Santri
               </td>
             </tr>
             <tr>
               <th class="table-th" style="background-color: #f1f5f9; font-weight: bold; color: #334155; width: 30px; text-align: center; border: 1px solid #cbd5e1; white-space: nowrap;">No</th>
               <th class="table-th" style="background-color: #f1f5f9; font-weight: bold; color: #334155; width: 65px; text-align: center; border: 1px solid #cbd5e1; white-space: nowrap;">NIS</th>
-              <th class="table-th" style="background-color: #f1f5f9; font-weight: bold; color: #334155; width: 412px; text-align: left; border: 1px solid #cbd5e1; white-space: nowrap; padding-left: 8px;">Nama Lengkap Santri</th>
-              <th class="table-th" style="background-color: #f1f5f9; font-weight: bold; color: #334155; width: 412px; text-align: left; border: 1px solid #cbd5e1; white-space: nowrap; padding-left: 8px;">Alamat</th>
+              <th class="table-th" style="background-color: #f1f5f9; font-weight: bold; color: #334155; width: 300px; text-align: left; border: 1px solid #cbd5e1; white-space: nowrap; padding-left: 8px;">Nama Lengkap Santri</th>
+              <th class="table-th" style="background-color: #f1f5f9; font-weight: bold; color: #334155; width: 100px; text-align: center; border: 1px solid #cbd5e1; white-space: nowrap;">Kamar</th>
+              <th class="table-th" style="background-color: #f1f5f9; font-weight: bold; color: #334155; width: 300px; text-align: left; border: 1px solid #cbd5e1; white-space: nowrap; padding-left: 8px;">Alamat</th>
             </tr>
         `;
 
         if (members.length === 0) {
           html += `
             <tr>
-              <td colspan="4" class="empty-cell" style="color: #94a3b8; font-style: italic; text-align: center; height: 35px; vertical-align: middle; border: 1px solid #cbd5e1;">
+              <td colspan="5" class="empty-cell" style="color: #94a3b8; font-style: italic; text-align: center; height: 35px; vertical-align: middle; border: 1px solid #cbd5e1;">
                 Belum ada santri terdaftar di kelompok rombel ini
               </td>
             </tr>
@@ -306,8 +307,9 @@ export default function RombelSub({
             html += `
               <tr style="${rowClassStyle}">
                 <td style="text-align: center; border: 1px solid #cbd5e1; white-space: nowrap;">${idx + 1}</td>
-                <td style="font-family: monospace; border: 1px solid #cbd5e1; white-space: nowrap;">${s.nis}</td>
+                <td style="font-family: monospace; text-align: center; border: 1px solid #cbd5e1; white-space: nowrap;">${s.nis}</td>
                 <td style="font-weight: bold; color: #1e293b; border: 1px solid #cbd5e1; white-space: nowrap;">${s.nama}</td>
+                <td style="text-align: center; font-weight: bold; border: 1px solid #cbd5e1; white-space: nowrap;">${s.kamar || '-'}</td>
                 <td style="border: 1px solid #cbd5e1;">${fullAlamat}</td>
               </tr>
             `;
@@ -2959,6 +2961,9 @@ export default function RombelSub({
       <SantriDetailModal 
         selectedSantri={selectedSantriForDetail}
         onClose={() => setSelectedSantriForDetail(null)}
+        rombelAssignments={assignmentsList}
+        rombelGroups={groupsList}
+        rombelCategories={categoriesList}
       />
 
     </div>

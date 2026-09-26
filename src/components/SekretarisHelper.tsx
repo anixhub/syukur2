@@ -1,35 +1,8 @@
 import React from 'react';
-import { Santri, Surat } from '../types';
+import { Santri, Surat, PesantrenProfile } from '../types';
 import { getApiUrl } from '../lib/api';
 
-export interface PesantrenProfile {
-  namaPesantren: string;
-  namaYayasan: string;
-  nspp: string;
-  nomorNotaris: string;
-  alamat: string;
-  desa: string;
-  kecamatan: string;
-  kabupaten: string;
-  provinsi: string;
-  kodePos: string;
-  telepon: string;
-  email: string;
-  website: string;
-  namaPengasuh: string;
-  namaWakilPengasuh: string;
-  namaKetuaYayasan: string;
-  namaKetuaPondok: string;
-  namaSekretaris: string;
-  namaBendahara: string;
-  namaKetuaKeamanan: string;
-  namaKetuaPendidikan: string;
-  kotaTandaTangan: string;
-  logoStyle: 'classic' | 'elegant' | 'modern';
-  kopTambahan1: string;
-  kopTambahan2: string;
-  logoUrl?: string;
-}
+export type { PesantrenProfile };
 
 export const getPesantrenProfile = (): PesantrenProfile => {
   if (typeof window !== 'undefined') {
@@ -64,6 +37,21 @@ export const getPesantrenProfile = (): PesantrenProfile => {
     namaBendahara: '',
     namaKetuaKeamanan: '',
     namaKetuaPendidikan: '',
+    namaKetuaHumasy: '',
+    namaWakilPengasuhPutra: '',
+    namaKetuaPondokPutra: '',
+    namaSekretarisPutra: '',
+    namaBendaharaPutra: '',
+    namaKetuaKeamananPutra: '',
+    namaKetuaPendidikanPutra: '',
+    namaKetuaHumasyPutra: '',
+    namaWakilPengasuhPutri: '',
+    namaKetuaPondokPutri: '',
+    namaSekretarisPutri: '',
+    namaBendaharaPutri: '',
+    namaKetuaKeamananPutri: '',
+    namaKetuaPendidikanPutri: '',
+    namaKetuaHumasyPutri: '',
     kotaTandaTangan: '',
     logoStyle: 'classic',
     kopTambahan1: '',

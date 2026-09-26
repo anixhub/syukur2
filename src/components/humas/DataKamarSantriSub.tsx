@@ -27,6 +27,9 @@ import {
   ArrowDown,
   ArrowUpDown,
   Building2,
+  CheckCircle2,
+  AlertCircle,
+  BedDouble,
 } from "lucide-react";
 import { Santri, Kompleks, Kamar, Lembaga, Kelas, isGenderMatch } from "../../types";
 import { hasValidRoom } from "../../lib/utils";
@@ -89,8 +92,14 @@ export default function DataKamarSantriSub({
 
   // Inline Kamar Picker States
   const [activeInlineKamarSantriId, setActiveInlineKamarSantriId] = useState<string | null>(null);
+  const [inlineKamarPos, setInlineKamarPos] = useState<{
+    top: number;
+    left: number;
+    isUpward: boolean;
+  } | null>(null);
   const [inlineSelectedComplexId, setInlineSelectedComplexId] = useState<string>("");
   const [inlineSelectedRoomName, setInlineSelectedRoomName] = useState<string>("");
+  const [inlineSelectedLockerNumber, setInlineSelectedLockerNumber] = useState<string>("");
   const [editingLemariSantriId, setEditingLemariSantriId] = useState<string | null>(null);
   const [editingLemariValue, setEditingLemariValue] = useState<string>("");
 
@@ -367,54 +376,73 @@ export default function DataKamarSantriSub({
       return false;
     }
 
-    // 1. Gender Filter (Switch as filter)
-    if (!isGenderMatch(genderFilter, s.gender)) {
-      return false;
+    const q = searchQuery.trim().toLowerCase();
+
+    // 1. Gender Filter: If not searching, strictly filter by gender; if searching, prioritize matches but don't reject
+    if (!q) {
+      if (!isGenderMatch(genderFilter, s.gender)) {
+        return false;
+      }
     }
 
-    // 2. Search Query
-    const formattedRoom = getKamarFormat(s) || "Belum Mendapatkan Kamar";
-    const matchesSearch =
-      (s.nama || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.nis || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (getFormattedAlamat(s) || "")
-        .toLowerCase()
-        .includes(searchQuery.toLowerCase()) ||
-      (s.nomorLemari || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      formattedRoom.toLowerCase().includes(searchQuery.toLowerCase());
+    // 2. Search Query (Multi-word tokenized search across all student attributes)
+    if (q) {
+      const tokens = q.split(/\s+/).filter(Boolean);
+      const sNama = (s.nama || (s as any).namaLengkap || (s as any).nama_lengkap || "").toLowerCase();
+      const sNis = (s.nis || (s as any).nism || "").toLowerCase();
+      const sKamar = (s.kamar || "").toLowerCase();
+      const formattedRoom = (getKamarFormat(s) || "Belum Mendapatkan Kamar").toLowerCase();
+      const sAlamat = (getFormattedAlamat(s) || `${s.desa || ''} ${s.kecamatan || ''} ${s.kabupaten || ''} ${s.asal || ''}`).toLowerCase();
+      const sLemari = (s.nomorLemari || "").toLowerCase();
+      const sDomisili = (s.statusDomisili || "").toLowerCase();
+      const sKelas = (s.kelas || "").toLowerCase();
+      const sGender = (s.gender || "").toLowerCase();
 
-    if (!matchesSearch) return false;
+      // Also check kompleks name for this santri's room
+      const matchingKamar = kamarList.find(
+        (r) => r.nama && s.kamar && r.nama.toLowerCase() === s.kamar.toLowerCase()
+      );
+      const kompleksObj = matchingKamar ? kompleksList.find((k) => k.id === matchingKamar.kompleksId) : null;
+      const kompleksName = (kompleksObj?.nama || "").toLowerCase();
 
-    // 3. Status Tergabung Kamar Filter
-    const hasRoom = hasValidRoom(s.kamar);
-    if (kamarStatusFilter === "sudah" && !hasRoom) {
-      return false;
+      const combinedHaystack = `${sNama} ${sNis} ${sKamar} ${kompleksName} ${sLemari} ${sAlamat} ${formattedRoom} ${sDomisili} ${sKelas} ${sGender}`;
+
+      const matchesSearch = tokens.every(token => combinedHaystack.includes(token));
+      if (!matchesSearch) return false;
     }
-    if (kamarStatusFilter === "belum" && hasRoom) {
-      return false;
-    }
 
-    // Only apply Filter 2 & 3 if Filter 1 is NOT 'belum'
-    if (kamarStatusFilter !== "belum") {
-      // 4. Kompleks Filter
-      if (kompleksFilter !== "semua") {
-        if (!hasValidRoom(s.kamar)) return false;
-        const matchingKamar = kamarList.find(
-          (r) =>
-            r.nama && s.kamar && r.nama.toLowerCase() === s.kamar.toLowerCase(),
-        );
-        if (!matchingKamar || matchingKamar.kompleksId !== kompleksFilter) {
-          return false;
-        }
+    // 3. Status Tergabung Kamar Filter (only if no active search text or explicitly filtered)
+    if (!q) {
+      const hasRoom = hasValidRoom(s.kamar);
+      if (kamarStatusFilter === "sudah" && !hasRoom) {
+        return false;
+      }
+      if (kamarStatusFilter === "belum" && hasRoom) {
+        return false;
       }
 
-      // 5. Kamar Filter
-      if (kamarFilter !== "semua") {
-        if (
-          !hasValidRoom(s.kamar) ||
-          (s.kamar || "").toLowerCase() !== kamarFilter.toLowerCase()
-        ) {
-          return false;
+      // Only apply Filter 2 & 3 if Filter 1 is NOT 'belum'
+      if (kamarStatusFilter !== "belum") {
+        // 4. Kompleks Filter
+        if (kompleksFilter !== "semua") {
+          if (!hasValidRoom(s.kamar)) return false;
+          const matchingKamar = kamarList.find(
+            (r) =>
+              r.nama && s.kamar && r.nama.toLowerCase() === s.kamar.toLowerCase(),
+          );
+          if (!matchingKamar || matchingKamar.kompleksId !== kompleksFilter) {
+            return false;
+          }
+        }
+
+        // 5. Kamar Filter
+        if (kamarFilter !== "semua") {
+          if (
+            !hasValidRoom(s.kamar) ||
+            (s.kamar || "").toLowerCase() !== kamarFilter.toLowerCase()
+          ) {
+            return false;
+          }
         }
       }
     }
@@ -424,6 +452,13 @@ export default function DataKamarSantriSub({
 
   // Sort filtered list dynamically
   const sortedSantri = [...filteredSantri].sort((a, b) => {
+    // If searching, prioritize currently selected gender tab first
+    if (searchQuery.trim()) {
+      const aGen = isGenderMatch(genderFilter, a.gender) ? 1 : 0;
+      const bGen = isGenderMatch(genderFilter, b.gender) ? 1 : 0;
+      if (aGen !== bGen) return bGen - aGen;
+    }
+
     let comparison = 0;
     if (sortKey === "nama") {
       comparison = a.nama.localeCompare(b.nama, "id", {
@@ -473,6 +508,23 @@ export default function DataKamarSantriSub({
   const startIndex = (currentPage - 1) * pageSize;
   const endIndex = Math.min(startIndex + pageSize, totalItems);
   const paginatedSantri = sortedSantri.slice(startIndex, endIndex);
+
+  // Dismiss inline kamar popup on Escape key
+  useEffect(() => {
+    if (!activeInlineKamarSantriId) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setActiveInlineKamarSantriId(null);
+        setInlineKamarPos(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [activeInlineKamarSantriId]);
 
   // Recalculate horizontal scroll buttons and scroll stickiness on layout changes
   useEffect(() => {
@@ -550,9 +602,9 @@ export default function DataKamarSantriSub({
       "No",
       "Nama Lengkap",
       "NIS",
-      "Gender",
       "Alamat",
-      "Kamar Santri",
+      "Status Domisili",
+      "Kamar",
       "No. Lemari",
     ];
     const rows = sortedSantri.map((s, idx) => {
@@ -561,8 +613,8 @@ export default function DataKamarSantriSub({
         String(idx + 1),
         s.nama,
         s.nis || "-",
-        s.gender,
         getFormattedAlamat(s),
+        s.statusDomisili || "Muqim",
         formattedRoom || "Belum Mendapatkan Kamar",
         s.nomorLemari || "-",
       ];
@@ -606,10 +658,10 @@ export default function DataKamarSantriSub({
    <Column ss:Width="40"/>
    <Column ss:Width="200"/>
    <Column ss:Width="90"/>
-   <Column ss:Width="70"/>
-   <Column ss:Width="250"/>
-   <Column ss:Width="160"/>
+   <Column ss:Width="240"/>
    <Column ss:Width="100"/>
+   <Column ss:Width="160"/>
+   <Column ss:Width="90"/>
    <Row ss:Height="26">`;
 
     headers.forEach((header) => {
@@ -772,10 +824,11 @@ export default function DataKamarSantriSub({
           <thead>
             <tr>
               <th style="width: 5%; text-align: center;">No</th>
-              <th style="width: 32%;">Nama Lengkap</th>
-              <th style="width: 8%; text-align: center;">NIS</th>
-              <th style="width: 27%;">Alamat</th>
-              <th style="width: 18%;">Kamar</th>
+              <th style="width: 25%;">Nama Lengkap</th>
+              <th style="width: 9%; text-align: center;">NIS</th>
+              <th style="width: 24%;">Alamat</th>
+              <th style="width: 13%; text-align: center;">Status Domisili</th>
+              <th style="width: 14%;">Kamar</th>
               <th style="width: 10%; text-align: center;">No. Lemari</th>
             </tr>
           </thead>
@@ -792,6 +845,7 @@ export default function DataKamarSantriSub({
                   <td style="font-weight: 600;">${s.nama}</td>
                   <td class="text-center font-mono">${s.nis || "-"}</td>
                   <td>${getFormattedAlamat(s)}</td>
+                  <td class="text-center" style="font-weight: 500;">${s.statusDomisili || "Muqim"}</td>
                   <td style="font-weight: 500;">${roomHtml}</td>
                   <td class="text-center font-mono" style="font-weight: 500;">${s.nomorLemari || "-"}</td>
                 </tr>
@@ -1705,6 +1759,50 @@ export default function DataKamarSantriSub({
                 Santri {genderFilter} tidak ditemukan dengan kata kunci
                 pencarian atau kriteria filter yang sedang aktif.
               </p>
+              {(() => {
+                const oppositeGender = genderFilter === "Putra" ? "Putri" : "Putra";
+                const oppositeMatchesCount = searchQuery.trim() ? santriList.filter((s) => {
+                  const statusKg = (s.statusKeanggotaan || "Aktif").trim().toLowerCase();
+                  if (statusKg === "alumni" || statusKg === "meninggal") return false;
+                  if (!isGenderMatch(oppositeGender, s.gender)) return false;
+                  const q = searchQuery.trim().toLowerCase();
+                  const sNama = (s.nama || (s as any).namaLengkap || (s as any).nama_lengkap || "").toLowerCase();
+                  const sNis = (s.nis || (s as any).nism || "").toLowerCase();
+                  const sKamar = (s.kamar || "").toLowerCase();
+                  return sNama.includes(q) || sNis.includes(q) || sKamar.includes(q);
+                }).length : 0;
+
+                if (oppositeMatchesCount > 0) {
+                  return (
+                    <div className="mt-4 flex flex-col items-center gap-2">
+                      <p className="text-xs text-purple-700 font-semibold bg-purple-50 border border-purple-200 px-3 py-1.5 rounded-xl">
+                        Ditemukan {oppositeMatchesCount} santri di kategori <strong>{oppositeGender}</strong>
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setGenderFilter(oppositeGender)}
+                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer"
+                      >
+                        Beralih ke Asrama {oppositeGender}
+                      </button>
+                    </div>
+                  );
+                }
+
+                if (searchQuery.trim()) {
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery("")}
+                      className="mt-4 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      Hapus Kata Kunci Pencarian
+                    </button>
+                  );
+                }
+
+                return null;
+              })()}
             </div>
           ) : (
             <table className="w-full border-collapse text-left text-sm text-slate-600 min-w-[1000px]">
@@ -1872,7 +1970,7 @@ export default function DataKamarSantriSub({
                       </td>
 
                       {/* Clickable Kamar Cell for Direct Inline Editing */}
-                      <td className="px-6 py-4 whitespace-nowrap text-xs relative">
+                      <td className="px-6 py-4 whitespace-nowrap text-xs">
                         <button
                           type="button"
                           onClick={(e) => {
@@ -1883,7 +1981,35 @@ export default function DataKamarSantriSub({
                             e.stopPropagation();
                             if (activeInlineKamarSantriId === s.id) {
                               setActiveInlineKamarSantriId(null);
+                              setInlineKamarPos(null);
                             } else {
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              const popupWidth = 340;
+                              const popupHeight = 390;
+                              const vh = window.innerHeight;
+                              const vw = window.innerWidth;
+
+                              const spaceBelow = vh - rect.bottom;
+                              const spaceAbove = rect.top;
+                              const isUpward = spaceBelow < popupHeight && spaceAbove > spaceBelow;
+
+                              let top = isUpward ? rect.top - popupHeight - 8 : rect.bottom + 8;
+                              // Ensure top is strictly clamped inside visible screen area
+                              top = Math.max(16, Math.min(top, vh - popupHeight - 16));
+
+                              let left = rect.left;
+                              if (left + popupWidth > vw - 16) {
+                                left = Math.max(16, vw - popupWidth - 16);
+                              }
+                              if (left < 16) {
+                                left = 16;
+                              }
+
+                              setInlineKamarPos({
+                                top,
+                                left,
+                                isUpward,
+                              });
                               setActiveInlineKamarSantriId(s.id);
                               const roomObj = kamarList.find(
                                 (r) =>
@@ -1892,10 +2018,11 @@ export default function DataKamarSantriSub({
                               );
                               setInlineSelectedComplexId(roomObj ? roomObj.kompleksId : "");
                               setInlineSelectedRoomName(s.kamar || "");
+                              setInlineSelectedLockerNumber(s.nomorLemari || "");
                             }
                           }}
                           className="group/kamar inline-flex items-center gap-1.5 rounded-xl transition-all border-none bg-transparent p-0 text-left cursor-pointer"
-                          title={isSelectionMode ? "Klik untuk memilih santri" : "Klik untuk ubah atau pilih kamar"}
+                          title={isSelectionMode ? "Klik untuk memilih santri" : "Klik untuk atur kamar & lemari"}
                         >
                           {formattedRoom ? (
                             <span className="font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-xl transition-colors flex items-center gap-1.5 border border-emerald-100">
@@ -1909,140 +2036,6 @@ export default function DataKamarSantriSub({
                             </span>
                           )}
                         </button>
-
-                        {/* Inline Kamar Picker Dropdown Popover */}
-                        {activeInlineKamarSantriId === s.id && (
-                          <>
-                            {/* Backdrop overlay to close dropdown */}
-                            <div
-                              className="fixed inset-0 z-30"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveInlineKamarSantriId(null);
-                              }}
-                            />
-
-                            <div
-                              onClick={(e) => e.stopPropagation()}
-                              className="absolute top-full left-0 mt-1 z-40 w-72 bg-white rounded-2xl border border-slate-200 shadow-2xl p-3.5 text-slate-700 font-sans text-xs space-y-3"
-                            >
-                              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                                <span className="font-display font-bold text-slate-800 text-xs flex items-center gap-1.5">
-                                  <Building2 className="h-3.5 w-3.5 text-purple-600" />
-                                  <span>Atur Kamar Santri</span>
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => setActiveInlineKamarSantriId(null)}
-                                  className="text-slate-400 hover:text-slate-600 p-0.5 rounded-lg hover:bg-slate-100 transition-colors border-none bg-transparent cursor-pointer"
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
-
-                              {/* Dropdown Kompleks */}
-                              <div>
-                                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                                  Pilih Kompleks
-                                </label>
-                                <select
-                                  value={inlineSelectedComplexId}
-                                  onChange={(e) => {
-                                    const compId = e.target.value;
-                                    setInlineSelectedComplexId(compId);
-                                    setInlineSelectedRoomName("");
-                                  }}
-                                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 cursor-pointer"
-                                >
-                                  <option value="">-- Semua Kompleks --</option>
-                                  {kompleksList
-                                    .filter((k) => !k.gender || k.gender === genderFilter)
-                                    .map((k) => (
-                                      <option key={k.id} value={k.id}>
-                                        {k.nama}
-                                      </option>
-                                    ))}
-                                </select>
-                              </div>
-
-                              {/* Dropdown Kamar */}
-                              <div>
-                                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                                  Pilih Kamar
-                                </label>
-                                <select
-                                  value={inlineSelectedRoomName}
-                                  onChange={(e) => setInlineSelectedRoomName(e.target.value)}
-                                  disabled={!inlineSelectedComplexId && kamarList.length > 0}
-                                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 disabled:opacity-50 cursor-pointer"
-                                >
-                                  <option value="">-- Pilih Kamar --</option>
-                                  {kamarList
-                                    .filter((r) =>
-                                      inlineSelectedComplexId
-                                        ? r.kompleksId === inlineSelectedComplexId
-                                        : true,
-                                    )
-                                    .map((r) => {
-                                      const occupantsCount = santriList.filter(
-                                        (st) =>
-                                          st.kamar &&
-                                          st.kamar.toLowerCase() === r.nama.toLowerCase(),
-                                      ).length;
-                                      return (
-                                        <option key={r.id} value={r.nama}>
-                                          {r.nama} (Terisi: {occupantsCount}/{r.kapasitas || 0})
-                                        </option>
-                                      );
-                                    })}
-                                </select>
-                              </div>
-
-                              {/* Actions: Tanpa Kamar & Simpan */}
-                              <div className="pt-2 flex items-center justify-between gap-2 border-t border-slate-100">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    onUpdateSantriRoom?.(s.id, "", s.nomorLemari || undefined);
-                                    setToast({
-                                      message: `Status kamar ${s.nama} diubah menjadi "Belum Dapat Kamar".`,
-                                      type: "success",
-                                    });
-                                    setActiveInlineKamarSantriId(null);
-                                  }}
-                                  className="px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] border border-rose-100 transition-colors cursor-pointer"
-                                  title="Keluarkan santri dari kamar"
-                                >
-                                  Tanpa Kamar
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (!inlineSelectedRoomName) {
-                                      alert("Silakan pilih kamar terlebih dahulu.");
-                                      return;
-                                    }
-                                    onUpdateSantriRoom?.(
-                                      s.id,
-                                      inlineSelectedRoomName,
-                                      s.nomorLemari || undefined,
-                                    );
-                                    setToast({
-                                      message: `Kamar ${s.nama} berhasil diubah ke "${inlineSelectedRoomName}".`,
-                                      type: "success",
-                                    });
-                                    setActiveInlineKamarSantriId(null);
-                                  }}
-                                  disabled={!inlineSelectedRoomName}
-                                  className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white font-bold text-[11px] transition-colors cursor-pointer border-none"
-                                >
-                                  Simpan
-                                </button>
-                              </div>
-                            </div>
-                          </>
-                        )}
                       </td>
 
                       {/* Nomor Lemari Cell (Double Click to Edit Numbers Only, Disabled if No Room) */}
@@ -2292,8 +2285,10 @@ export default function DataKamarSantriSub({
       />
 
       {/* Pindah Kamar Modal */}
-      {isMoveRoomModalOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
+      {typeof document !== "undefined" &&
+        isMoveRoomModalOpen &&
+        createPortal(
+          <div className="fixed inset-0 z-[100] overflow-y-auto">
           {/* Backdrop */}
           <div
             className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
@@ -2475,12 +2470,15 @@ export default function DataKamarSantriSub({
               </div>
             </motion.div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {/* Confirmation Modal for Removing Students from Room */}
-      {isConfirmRemoveModalOpen && (
-        <div className="fixed inset-0 z-[100] overflow-y-auto">
+      {typeof document !== "undefined" &&
+        isConfirmRemoveModalOpen &&
+        createPortal(
+          <div className="fixed inset-0 z-[100] overflow-y-auto">
           {/* Backdrop */}
           <div
             className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
@@ -2553,7 +2551,8 @@ export default function DataKamarSantriSub({
               </div>
             </motion.div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {/* Viewport-sticky floating header (rendered via Portal to avoid being trapped by parent transform layout) */}
@@ -2694,6 +2693,261 @@ export default function DataKamarSantriSub({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Portal Inline Kamar & Lemari Picker (Mounted directly to document.body to prevent any container clipping) */}
+      {typeof document !== "undefined" &&
+        activeInlineKamarSantriId &&
+        inlineKamarPos &&
+        createPortal(
+          (() => {
+            const s = santriList.find((item) => item.id === activeInlineKamarSantriId);
+            if (!s) return null;
+
+            const currentFormattedRoom = getKamarFormat(s);
+            const currentHasRoom = hasValidRoom(s.kamar);
+
+            // Filter kamar based on selected complex
+            const availableRooms = kamarList.filter((r) => {
+              if (inlineSelectedComplexId) {
+                return r.kompleksId === inlineSelectedComplexId;
+              }
+              const complex = kompleksList.find((c) => c.id === r.kompleksId);
+              return (
+                !complex ||
+                !complex.gender ||
+                complex.gender === s.gender ||
+                complex.gender === genderFilter
+              );
+            });
+
+            return (
+              <>
+                {/* Backdrop overlay */}
+                <div
+                  className="fixed inset-0 z-[9998] bg-slate-900/30 backdrop-blur-[1px] transition-opacity"
+                  onClick={() => {
+                    setActiveInlineKamarSantriId(null);
+                    setInlineKamarPos(null);
+                  }}
+                />
+
+                <motion.div
+                  initial={{
+                    opacity: 0,
+                    scale: 0.95,
+                    y: inlineKamarPos.isUpward ? 6 : -6,
+                  }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{
+                    opacity: 0,
+                    scale: 0.95,
+                    y: inlineKamarPos.isUpward ? 6 : -6,
+                  }}
+                  transition={{ duration: 0.15 }}
+                  style={{
+                    position: "fixed",
+                    top: `${inlineKamarPos.top}px`,
+                    left: `${inlineKamarPos.left}px`,
+                  }}
+                  className="w-[340px] max-w-[calc(100vw-32px)] max-h-[calc(100vh-32px)] overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl p-4 text-slate-700 font-sans text-xs space-y-3.5 z-[9999]"
+                  onClick={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  {/* Header: Title & Close */}
+                  <div className="flex items-start justify-between border-b border-slate-100 pb-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <div className="h-8.5 w-8.5 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center shrink-0 shadow-xs">
+                        <Building2 className="h-4.5 w-4.5" />
+                      </div>
+                      <div>
+                        <h4 className="font-display font-bold text-slate-900 text-xs leading-tight">
+                          Atur Penempatan Kamar
+                        </h4>
+                        <p className="text-[11px] font-extrabold text-purple-700 truncate max-w-[195px] mt-0.5">
+                          {s.nama}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveInlineKamarSantriId(null);
+                        setInlineKamarPos(null);
+                      }}
+                      className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors border-none bg-transparent cursor-pointer"
+                      title="Tutup"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  {/* Santri Meta & Current Room Status */}
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-2.5 flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500 font-medium">
+                      NIS: <strong className="text-slate-700 font-mono">{s.nis || "-"}</strong>
+                      {s.kelas ? ` • ${s.kelas}` : ""}
+                    </span>
+                    {currentHasRoom ? (
+                      <span className="inline-flex items-center gap-1 font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100">
+                        <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                        <span className="truncate max-w-[120px]">{currentFormattedRoom}</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-100">
+                        <AlertCircle className="h-3 w-3 text-rose-500" />
+                        <span>Belum Ada Kamar</span>
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Dropdown Kompleks */}
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Pilih Kompleks Asrama
+                    </label>
+                    <select
+                      value={inlineSelectedComplexId}
+                      onChange={(e) => {
+                        const compId = e.target.value;
+                        setInlineSelectedComplexId(compId);
+                        setInlineSelectedRoomName("");
+                      }}
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50/70 p-2 text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 cursor-pointer transition-colors"
+                    >
+                      <option value="">-- Semua Kompleks --</option>
+                      {kompleksList
+                        .filter(
+                          (k) =>
+                            !k.gender ||
+                            k.gender === s.gender ||
+                            k.gender === genderFilter,
+                        )
+                        .map((k) => {
+                          const roomCount = kamarList.filter(
+                            (r) => r.kompleksId === k.id,
+                          ).length;
+                          return (
+                            <option key={k.id} value={k.id}>
+                              {k.nama} ({roomCount} Kamar)
+                            </option>
+                          );
+                        })}
+                    </select>
+                  </div>
+
+                  {/* Dropdown Kamar */}
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Pilih Kamar
+                    </label>
+                    <select
+                      value={inlineSelectedRoomName}
+                      onChange={(e) => setInlineSelectedRoomName(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50/70 p-2 text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 cursor-pointer transition-colors"
+                    >
+                      <option value="">-- Pilih Kamar --</option>
+                      {availableRooms.map((r) => {
+                        const occupantsCount = santriList.filter(
+                          (st) =>
+                            st.kamar &&
+                            st.kamar.toLowerCase() === r.nama.toLowerCase() &&
+                            st.id !== s.id,
+                        ).length;
+                        const isFull =
+                          r.kapasitas && r.kapasitas > 0
+                            ? occupantsCount >= r.kapasitas
+                            : false;
+                        return (
+                          <option key={r.id} value={r.nama}>
+                            {r.nama} (Terisi: {occupantsCount}/{r.kapasitas || 0}
+                            {isFull ? " - Penuh" : ""})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  {/* Input Nomor Lemari */}
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Nomor Lemari (Opsional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: 01, 14 (angka)"
+                      value={inlineSelectedLockerNumber}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, "");
+                        setInlineSelectedLockerNumber(val);
+                      }}
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50/70 p-2 text-xs font-bold text-slate-700 outline-none focus:bg-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors font-mono"
+                    />
+                  </div>
+
+                  {/* Actions: Tanpa Kamar, Batal & Simpan */}
+                  <div className="pt-2 flex items-center justify-between gap-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onUpdateSantriRoom?.(s.id, "", undefined);
+                        setToast({
+                          message: `Status kamar ${s.nama} diubah menjadi "Belum Dapat Kamar".`,
+                          type: "success",
+                        });
+                        setActiveInlineKamarSantriId(null);
+                        setInlineKamarPos(null);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-100 transition-colors cursor-pointer"
+                      title="Keluarkan santri dari kamar"
+                    >
+                      Tanpa Kamar
+                    </button>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveInlineKamarSantriId(null);
+                          setInlineKamarPos(null);
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs transition-colors cursor-pointer border-none"
+                      >
+                        Batal
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!inlineSelectedRoomName) {
+                            alert("Silakan pilih kamar terlebih dahulu.");
+                            return;
+                          }
+                          onUpdateSantriRoom?.(
+                            s.id,
+                            inlineSelectedRoomName,
+                            inlineSelectedLockerNumber || undefined,
+                          );
+                          setToast({
+                            message: `Kamar ${s.nama} berhasil diatur ke "${inlineSelectedRoomName}".`,
+                            type: "success",
+                          });
+                          setActiveInlineKamarSantriId(null);
+                          setInlineKamarPos(null);
+                        }}
+                        disabled={!inlineSelectedRoomName}
+                        className="px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white font-bold text-xs transition-all shadow-sm cursor-pointer border-none flex items-center gap-1.5"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                        <span>Simpan</span>
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              </>
+            );
+          })(),
+          document.body,
+        )}
     </div>
   );
 }

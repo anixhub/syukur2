@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <title>Go AttarOkey</title>
-    <meta name="description" content="Imported from GitHub: anixhub/syukur2 - Portal Manajemen Pesantren Terpadu" />
-    <meta property="og:title" content="Go AttarOkey" />
-    <meta property="og:description" content="Imported from GitHub: anixhub/syukur2 - Portal Manajemen Pesantren Terpadu" />
+    <title>Go AttarOkey - Portal Manajemen Pesantren</title>
+    <meta name="description" content="Go AttarOkey - Portal Manajemen Pesantren" />
+    <meta property="og:title" content="Go AttarOkey - Portal Manajemen Pesantren" />
+    <meta property="og:description" content="Go AttarOkey - Portal Manajemen Pesantren" />
     
     <!-- PWA & Mobile Optimization -->
     <link rel="manifest" href="manifest.json" />
@@ -23,25 +23,15 @@
     <!-- Service Worker Registration -->
     <script>
       if ('serviceWorker' in navigator) {
-        // Clear SW & stale caches in dev/Cloud Run preview mode to avoid blank screen caused by cached Vite modules
-        const isDev = location.hostname === 'localhost' || location.hostname.includes('run.app') || location.port === '3000' || location.protocol === 'http:';
-        if (isDev) {
-          navigator.serviceWorker.getRegistrations().then((registrations) => {
-            for (let registration of registrations) {
-              registration.unregister();
-            }
-          });
-        } else {
-          window.addEventListener('load', () => {
-            navigator.serviceWorker.register('./sw.js')
-              .then((registration) => {
-                console.log('Service Worker terdaftar dengan scope:', registration.scope);
-              })
-              .catch((error) => {
-                console.error('Pendaftaran Service Worker gagal:', error);
-              });
-          });
-        }
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./sw.js')
+            .then((registration) => {
+              console.log('SmartSantri Service Worker terdaftar dengan scope:', registration.scope);
+            })
+            .catch((error) => {
+              console.warn('Pendaftaran Service Worker opsional:', error);
+            });
+        });
       }
 
       // Capture PWA Install Prompt Event

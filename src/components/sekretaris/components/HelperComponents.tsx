@@ -41,11 +41,19 @@ export function StatusSuratBadge({ status }: { status: Surat['status'] }) {
 }
 
 /* Helper Component: Status Keanggotaan Badge */
-export function MembershipBadge({ status, showChevron }: { status: 'Aktif' | 'Alumni' | 'Meninggal'; showChevron?: boolean }) {
+export function MembershipBadge({ status, showChevron }: { status: 'Aktif' | 'Alumni' | 'Meninggal' | 'Mutasi' | string; showChevron?: boolean }) {
   if (status === 'Alumni') {
     return (
       <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-2.5 py-1 text-[10px] font-bold text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors">
         <span>Alumni</span>
+        {showChevron && <ChevronsUpDown className="h-3 w-3 opacity-70 shrink-0 text-slate-500" />}
+      </span>
+    );
+  }
+  if (status === 'Mutasi') {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors">
+        <span>Mutasi</span>
         {showChevron && <ChevronsUpDown className="h-3 w-3 opacity-70 shrink-0 text-slate-500" />}
       </span>
     );

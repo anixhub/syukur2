@@ -1,8 +1,10 @@
 import express from "express";
+import compression from "compression";
 import mysql from "mysql2/promise";
 import dotenv from "dotenv";
 import path from "path";
 import fs from "fs";
+import AdmZip from "adm-zip";
 import { WebSocketServer, WebSocket } from "ws";
 import { fileURLToPath } from "url";
 
@@ -64,6 +66,12 @@ const findAndLoadEnv = () => {
 findAndLoadEnv();
 
 const app = express();
+
+// High-speed HTTP Gzip/Deflate compression for fast JSON payloads (cuts 4.3MB santri data to ~400KB)
+app.use(compression({
+  threshold: 1024,
+  level: 6
+}));
 
 // WebSocket Instance Management for Realtime Broadcasting
 let wssInstance: WebSocketServer | null = null;
@@ -132,13 +140,146 @@ app.use("/api/uploads", express.static(path.join(process.cwd(), "dist", "uploads
 // -------------------------------------------------------------
 let mysqlPool: mysql.Pool | null = null;
 const memoryStore = new Map<string, any[]>();
+const ensuredTablesSet = new Set<string>();
+const tableColumnsCache = new Map<string, Set<string>>();
+let permissionsTablesSeeded = false;
+let mySQLThrottleUntil = 0;
+
+// High-speed In-Memory Query Cache with TTL and Write Invalidation
+interface QueryCacheEntry {
+  data: any;
+  timestamp: number;
+  etag: string;
+}
+const tableQueryCache = new Map<string, QueryCacheEntry>();
+const CACHE_TTL_MS = 15000; // 15 seconds TTL
+
+export function invalidateTableCache(table?: string) {
+  if (table) {
+    tableQueryCache.delete(table);
+    for (const key of Array.from(tableQueryCache.keys())) {
+      if (key === table || key.startsWith(`${table}:`)) {
+        tableQueryCache.delete(key);
+      }
+    }
+  } else {
+    tableQueryCache.clear();
+  }
+}
+
+const DB_BACKUP_PATH = path.join(getPersistentRootDir(), 'database_backup.json');
+
+function loadMemoryStoreFromDisk() {
+  try {
+    const candidates = [
+      DB_BACKUP_PATH,
+      path.join(process.cwd(), 'database_backup.json'),
+      path.join(process.cwd(), 'data_store.json')
+    ];
+    for (const filePath of candidates) {
+      if (fs.existsSync(filePath)) {
+        const raw = fs.readFileSync(filePath, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (typeof parsed === 'object' && parsed !== null) {
+          for (const key of Object.keys(parsed)) {
+            if (Array.isArray(parsed[key]) && parsed[key].length > 0) {
+              const existing = memoryStore.get(key) || [];
+              if (existing.length === 0) {
+                memoryStore.set(key, parsed[key]);
+              }
+            }
+          }
+          console.log(">>> Berhasil memuat data offline/backup dari disk:", filePath);
+          break;
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn("Could not load memoryStore from disk:", err.message);
+  }
+}
+
+// Initial load from disk
+loadMemoryStoreFromDisk();
+
+let saveDiskTimeout: any = null;
+function saveMemoryStoreToDisk() {
+  if (saveDiskTimeout) clearTimeout(saveDiskTimeout);
+  saveDiskTimeout = setTimeout(() => {
+    try {
+      const obj: Record<string, any[]> = {};
+      for (const [table, rows] of memoryStore.entries()) {
+        obj[table] = rows;
+      }
+      fs.writeFileSync(DB_BACKUP_PATH, JSON.stringify(obj, null, 2), 'utf-8');
+    } catch (err: any) {
+      console.warn("Could not save memoryStore to disk:", err.message);
+    }
+  }, 200);
+}
+
+export function withTimeout<T>(promise: Promise<T>, ms = 2500): Promise<T> {
+  let timeoutId: any;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      const err = new Error("Koneksi MySQL Timeout (" + ms + "ms)");
+      (err as any).code = "ETIMEDOUT";
+      reject(err);
+    }, ms);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
+  });
+}
+
+export function handleMySQLError(err: any) {
+  if (!err) return;
+  const msg = (err.message || "").toLowerCase();
+  const code = (err.code || "").toUpperCase();
+  if (
+    msg.includes("max_connections_per_hour") ||
+    msg.includes("too many connections") ||
+    msg.includes("user limit reached") ||
+    msg.includes("resource limit") ||
+    msg.includes("etimedout") ||
+    msg.includes("timeout") ||
+    msg.includes("ehostunreach") ||
+    msg.includes("enetunreach") ||
+    msg.includes("econnrefused") ||
+    msg.includes("econnreset") ||
+    msg.includes("access denied") ||
+    code === "ER_USER_LIMIT_REACHED" ||
+    code === "ER_CON_COUNT_ERROR" ||
+    code === "PROTOCOL_CONNECTION_LOST" ||
+    code === "ECONNREFUSED" ||
+    code === "ETIMEDOUT" ||
+    code === "EHOSTUNREACH" ||
+    code === "ENETUNREACH" ||
+    code === "ECONNRESET" ||
+    code === "PROTOCOL_TIMEOUT" ||
+    code === "ER_ACCESS_DENIED_ERROR"
+  ) {
+    console.warn(`>>> MySQL non-aktif/unreachable (${code || msg}). Mengaktifkan fallback memoryStore & local backup selama 15 menit agar aplikasi tetap responsif tanpa hanging.`);
+    mySQLThrottleUntil = Date.now() + 15 * 60 * 1000; // 15 minutes cooldown
+    if (mysqlPool) {
+      try {
+        mysqlPool.end().catch(() => {});
+      } catch (e) {}
+      mysqlPool = null;
+    }
+  }
+}
 
 export function getMySQLPool(): mysql.Pool | null {
-  const host = process.env.MYSQL_HOST || process.env.DB_HOST || "localhost";
-  const user = process.env.MYSQL_USER || process.env.DB_USER;
-  const password = process.env.MYSQL_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS || "";
-  const database = process.env.MYSQL_DATABASE || process.env.DB_NAME || process.env.DB_DATABASE;
-  const port = Number(process.env.MYSQL_PORT || process.env.DB_PORT || 3306);
+  if (Date.now() < mySQLThrottleUntil) {
+    return null; // Circuit breaker active - seamlessly use memoryStore fallback
+  }
+
+  const host = (process.env.MYSQL_HOST || process.env.DB_HOST || "localhost").trim();
+  const user = (process.env.MYSQL_USER || process.env.DB_USER || "").trim();
+  const password = (process.env.MYSQL_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS || "").trim();
+  const database = (process.env.MYSQL_DATABASE || process.env.DB_NAME || process.env.DB_DATABASE || "").trim();
+  const port = Number(String(process.env.MYSQL_PORT || process.env.DB_PORT || 3306).trim()) || 3306;
 
   if (!user || !database) {
     return null;
@@ -146,19 +287,26 @@ export function getMySQLPool(): mysql.Pool | null {
 
   if (!mysqlPool) {
     try {
+      const connLimit = Number(String(process.env.DB_CONNECTION_LIMIT || process.env.MYSQL_CONNECTION_LIMIT || 10).trim()) || 10;
       mysqlPool = mysql.createPool({
         host,
         user,
         password,
         database,
         port,
+        connectTimeout: 4000,
         waitForConnections: true,
-        connectionLimit: 10,
+        connectionLimit: connLimit,
+        maxIdle: connLimit,
+        idleTimeout: 60000,
+        enableKeepAlive: true,
+        keepAliveInitialDelay: 10000,
         queueLimit: 0,
         dateStrings: true
       });
     } catch (err: any) {
       console.error("Gagal membuat koneksi MySQL Pool:", err.message);
+      handleMySQLError(err);
       return null;
     }
   }
@@ -217,7 +365,7 @@ export async function catatAktivitas(options: LogActivityOptions): Promise<boole
         (\`user_id\`, \`nama_user\`, \`peran\`, \`aksi\`, \`deskripsi\`, \`modul\`, \`ip_address\`, \`user_agent\`)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `;
-      await pool.query(sql, [
+      await withTimeout(pool.query(sql, [
         userId ? Number(userId) || null : null,
         namaUser,
         peran,
@@ -226,11 +374,11 @@ export async function catatAktivitas(options: LogActivityOptions): Promise<boole
         modul,
         ipAddress,
         userAgent
-      ]);
+      ]), 1500);
       return true;
     } catch (err: any) {
-      console.error("Gagal mencatat riwayat_aktivitas ke MySQL:", err.message);
-      return false;
+      handleMySQLError(err);
+      console.warn("Gagal mencatat riwayat_aktivitas ke MySQL (fallback ke memory):", err.message);
     }
   }
 
@@ -292,7 +440,7 @@ app.get("/api/db-status", async (req, res) => {
   const pool = getMySQLPool();
   if (pool) {
     try {
-      await pool.query("SELECT 1");
+      await withTimeout(pool.query("SELECT 1"), 1500);
       return res.json({
         connected: true,
         type: "mysql",
@@ -301,6 +449,7 @@ app.get("/api/db-status", async (req, res) => {
         reason: "connected"
       });
     } catch (err: any) {
+      handleMySQLError(err);
       console.warn("MySQL ping failed:", err.message);
     }
   }
@@ -339,7 +488,9 @@ app.get("/api/storage-stats", async (req, res) => {
         bucketSize: 2400000,
         isFallback: false
       });
-    } catch (err: any) {}
+    } catch (err: any) {
+      handleMySQLError(err);
+    }
   }
 
   res.json({
@@ -368,24 +519,39 @@ function stripPassword(table: string, data: any): any {
 // -------------------------------------------------------------
 app.post("/api/auth/login", async (req, res) => {
   const { username, password } = req.body;
-  const emailLower = (username || "").trim().toLowerCase();
+  const rawInput = (username || "").trim();
+  const emailLower = rawInput.toLowerCase();
+  
+  // Normalized identifiers for matching (with domain and without domain)
+  const usernameWithoutDomain = emailLower.includes('@') ? emailLower.split('@')[0].trim() : emailLower;
+  const emailWithDomain = emailLower.includes('@') ? emailLower : `${emailLower}@attaroqqy.com`;
+  
+  const inputPass = String(password || "").trim();
   const defaultUser = 'superadmin@attaroqqy.com';
   const defaultPass = '1234';
 
   const pool = getMySQLPool();
   if (pool) {
     try {
+      // Query MySQL with flexible match: username, id, username without domain, username with domain
       const [rows]: any = await pool.query(
-        "SELECT * FROM `app_credentials` WHERE LOWER(`username`) = ? LIMIT 1",
-        [emailLower]
+        `SELECT * FROM \`app_credentials\` 
+         WHERE LOWER(TRIM(\`username\`)) = ? 
+            OR LOWER(TRIM(\`username\`)) = ? 
+            OR LOWER(TRIM(\`username\`)) = ? 
+            OR LOWER(TRIM(\`id\`)) = ? 
+            OR LOWER(TRIM(\`id\`)) = ?
+         LIMIT 1`,
+        [emailLower, usernameWithoutDomain, emailWithDomain, emailLower, usernameWithoutDomain]
       );
 
       let matchedUser = rows?.[0];
 
-      if (!matchedUser && emailLower === defaultUser && password === defaultPass) {
+      // Auto-bootstrap default superadmin if matching default credentials and not present
+      if (!matchedUser && (emailLower === defaultUser || emailLower === 'superadmin') && inputPass === defaultPass) {
         const newId = 'superadmin';
         await pool.query(
-          "INSERT INTO `app_credentials` (`id`, `username`, `password`, `role`, `status`) VALUES (?, ?, ?, 'superadmin', 'approved') ON DUPLICATE KEY UPDATE `id`=`id`",
+          "INSERT INTO `app_credentials` (`id`, `username`, `password`, `role`, `status`, `display_name`) VALUES (?, ?, ?, 'superadmin', 'approved', 'Super Admin') ON DUPLICATE KEY UPDATE `id`=`id`",
           [newId, defaultUser, defaultPass]
         );
         return res.json({
@@ -394,82 +560,123 @@ app.post("/api/auth/login", async (req, res) => {
             id: newId,
             username: defaultUser,
             role: 'superadmin',
-            status: 'approved'
+            status: 'approved',
+            displayName: 'Super Admin'
           }
         });
       }
 
       if (!matchedUser) {
-        return res.status(401).json({ success: false, error: "Email atau Kata Sandi salah atau akun Anda tidak terdaftar." });
+        return res.status(401).json({ 
+          success: false, 
+          error: `Akun '${rawInput}' tidak ditemukan di database. Pastikan Username atau Email Anda sudah terdaftar di tabel app_credentials.` 
+        });
       }
 
-      if (matchedUser.password !== password) {
-        return res.status(401).json({ success: false, error: "Email atau Kata Sandi salah." });
+      const storedPass = String(matchedUser.password || "").trim();
+      if (storedPass !== inputPass) {
+        return res.status(401).json({ 
+          success: false, 
+          error: "Kata Sandi salah. Harap periksa kembali huruf besar, huruf kecil, dan angka kata sandi Anda." 
+        });
       }
 
-      if (matchedUser.status === 'pending') {
-        return res.status(403).json({ success: false, error: "Sesi Tertunda: Pendaftaran akun Anda masih menunggu persetujuan (approval) dari Superadmin." });
-      } else if (matchedUser.status === 'rejected') {
-        return res.status(403).json({ success: false, error: "Akses Ditolak: Pendaftaran akun Anda ditolak oleh Superadmin." });
+      const statusLower = String(matchedUser.status || "").trim().toLowerCase();
+      if (statusLower === 'pending' || statusLower === 'menunggu') {
+        return res.status(403).json({ 
+          success: false, 
+          error: "Sesi Tertunda: Pendaftaran akun Anda masih menunggu persetujuan (approval) dari Superadmin." 
+        });
+      } else if (statusLower === 'rejected' || statusLower === 'ditolak') {
+        return res.status(403).json({ 
+          success: false, 
+          error: "Akses Ditolak: Permohonan pendaftaran akun Anda ditolak oleh Superadmin." 
+        });
       }
 
       return res.json({
         success: true,
-        needsCancelReset: matchedUser.status === 'minta_reset',
+        needsCancelReset: statusLower === 'minta_reset' || statusLower === 'reset_requested',
         user: {
           id: matchedUser.id,
           username: matchedUser.username,
-          role: matchedUser.role,
-          status: matchedUser.status,
-          displayName: matchedUser.display_name || matchedUser.displayName,
-          avatarUrl: matchedUser.avatar_url || matchedUser.avatarUrl
+          role: matchedUser.role || 'superadmin',
+          status: matchedUser.status || 'approved',
+          displayName: matchedUser.display_name || matchedUser.displayName || matchedUser.nama || matchedUser.username,
+          avatarUrl: matchedUser.avatar_url || matchedUser.avatarUrl || ''
         }
       });
     } catch (err: any) {
+      handleMySQLError(err);
       console.error("MySQL Auth login error:", err);
     }
   }
 
   // Memory store fallback authentication
   const list = memoryStore.get("app_credentials") || [];
-  let matchedUser = list.find((u: any) => (u.username || "").toLowerCase() === emailLower);
+  let matchedUser = list.find((u: any) => {
+    const uName = String(u.username || "").trim().toLowerCase();
+    const uId = String(u.id || "").trim().toLowerCase();
+    return (
+      uName === emailLower || 
+      uName === usernameWithoutDomain || 
+      uName === emailWithDomain || 
+      uId === emailLower || 
+      uId === usernameWithoutDomain
+    );
+  });
 
-  if (!matchedUser && emailLower === defaultUser && password === defaultPass) {
+  if (!matchedUser && (emailLower === defaultUser || emailLower === 'superadmin') && inputPass === defaultPass) {
     matchedUser = {
       id: "superadmin",
       username: defaultUser,
       password: defaultPass,
       role: "superadmin",
-      status: "approved"
+      status: "approved",
+      displayName: "Super Admin"
     };
     list.push(matchedUser);
     memoryStore.set("app_credentials", list);
   }
 
   if (!matchedUser) {
-    return res.status(401).json({ success: false, error: "Email atau Kata Sandi salah atau akun Anda tidak terdaftar." });
+    return res.status(401).json({ 
+      success: false, 
+      error: `Akun '${rawInput}' tidak ditemukan. Pastikan Username atau Email Anda sudah terdaftar.` 
+    });
   }
 
-  if (matchedUser.password !== password) {
-    return res.status(401).json({ success: false, error: "Email atau Kata Sandi salah." });
+  const storedPass = String(matchedUser.password || "").trim();
+  if (storedPass && storedPass !== inputPass) {
+    return res.status(401).json({ 
+      success: false, 
+      error: "Kata Sandi salah. Harap periksa kembali huruf besar dan kecil kata sandi Anda." 
+    });
   }
 
-  if (matchedUser.status === 'pending') {
-    return res.status(403).json({ success: false, error: "Sesi Tertunda: Pendaftaran akun Anda masih menunggu persetujuan (approval) dari Superadmin." });
-  } else if (matchedUser.status === 'rejected') {
-    return res.status(403).json({ success: false, error: "Akses Ditolak: Pendaftaran akun Anda ditolak oleh Superadmin." });
+  const statusLower = String(matchedUser.status || "").trim().toLowerCase();
+  if (statusLower === 'pending' || statusLower === 'menunggu') {
+    return res.status(403).json({ 
+      success: false, 
+      error: "Sesi Tertunda: Pendaftaran akun Anda masih menunggu persetujuan (approval) dari Superadmin." 
+    });
+  } else if (statusLower === 'rejected' || statusLower === 'ditolak') {
+    return res.status(403).json({ 
+      success: false, 
+      error: "Akses Ditolak: Permohonan pendaftaran akun Anda ditolak oleh Superadmin." 
+    });
   }
 
   return res.json({
     success: true,
-    needsCancelReset: matchedUser.status === 'minta_reset',
+    needsCancelReset: statusLower === 'minta_reset' || statusLower === 'reset_requested',
     user: {
       id: matchedUser.id,
       username: matchedUser.username,
-      role: matchedUser.role,
-      status: matchedUser.status,
-      displayName: matchedUser.display_name || matchedUser.displayName,
-      avatarUrl: matchedUser.avatar_url || matchedUser.avatarUrl
+      role: matchedUser.role || 'superadmin',
+      status: matchedUser.status || 'approved',
+      displayName: matchedUser.display_name || matchedUser.displayName || matchedUser.nama || matchedUser.username,
+      avatarUrl: matchedUser.avatar_url || matchedUser.avatarUrl || ''
     }
   });
 });
@@ -661,6 +868,34 @@ function unpackPendidikanFormal(data: any): any {
   return data;
 }
 
+function packLembaga(body: any): any {
+  if (!body) return body;
+  if (Array.isArray(body)) return body.map(packLembaga);
+  if (typeof body === 'object') {
+    const copy = { ...body };
+    const ns = copy.nomor_statistik !== undefined ? copy.nomor_statistik : copy.nomorStatistik;
+    if (ns !== undefined) {
+      copy.nomor_statistik = ns;
+      copy.nomorStatistik = ns;
+    }
+    return copy;
+  }
+  return body;
+}
+
+function unpackLembaga(data: any): any {
+  if (!data) return data;
+  if (Array.isArray(data)) return data.map(unpackLembaga);
+  if (typeof data === 'object') {
+    const copy = { ...data };
+    const ns = copy.nomor_statistik !== undefined ? copy.nomor_statistik : (copy.nomorStatistik ?? null);
+    copy.nomor_statistik = ns;
+    copy.nomorStatistik = ns;
+    return copy;
+  }
+  return data;
+}
+
 function sanitizePayload(payload: any): any {
   if (!payload) return payload;
   if (Array.isArray(payload)) {
@@ -713,9 +948,12 @@ DEFAULT_MODULES.forEach(m => {
 });
 
 async function ensurePermissionsTablesAndSeed(pool: mysql.Pool | null) {
-  if (pool) {
+  if (permissionsTablesSeeded) return;
+  permissionsTablesSeeded = true;
+
+  if (pool && getMySQLPool()) {
     try {
-      await pool.query(`
+      await withTimeout(pool.query(`
         CREATE TABLE IF NOT EXISTS \`permissions\` (
           \`id\` BIGINT AUTO_INCREMENT PRIMARY KEY,
           \`name\` VARCHAR(255) NOT NULL,
@@ -724,9 +962,9 @@ async function ensurePermissionsTablesAndSeed(pool: mysql.Pool | null) {
           \`updated_at\` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           UNIQUE KEY \`permissions_name_guard\` (\`name\`, \`guard_name\`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-      `);
+      `), 2000);
 
-      await pool.query(`
+      await withTimeout(pool.query(`
         CREATE TABLE IF NOT EXISTS \`roles\` (
           \`id\` BIGINT AUTO_INCREMENT PRIMARY KEY,
           \`name\` VARCHAR(255) NOT NULL,
@@ -735,9 +973,9 @@ async function ensurePermissionsTablesAndSeed(pool: mysql.Pool | null) {
           \`updated_at\` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           UNIQUE KEY \`roles_name_guard\` (\`name\`, \`guard_name\`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-      `);
+      `), 2000);
 
-      await pool.query(`
+      await withTimeout(pool.query(`
         CREATE TABLE IF NOT EXISTS \`role_has_permissions\` (
           \`permission_id\` BIGINT NOT NULL,
           \`role_id\` BIGINT NOT NULL,
@@ -745,26 +983,26 @@ async function ensurePermissionsTablesAndSeed(pool: mysql.Pool | null) {
           FOREIGN KEY (\`permission_id\`) REFERENCES \`permissions\`(\`id\`) ON DELETE CASCADE,
           FOREIGN KEY (\`role_id\`) REFERENCES \`roles\`(\`id\`) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-      `);
+      `), 2000);
 
       for (const roleName of DEFAULT_ROLE_NAMES) {
-        await pool.query(
+        await withTimeout(pool.query(
           "INSERT INTO `roles` (`name`, `guard_name`) VALUES (?, 'web') ON DUPLICATE KEY UPDATE `name`=`name`",
           [roleName]
-        );
+        ), 2000);
       }
 
       for (const permName of DEFAULT_PERMISSIONS) {
-        await pool.query(
+        await withTimeout(pool.query(
           "INSERT INTO `permissions` (`name`, `guard_name`) VALUES (?, 'web') ON DUPLICATE KEY UPDATE `name`=`name`",
           [permName]
-        );
+        ), 2000);
       }
 
-      const [rhpRows]: any = await pool.query("SELECT COUNT(*) as cnt FROM `role_has_permissions`");
+      const [rhpRows]: any = await withTimeout(pool.query("SELECT COUNT(*) as cnt FROM `role_has_permissions`"), 2000);
       if (!rhpRows?.[0]?.cnt || rhpRows[0].cnt === 0) {
-        const [rRows]: any = await pool.query("SELECT `id`, `name` FROM `roles`");
-        const [pRows]: any = await pool.query("SELECT `id`, `name` FROM `permissions`");
+        const [rRows]: any = await withTimeout(pool.query("SELECT `id`, `name` FROM `roles`"), 2000);
+        const [pRows]: any = await withTimeout(pool.query("SELECT `id`, `name` FROM `permissions`"), 2000);
 
         const roleMap = new Map<string, number>();
         (rRows || []).forEach((r: any) => roleMap.set(r.name, r.id));
@@ -800,15 +1038,16 @@ async function ensurePermissionsTablesAndSeed(pool: mysql.Pool | null) {
             }
 
             if (isAllowed) {
-              await pool.query(
+              await withTimeout(pool.query(
                 "INSERT IGNORE INTO `role_has_permissions` (`role_id`, `permission_id`) VALUES (?, ?)",
                 [rId, pId]
-              ).catch(() => {});
+              ), 2000).catch(() => {});
             }
           }
         }
       }
     } catch (err: any) {
+      handleMySQLError(err);
       console.warn("Could not seed permissions tables in MySQL:", err.message);
     }
   }
@@ -850,14 +1089,50 @@ async function ensurePermissionsTablesAndSeed(pool: mysql.Pool | null) {
   }
 }
 
+// High-speed batch column checking helper to eliminate slow sequential ALTER TABLE calls
+async function ensureTableColumnsFast(
+  pool: mysql.Pool,
+  table: string,
+  createTableSql: string,
+  requiredCols: string[]
+) {
+  try {
+    await withTimeout(pool.query(createTableSql), 2000);
+    const [rows]: any = await withTimeout(pool.query(`SHOW COLUMNS FROM \`${table}\``), 2000);
+    if (Array.isArray(rows)) {
+      const existingCols = new Set(rows.map((r: any) => r.Field));
+      tableColumnsCache.set(table, existingCols);
+
+      const missing = requiredCols.filter(col => !existingCols.has(col));
+      if (missing.length > 0) {
+        const addClauses = missing.map(col => `ADD COLUMN \`${col}\` LONGTEXT NULL`).join(", ");
+        await withTimeout(pool.query(`ALTER TABLE \`${table}\` ${addClauses}`), 3000);
+        missing.forEach(col => existingCols.add(col));
+      }
+    }
+  } catch (e: any) {
+    handleMySQLError(e);
+    console.warn(`Could not fast-ensure table/columns for ${table}:`, e.message);
+  }
+}
+
 async function ensureTableExists(table: string, pool: mysql.Pool) {
-  if (table === 'roles' || table === 'permissions' || table === 'role_has_permissions') {
-    await ensurePermissionsTablesAndSeed(pool);
+  if (ensuredTablesSet.has(table)) {
     return;
   }
-  if (table === 'admin_chat') {
-    try {
-      await pool.query(`
+  ensuredTablesSet.add(table);
+
+  if (!getMySQLPool()) {
+    return;
+  }
+
+  try {
+    if (table === 'roles' || table === 'permissions' || table === 'role_has_permissions') {
+      await ensurePermissionsTablesAndSeed(pool);
+      return;
+    }
+    if (table === 'admin_chat') {
+      const createSql = `
         CREATE TABLE IF NOT EXISTS \`admin_chat\` (
           \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
           \`sender_username\` VARCHAR(100) NULL,
@@ -877,22 +1152,11 @@ async function ensureTableExists(table: string, pool: mysql.Pool) {
           \`replyTo\` LONGTEXT NULL,
           \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-      `);
-
-      const columnsToEnsure = ['sender_username', 'sender_name', 'sender_role', 'sender_avatar', 'recipient_role', 'message', 'text', 'timestamp', 'sender', 'senderRole', 'reply_to'];
-      for (const col of columnsToEnsure) {
-        try {
-          await pool.query(`ALTER TABLE \`admin_chat\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
-        } catch (e) {
-          // Column already exists or table structure error, ignore
-        }
-      }
-    } catch (e) {
-      console.warn("Could not auto-create admin_chat table:", e);
-    }
-  } else if (table === 'lembaga') {
-    try {
-      await pool.query(`
+      `;
+      const cols = ['sender_username', 'sender_name', 'sender_role', 'sender_avatar', 'recipient_role', 'message', 'text', 'timestamp', 'sender', 'senderRole', 'reply_to'];
+      await ensureTableColumnsFast(pool, 'admin_chat', createSql, cols);
+    } else if (table === 'lembaga') {
+      const createSql = `
         CREATE TABLE IF NOT EXISTS \`lembaga\` (
           \`id\` VARCHAR(50) NOT NULL PRIMARY KEY,
           \`nama\` VARCHAR(100) NOT NULL,
@@ -901,25 +1165,19 @@ async function ensureTableExists(table: string, pool: mysql.Pool) {
           \`gender\` VARCHAR(10) DEFAULT 'Putra',
           \`jenis\` VARCHAR(20) DEFAULT 'Internal',
           \`logo\` LONGTEXT NULL,
+          \`nomor_statistik\` VARCHAR(50) NULL,
+          \`npsn\` VARCHAR(50) NULL,
           \`ta_mulai_tanggal\` INT DEFAULT 1,
           \`ta_mulai_bulan\` INT DEFAULT 7,
           \`ta_selesai_tanggal\` INT DEFAULT 30,
           \`ta_selesai_bulan\` INT DEFAULT 6,
           \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-      `);
-      const cols = ['logo', 'deskripsi', 'kode', 'gender', 'jenis', 'ta_mulai_tanggal', 'ta_mulai_bulan', 'ta_selesai_tanggal', 'ta_selesai_bulan'];
-      for (const col of cols) {
-        try {
-          await pool.query(`ALTER TABLE \`lembaga\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
-        } catch (e) {}
-      }
-    } catch (e) {
-      console.warn("Could not auto-create lembaga table:", e);
-    }
-  } else if (table === 'kelas') {
-    try {
-      await pool.query(`
+      `;
+      const cols = ['logo', 'deskripsi', 'kode', 'gender', 'jenis', 'nomor_statistik', 'nomorStatistik', 'npsn', 'ta_mulai_tanggal', 'ta_mulai_bulan', 'ta_selesai_tanggal', 'ta_selesai_bulan'];
+      await ensureTableColumnsFast(pool, 'lembaga', createSql, cols);
+    } else if (table === 'kelas') {
+      const createSql = `
         CREATE TABLE IF NOT EXISTS \`kelas\` (
           \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
           \`lembaga_id\` VARCHAR(50) NOT NULL,
@@ -934,22 +1192,11 @@ async function ensureTableExists(table: string, pool: mysql.Pool) {
           \`batas_usia_umur_max\` INT DEFAULT 99,
           \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-      `);
+      `;
       const cols = ['wali_kelas', 'tingkatan', 'kapasitas', 'is_default', 'isDefault', 'batas_usia_hari', 'batas_usia_bulan', 'batas_usia_umur_min', 'batas_usia_umur_max'];
-      for (const col of cols) {
-        try {
-          await pool.query(`ALTER TABLE \`kelas\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
-        } catch (e) {}
-      }
-      try {
-        await pool.query(`ALTER TABLE \`kelas\` MODIFY COLUMN \`wali_kelas\` LONGTEXT NULL`);
-      } catch (e) {}
-    } catch (e) {
-      console.warn("Could not auto-create kelas table:", e);
-    }
-  } else if (table === 'tugas' || table === 'tasks') {
-    try {
-      await pool.query(`
+      await ensureTableColumnsFast(pool, 'kelas', createSql, cols);
+    } else if (table === 'tugas' || table === 'tasks') {
+      const createTugasSql = `
         CREATE TABLE IF NOT EXISTS \`tugas\` (
           \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
           \`user_id\` VARCHAR(100) NULL,
@@ -968,8 +1215,8 @@ async function ensureTableExists(table: string, pool: mysql.Pool) {
           \`createdAt\` BIGINT NULL,
           \`updated_at\` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-      `);
-      await pool.query(`
+      `;
+      const createTasksSql = `
         CREATE TABLE IF NOT EXISTS \`tasks\` (
           \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
           \`user_id\` VARCHAR(100) NULL,
@@ -983,23 +1230,12 @@ async function ensureTableExists(table: string, pool: mysql.Pool) {
           \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP,
           \`updated_at\` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-      `);
-
+      `;
       const tugasCols = ['text', 'description', 'deadline_timestamp', 'deadlineTimestamp', 'color', 'createdAt', 'user_id', 'username', 'judul', 'deskripsi', 'status', 'prioritas', 'tenggat_waktu'];
-      for (const col of tugasCols) {
-        try {
-          await pool.query(`ALTER TABLE \`tugas\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
-        } catch (e) {}
-        try {
-          await pool.query(`ALTER TABLE \`tasks\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
-        } catch (e) {}
-      }
-    } catch (e) {
-      console.warn("Could not auto-create tasks/tugas table:", e);
-    }
-  } else if (table === 'feedback') {
-    try {
-      await pool.query(`
+      await ensureTableColumnsFast(pool, 'tugas', createTugasSql, tugasCols);
+      await ensureTableColumnsFast(pool, 'tasks', createTasksSql, tugasCols);
+    } else if (table === 'feedback') {
+      const createSql = `
         CREATE TABLE IF NOT EXISTS \`feedback\` (
           \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
           \`sender_username\` VARCHAR(100) NULL,
@@ -1013,26 +1249,11 @@ async function ensureTableExists(table: string, pool: mysql.Pool) {
           \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP,
           \`createdAt\` DATETIME DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-      `);
-
+      `;
       const feedbackCols = ['sender_username', 'sender_email', 'sender_role', 'message', 'content', 'is_starred', 'isStarred', 'status', 'created_at', 'createdAt'];
-      for (const col of feedbackCols) {
-        try {
-          if (col === 'status') {
-            await pool.query(`ALTER TABLE \`feedback\` ADD COLUMN \`status\` VARCHAR(100) DEFAULT 'Belum dikerjakan'`);
-          } else if (col === 'is_starred' || col === 'isStarred') {
-            await pool.query(`ALTER TABLE \`feedback\` ADD COLUMN \`${col}\` TINYINT(1) DEFAULT 0`);
-          } else {
-            await pool.query(`ALTER TABLE \`feedback\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
-          }
-        } catch (e) {}
-      }
-    } catch (e) {
-      console.warn("Could not auto-create feedback table:", e);
-    }
-  } else if (table === 'perizinan') {
-    try {
-      await pool.query(`
+      await ensureTableColumnsFast(pool, 'feedback', createSql, feedbackCols);
+    } else if (table === 'perizinan') {
+      const createSql = `
         CREATE TABLE IF NOT EXISTS \`perizinan\` (
           \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
           \`santri_id\` VARCHAR(100) NULL,
@@ -1043,17 +1264,17 @@ async function ensureTableExists(table: string, pool: mysql.Pool) {
           \`tgl_kembali\` VARCHAR(50) NULL,
           \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-      `);
-      const cols = ['santri_id', 'nama_santri', 'alasan', 'status', 'tgl_keluar', 'tgl_kembali'];
-      for (const col of cols) {
-        try {
-          await pool.query(`ALTER TABLE \`perizinan\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
-        } catch (e) {}
-      }
-    } catch (e) {}
-  } else if (table === 'keamanan') {
-    try {
-      await pool.query(`
+      `;
+      const cols = [
+        'santri_id', 'nama_santri', 'alasan', 'status', 'tgl_keluar', 'tgl_kembali',
+        'namaSantri', 'kelas', 'kamar', 'jenisIzin', 'jenis_izin', 'tanggalMulai', 'tanggal_mulai',
+        'tanggalSelesai', 'tanggal_selesai', 'keterangan', 'gender', 'isCabut', 'is_cabut',
+        'tanggalCabut', 'tanggal_cabut', 'alasanCabut', 'alasan_cabut', 'santriId', 'nis',
+        'tanggalKembali', 'tanggal_kembali'
+      ];
+      await ensureTableColumnsFast(pool, 'perizinan', createSql, cols);
+    } else if (table === 'keamanan') {
+      const createSql = `
         CREATE TABLE IF NOT EXISTS \`keamanan\` (
           \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
           \`santri_id\` VARCHAR(100) NULL,
@@ -1063,17 +1284,11 @@ async function ensureTableExists(table: string, pool: mysql.Pool) {
           \`status\` VARCHAR(100) DEFAULT 'Belum Selesai',
           \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-      `);
+      `;
       const cols = ['santri_id', 'nama_santri', 'pelanggaran', 'poin', 'status'];
-      for (const col of cols) {
-        try {
-          await pool.query(`ALTER TABLE \`keamanan\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
-        } catch (e) {}
-      }
-    } catch (e) {}
-  } else if (table === 'riwayat_aktivitas') {
-    try {
-      await pool.query(`
+      await ensureTableColumnsFast(pool, 'keamanan', createSql, cols);
+    } else if (table === 'riwayat_aktivitas') {
+      const createSql = `
         CREATE TABLE IF NOT EXISTS \`riwayat_aktivitas\` (
           \`id\` INT AUTO_INCREMENT PRIMARY KEY,
           \`user_id\` INT NULL,
@@ -1086,21 +1301,11 @@ async function ensureTableExists(table: string, pool: mysql.Pool) {
           \`user_agent\` LONGTEXT NULL,
           \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-      `);
+      `;
       const cols = ['user_id', 'nama_user', 'peran', 'aksi', 'deskripsi', 'modul', 'ip_address', 'user_agent', 'created_at'];
-      for (const col of cols) {
-        try {
-          if (col === 'created_at') {
-            await pool.query(`ALTER TABLE \`riwayat_aktivitas\` ADD COLUMN \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP`);
-          } else {
-            await pool.query(`ALTER TABLE \`riwayat_aktivitas\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
-          }
-        } catch (e) {}
-      }
-    } catch (e) {}
-  } else if (table === 'app_credentials') {
-    try {
-      await pool.query(`
+      await ensureTableColumnsFast(pool, 'riwayat_aktivitas', createSql, cols);
+    } else if (table === 'app_credentials') {
+      const createSql = `
         CREATE TABLE IF NOT EXISTS \`app_credentials\` (
           \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
           \`username\` VARCHAR(255) NULL,
@@ -1113,17 +1318,23 @@ async function ensureTableExists(table: string, pool: mysql.Pool) {
           \`avatarUrl\` LONGTEXT NULL,
           \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-      `);
+      `;
       const cols = ['username', 'password', 'role', 'status', 'displayName', 'display_name', 'nama', 'avatarUrl', 'avatar_url', 'created_at'];
-      for (const col of cols) {
-        try {
-          await pool.query(`ALTER TABLE \`app_credentials\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
-        } catch (e) {}
-      }
-    } catch (e) {}
-  } else if (table === 'santri') {
-    try {
+      await ensureTableColumnsFast(pool, 'app_credentials', createSql, cols);
+    } else if (table === 'santri') {
+      const createSql = `
+        CREATE TABLE IF NOT EXISTS \`santri\` (
+          \`id\` VARCHAR(100) NOT NULL PRIMARY KEY,
+          \`nama\` VARCHAR(255) NOT NULL,
+          \`gender\` VARCHAR(10) DEFAULT 'Putra',
+          \`kelas\` VARCHAR(100) NULL,
+          \`kamar\` VARCHAR(100) NULL,
+          \`nis\` VARCHAR(50) NULL,
+          \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `;
       const santriCols = [
+        'nism', 'semester', 'kelas_mhd', 'tahun_lulus',
         'induk_mhd', 'induk_wustho', 'induk_ulya',
         'nisn', 'nik', 'no_kk', 'tempat_lahir', 'tanggal_lahir',
         'anak_ke', 'dari_bersaudara', 'nama_ayah', 'nik_ayah',
@@ -1134,23 +1345,89 @@ async function ensureTableExists(table: string, pool: mysql.Pool) {
         'status_verval', 'tanggal_keluar', 'catatan', 'nomor_lemari',
         'pendidikan_terakhir', 'pendidikan_formal', 'pendidikan_internal', 'kelas_id'
       ];
-      for (const col of santriCols) {
-        try {
-          await pool.query(`ALTER TABLE \`santri\` ADD COLUMN \`${col}\` LONGTEXT NULL`);
-        } catch (e) {}
-      }
-    } catch (e) {}
+      await ensureTableColumnsFast(pool, 'santri', createSql, santriCols);
+    } else if (table === 'pesantren_profile') {
+      const createSql = `
+        CREATE TABLE IF NOT EXISTS \`pesantren_profile\` (
+          \`id\` VARCHAR(50) NOT NULL PRIMARY KEY DEFAULT 'main',
+          \`nama_pesantren\` VARCHAR(100),
+          \`nama_yayasan\` VARCHAR(100),
+          \`nspp\` VARCHAR(50) DEFAULT '121235070001',
+          \`nomor_notaris\` VARCHAR(150),
+          \`alamat\` TEXT,
+          \`desa\` VARCHAR(50),
+          \`kecamatan\` VARCHAR(50),
+          \`kabupaten\` VARCHAR(50),
+          \`provinsi\` VARCHAR(50),
+          \`kode_pos\` VARCHAR(10),
+          \`telepon\` VARCHAR(20),
+          \`email\` VARCHAR(100),
+          \`website\` VARCHAR(100),
+          \`nama_pengasuh\` VARCHAR(100),
+          \`nama_wakil_pengasuh\` VARCHAR(100),
+          \`nama_ketua_yayasan\` VARCHAR(100),
+          \`nama_ketua_pondok\` VARCHAR(100),
+          \`nama_sekretaris\` VARCHAR(100),
+          \`nama_bendahara\` VARCHAR(100),
+          \`nama_ketua_keamanan\` VARCHAR(100),
+          \`nama_ketua_pendidikan\` VARCHAR(100),
+          \`nama_ketua_humasy\` VARCHAR(100),
+          \`nama_wakil_pengasuh_putra\` VARCHAR(100),
+          \`nama_ketua_pondok_putra\` VARCHAR(100),
+          \`nama_sekretaris_putra\` VARCHAR(100),
+          \`nama_bendahara_putra\` VARCHAR(100),
+          \`nama_ketua_keamanan_putra\` VARCHAR(100),
+          \`nama_ketua_pendidikan_putra\` VARCHAR(100),
+          \`nama_ketua_humasy_putra\` VARCHAR(100),
+          \`nama_wakil_pengasuh_putri\` VARCHAR(100),
+          \`nama_ketua_pondok_putri\` VARCHAR(100),
+          \`nama_sekretaris_putri\` VARCHAR(100),
+          \`nama_bendahara_putri\` VARCHAR(100),
+          \`nama_ketua_keamanan_putri\` VARCHAR(100),
+          \`nama_ketua_pendidikan_putri\` VARCHAR(100),
+          \`nama_ketua_humasy_putri\` VARCHAR(100),
+          \`kota_tanda_tangan\` VARCHAR(50),
+          \`logo_style\` VARCHAR(50) DEFAULT 'classic',
+          \`logo_url\` LONGTEXT,
+          \`kop_tambahan_1\` VARCHAR(150),
+          \`kop_tambahan_2\` VARCHAR(150),
+          \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP,
+          \`updated_at\` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `;
+      const profileCols = [
+        'nama_pesantren', 'nama_yayasan', 'nspp', 'nomor_notaris', 'alamat', 'desa',
+        'kecamatan', 'kabupaten', 'provinsi', 'kode_pos', 'telepon', 'email', 'website',
+        'nama_pengasuh', 'nama_wakil_pengasuh', 'nama_ketua_yayasan', 'nama_ketua_pondok',
+        'nama_sekretaris', 'nama_bendahara', 'nama_ketua_keamanan', 'nama_ketua_pendidikan', 'nama_ketua_humasy',
+        'nama_wakil_pengasuh_putra', 'nama_ketua_pondok_putra', 'nama_sekretaris_putra', 'nama_bendahara_putra',
+        'nama_ketua_keamanan_putra', 'nama_ketua_pendidikan_putra', 'nama_ketua_humasy_putra',
+        'nama_wakil_pengasuh_putri', 'nama_ketua_pondok_putri', 'nama_sekretaris_putri', 'nama_bendahara_putri',
+        'nama_ketua_keamanan_putri', 'nama_ketua_pendidikan_putri', 'nama_ketua_humasy_putri',
+        'kota_tanda_tangan', 'logo_style', 'logo_url', 'kop_tambahan_1', 'kop_tambahan_2'
+      ];
+      await ensureTableColumnsFast(pool, 'pesantren_profile', createSql, profileCols);
+    }
+  } catch (err: any) {
+    handleMySQLError(err);
   }
 }
 
 async function getTableColumns(table: string, pool: mysql.Pool): Promise<Set<string> | null> {
+  if (tableColumnsCache.has(table)) {
+    return tableColumnsCache.get(table)!;
+  }
+  if (!getMySQLPool()) return null;
   try {
-    const [rows]: any = await pool.query(`SHOW COLUMNS FROM \`${table}\``);
+    const [rows]: any = await withTimeout(pool.query(`SHOW COLUMNS FROM \`${table}\``), 2000);
     if (Array.isArray(rows)) {
-      return new Set(rows.map((r: any) => r.Field));
+      const colSet = new Set(rows.map((r: any) => r.Field));
+      tableColumnsCache.set(table, colSet);
+      return colSet;
     }
-  } catch (err) {
-    console.warn(`Could not get columns for ${table}:`, err);
+  } catch (err: any) {
+    handleMySQLError(err);
+    console.warn(`Could not get columns for ${table}:`, err.message);
   }
   return null;
 }
@@ -1160,9 +1437,10 @@ async function tryMySQLQuery(sql: string, params: any[] = []): Promise<{ success
   if (!pool) return { success: false, error: "NO_MYSQL" };
 
   try {
-    const [rows]: any = await pool.query(sql, params);
+    const [rows]: any = await withTimeout(pool.query(sql, params), 2500);
     return { success: true, rows };
   } catch (err: any) {
+    handleMySQLError(err);
     return { success: false, error: err };
   }
 }
@@ -1174,27 +1452,83 @@ app.get("/api/db/:table", async (req, res) => {
     return res.status(400).json({ success: false, error: `Tabel '${table}' tidak valid` });
   }
 
-  const pool = getMySQLPool();
-  if (pool) {
-    await ensureTableExists(table, pool);
-  }
+  const page = req.query.page ? Math.max(1, parseInt(req.query.page as string, 10)) : 0;
+  const limit = req.query.limit ? Math.max(1, parseInt(req.query.limit as string, 10)) : 0;
+  const cacheKey = limit > 0 ? `${table}:p${page}:l${limit}` : table;
 
-  const mysqlRes = await tryMySQLQuery(`SELECT * FROM \`${table}\``);
-  if (mysqlRes.success) {
-    let finalData = stripPassword(table, mysqlRes.rows || []);
-    if (table === "santri") {
-      finalData = unpackPendidikanFormal(finalData);
+  // 1. Check in-memory query cache for instant sub-millisecond response
+  const cached = tableQueryCache.get(cacheKey);
+  const now = Date.now();
+  if (cached && (now - cached.timestamp < CACHE_TTL_MS)) {
+    res.setHeader("ETag", cached.etag);
+    res.setHeader("Cache-Control", "public, max-age=15, stale-while-revalidate=30");
+    if (req.headers["if-none-match"] === cached.etag) {
+      return res.status(304).end();
     }
-    return res.json({ success: true, data: finalData });
+    return res.json(cached.data);
   }
 
-  // Fallback memory store
-  let data = memoryStore.get(table) || [];
-  let finalData = stripPassword(table, data);
+  const pool = getMySQLPool();
+  if (pool && !ensuredTablesSet.has(table)) {
+    await ensureTableExists(table, pool).catch(() => {});
+  }
+
+  let rawRows: any[] = [];
+  let querySql = `SELECT * FROM \`${table}\``;
+  if (table === "riwayat_aktivitas" && limit === 0) {
+    querySql = `SELECT * FROM \`riwayat_aktivitas\` ORDER BY \`id\` DESC LIMIT 250`;
+  } else if (table === "admin_chat" && limit === 0) {
+    querySql = `SELECT * FROM \`admin_chat\` ORDER BY \`created_at\` ASC LIMIT 250`;
+  }
+
+  const mysqlRes = await tryMySQLQuery(querySql);
+  if (mysqlRes.success && Array.isArray(mysqlRes.rows) && mysqlRes.rows.length > 0) {
+    memoryStore.set(table, mysqlRes.rows);
+    saveMemoryStoreToDisk();
+    rawRows = mysqlRes.rows;
+  } else {
+    // Fallback memory store (loaded from disk/offline store)
+    rawRows = memoryStore.get(table) || [];
+  }
+
+  let finalData = stripPassword(table, rawRows);
   if (table === "santri") {
     finalData = unpackPendidikanFormal(finalData);
+  } else if (table === "lembaga") {
+    finalData = unpackLembaga(finalData);
   }
-  res.json({ success: true, data: finalData });
+
+  let responseBody: any;
+  if (limit > 0) {
+    const total = finalData.length;
+    const totalPages = Math.ceil(total / limit);
+    const offset = (page - 1) * limit;
+    const pagedSlice = finalData.slice(offset, offset + limit);
+    responseBody = {
+      success: true,
+      data: pagedSlice,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages
+      }
+    };
+  } else {
+    responseBody = { success: true, data: finalData };
+  }
+
+  // Cache response with ETag
+  const etag = `W/"${table}-${finalData.length}-${now.toString(36)}"`;
+  tableQueryCache.set(cacheKey, {
+    data: responseBody,
+    timestamp: now,
+    etag
+  });
+
+  res.setHeader("ETag", etag);
+  res.setHeader("Cache-Control", "public, max-age=15, stale-while-revalidate=30");
+  return res.json(responseBody);
 });
 
 // POST /api/db/:table
@@ -1207,29 +1541,25 @@ app.post("/api/db/:table", async (req, res) => {
   let sanitizedBody = sanitizePayload(req.body);
   if (table === "santri") {
     sanitizedBody = packPendidikanFormal(sanitizedBody);
+  } else if (table === "lembaga") {
+    sanitizedBody = packLembaga(sanitizedBody);
   }
 
   const rowsToInsert = Array.isArray(sanitizedBody) ? sanitizedBody : [sanitizedBody];
   const insertedResults: any[] = [];
 
   const pool = getMySQLPool();
+  let list = memoryStore.get(table) || [];
+
   if (pool) {
-    await ensureTableExists(table, pool);
+    await ensureTableExists(table, pool).catch(() => {});
     const existingColumns = await getTableColumns(table, pool);
     try {
       for (const row of rowsToInsert) {
         if (!row.id) {
           row.id = String(Date.now()) + Math.random().toString(36).substring(2, 7);
         }
-        let existingRow: any = null;
-        try {
-          const [eRows]: any = await pool.query(`SELECT * FROM \`${table}\` WHERE \`id\` = ? LIMIT 1`, [row.id]);
-          if (eRows?.[0]) existingRow = eRows[0];
-        } catch (e) {}
-        if (!existingRow) {
-          const list = memoryStore.get(table) || [];
-          existingRow = list.find((item: any) => item.id === row.id);
-        }
+        const existingRow = list.find((item: any) => item.id === row.id);
         if (existingRow) {
           cleanupReplacedFiles(existingRow, row);
         }
@@ -1246,16 +1576,17 @@ app.post("/api/db/:table", async (req, res) => {
         const updateClause = keys.map(k => `\`${k}\` = VALUES(\`${k}\`)`).join(", ");
 
         const sql = `INSERT INTO \`${table}\` (${columns}) VALUES (${placeholders}) ON DUPLICATE KEY UPDATE ${updateClause}`;
-        await pool.query(sql, values);
+        await withTimeout(pool.query(sql, values), 2500);
         insertedResults.push(row);
       }
     } catch (err: any) {
+      handleMySQLError(err);
       console.warn(`MySQL POST /api/db/${table} error:`, err.message);
     }
   }
 
-  // Memory store mirror
-  let list = memoryStore.get(table) || [];
+  // Memory store mirror + disk persist
+  list = memoryStore.get(table) || [];
   for (const row of rowsToInsert) {
     if (!row.id) {
       row.id = String(Date.now()) + Math.random().toString(36).substring(2, 7);
@@ -1271,11 +1602,16 @@ app.post("/api/db/:table", async (req, res) => {
     }
   }
   memoryStore.set(table, list);
+  saveMemoryStoreToDisk();
 
   let resultData = stripPassword(table, Array.isArray(sanitizedBody) ? insertedResults : insertedResults[0]);
   if (table === "santri") {
     resultData = unpackPendidikanFormal(resultData);
+  } else if (table === "lembaga") {
+    resultData = unpackLembaga(resultData);
   }
+
+  invalidateTableCache(table);
 
   // Realtime WebSocket broadcast
   broadcastWebSocketMessage({
@@ -1298,6 +1634,8 @@ app.put("/api/db/:table/:id", async (req, res) => {
   let sanitizedBody = sanitizePayload(req.body);
   if (table === "santri") {
     sanitizedBody = packPendidikanFormal(sanitizedBody);
+  } else if (table === "lembaga") {
+    sanitizedBody = packLembaga(sanitizedBody);
   } else if (table === "app_credentials") {
     const dName = sanitizedBody.displayName || sanitizedBody.display_name || sanitizedBody.nama;
     if (dName) {
@@ -1312,27 +1650,19 @@ app.put("/api/db/:table/:id", async (req, res) => {
     }
   }
 
-  let updatedResult: any = { id, ...sanitizedBody };
+  const list = memoryStore.get(table) || [];
+  const existingOldRecord = list.find((item: any) => item.id === id);
 
-  const pool = getMySQLPool();
-  let existingOldRecord: any = null;
-  if (pool) {
-    try {
-      await ensureTableExists(table, pool);
-      const [rows]: any = await pool.query(`SELECT * FROM \`${table}\` WHERE \`id\` = ? LIMIT 1`, [id]);
-      if (rows?.[0]) existingOldRecord = rows[0];
-    } catch (e) {}
-  }
-  if (!existingOldRecord) {
-    const list = memoryStore.get(table) || [];
-    existingOldRecord = list.find((item: any) => item.id === id);
-  }
   if (existingOldRecord) {
     cleanupReplacedFiles(existingOldRecord, { id, ...sanitizedBody });
   }
 
+  let updatedResult: any = { id, ...(existingOldRecord || {}), ...sanitizedBody };
+
+  const pool = getMySQLPool();
   if (pool) {
     try {
+      await ensureTableExists(table, pool).catch(() => {});
       const existingColumns = await getTableColumns(table, pool);
       const updateData = { ...sanitizedBody };
       delete updateData.id;
@@ -1347,18 +1677,15 @@ app.put("/api/db/:table/:id", async (req, res) => {
         values.push(id);
 
         const sql = `UPDATE \`${table}\` SET ${setClause} WHERE \`id\` = ?`;
-        await pool.query(sql, values);
+        await withTimeout(pool.query(sql, values), 2500);
       }
-
-      const [rows]: any = await pool.query(`SELECT * FROM \`${table}\` WHERE \`id\` = ? LIMIT 1`, [id]);
-      if (rows?.[0]) updatedResult = rows[0];
     } catch (err: any) {
+      handleMySQLError(err);
       console.warn(`MySQL PUT /api/db/${table}/${id} error:`, err.message);
     }
   }
 
-  // Memory store mirror
-  let list = memoryStore.get(table) || [];
+  // Memory store mirror + disk persist
   const idx = list.findIndex((item: any) => item.id === id);
   if (idx >= 0) {
     list[idx] = { ...list[idx], ...sanitizedBody, id };
@@ -1366,11 +1693,16 @@ app.put("/api/db/:table/:id", async (req, res) => {
     list.push({ id, ...sanitizedBody });
   }
   memoryStore.set(table, list);
+  saveMemoryStoreToDisk();
 
   let resultData = stripPassword(table, updatedResult);
   if (table === "santri") {
     resultData = unpackPendidikanFormal(resultData);
+  } else if (table === "lembaga") {
+    resultData = unpackLembaga(resultData);
   }
+
+  invalidateTableCache(table);
 
   // Realtime WebSocket broadcast
   broadcastWebSocketMessage({
@@ -1396,24 +1728,26 @@ app.delete("/api/db/:table/:id", async (req, res) => {
   if (pool) {
     try {
       if (table === "santri") {
-        const [sRows]: any = await pool.query("SELECT * FROM `santri` WHERE `id` = ? LIMIT 1", [id]);
+        const [sRows]: any = await withTimeout(pool.query("SELECT * FROM `santri` WHERE `id` = ? LIMIT 1", [id]), 2000);
         if (sRows?.[0]) existingRecordToDelete = sRows[0];
         const santriNama = existingRecordToDelete?.nama;
 
-        await pool.query("DELETE FROM `rombel_assignment` WHERE `santri_id` = ?", [id]);
+        await withTimeout(pool.query("DELETE FROM `rombel_assignment` WHERE `santri_id` = ?", [id]), 2000).catch(() => {});
         if (santriNama) {
-          await pool.query("DELETE FROM `perizinan` WHERE `santri_id` = ? OR `nama_santri` = ?", [id, santriNama]);
-          await pool.query("DELETE FROM `keamanan` WHERE `santri_id` = ? OR `nama_santri` = ?", [id, santriNama]);
-          await pool.query("DELETE FROM `bendahara` WHERE `nama_santri` = ?", [santriNama]);
+          await withTimeout(pool.query("DELETE FROM `perizinan` WHERE `santri_id` = ? OR `nama_santri` = ?", [id, santriNama]), 2000).catch(() => {});
+          await withTimeout(pool.query("DELETE FROM `keamanan` WHERE `santri_id` = ? OR `nama_santri` = ?", [id, santriNama]), 2000).catch(() => {});
+          await withTimeout(pool.query("DELETE FROM `bendahara` WHERE `nama_santri` = ?", [santriNama]), 2000).catch(() => {});
         } else {
-          await pool.query("DELETE FROM `perizinan` WHERE `santri_id` = ?", [id]);
-          await pool.query("DELETE FROM `keamanan` WHERE `santri_id` = ?", [id]);
+          await withTimeout(pool.query("DELETE FROM `perizinan` WHERE `santri_id` = ?", [id]), 2000).catch(() => {});
+          await withTimeout(pool.query("DELETE FROM `keamanan` WHERE `santri_id` = ?", [id]), 2000).catch(() => {});
         }
       } else {
-        const [rows]: any = await pool.query(`SELECT * FROM \`${table}\` WHERE \`id\` = ? LIMIT 1`, [id]);
+        const [rows]: any = await withTimeout(pool.query(`SELECT * FROM \`${table}\` WHERE \`id\` = ? LIMIT 1`, [id]), 2000);
         if (rows?.[0]) existingRecordToDelete = rows[0];
       }
-    } catch (e) {}
+    } catch (e: any) {
+      handleMySQLError(e);
+    }
   }
   if (!existingRecordToDelete) {
     const list = memoryStore.get(table) || [];
@@ -1425,15 +1759,25 @@ app.delete("/api/db/:table/:id", async (req, res) => {
 
   if (pool) {
     try {
-      await pool.query(`DELETE FROM \`${table}\` WHERE \`id\` = ?`, [id]);
+      await withTimeout(pool.query(`DELETE FROM \`${table}\` WHERE \`id\` = ?`, [id]), 2500);
     } catch (err: any) {
+      handleMySQLError(err);
       console.warn(`MySQL DELETE /api/db/${table}/${id} error:`, err.message);
     }
   }
 
-  // Memory store mirror
+  // Memory store mirror + disk persist
   let list = memoryStore.get(table) || [];
   memoryStore.set(table, list.filter((item: any) => item.id !== id));
+  saveMemoryStoreToDisk();
+
+  invalidateTableCache(table);
+  if (table === "santri") {
+    invalidateTableCache("rombel_assignment");
+    invalidateTableCache("perizinan");
+    invalidateTableCache("keamanan");
+    invalidateTableCache("bendahara");
+  }
 
   // Realtime WebSocket broadcast
   broadcastWebSocketMessage({
@@ -1522,6 +1866,10 @@ app.post("/api/sync-role-permissions", async (req, res) => {
     console.warn("Error sync role permissions MemoryStore:", e);
   }
 
+  invalidateTableCache("roles");
+  invalidateTableCache("permissions");
+  invalidateTableCache("role_has_permissions");
+
   broadcastWebSocketMessage({
     event: "db_change",
     table: "role_has_permissions",
@@ -1589,6 +1937,7 @@ app.post("/api/db-truncate-all", async (req, res) => {
   }
 
   memoryStore.clear();
+  invalidateTableCache();
 
   broadcastWebSocketMessage({
     event: "db_change",
@@ -1596,6 +1945,508 @@ app.post("/api/db-truncate-all", async (req, res) => {
   });
 
   return res.json({ success: true, message: "Seluruh data telah berhasil dikosongkan." });
+});
+
+// -------------------------------------------------------------
+// 6. Safe System Backup & Restore (Isolated from Git/Repo Updates)
+// -------------------------------------------------------------
+
+// Direktori penyimpanan aman di luar repositori pembaruan (persistent storage)
+export const getBackupStorageDir = (): string => {
+  if (process.env.BACKUP_DIR && process.env.BACKUP_DIR.trim() !== "") {
+    const customDir = process.env.BACKUP_DIR.trim();
+    if (!fs.existsSync(customDir)) {
+      try { fs.mkdirSync(customDir, { recursive: true }); } catch (e) {}
+    }
+    return customDir;
+  }
+
+  // Prioritaskan direktori aman Hostinger yang terpisah dari git public_html / hbuilds
+  const hostingerBackupPath = "/home/u648273511/domains/attaroqqy.com/storage/backups";
+  try {
+    if (!fs.existsSync(hostingerBackupPath)) {
+      fs.mkdirSync(hostingerBackupPath, { recursive: true });
+    }
+    return hostingerBackupPath;
+  } catch (e) {
+    // Fallback lingkungan lokal / kontainer: folder backups di atas direktori app
+    try {
+      const upPath = path.resolve(process.cwd(), "..", "backups");
+      if (!fs.existsSync(upPath)) {
+        fs.mkdirSync(upPath, { recursive: true });
+      }
+      return upPath;
+    } catch (err) {
+      const fallbackLocal = path.join(process.cwd(), "storage_backups");
+      if (!fs.existsSync(fallbackLocal)) {
+        try { fs.mkdirSync(fallbackLocal, { recursive: true }); } catch (err2) {}
+      }
+      return fallbackLocal;
+    }
+  }
+};
+
+// Salin direktori secara rekursif (menimpa berkas jika sudah ada)
+function copyFolderRecursiveSync(source: string, target: string) {
+  if (!fs.existsSync(source)) return;
+  if (!fs.existsSync(target)) {
+    fs.mkdirSync(target, { recursive: true });
+  }
+
+  const entries = fs.readdirSync(source, { withFileTypes: true });
+  for (const entry of entries) {
+    const curSource = path.join(source, entry.name);
+    const curTarget = path.join(target, entry.name);
+
+    if (entry.isDirectory()) {
+      copyFolderRecursiveSync(curSource, curTarget);
+    } else {
+      fs.copyFileSync(curSource, curTarget);
+    }
+  }
+}
+
+// Hitung ukuran direktori (bytes)
+function getDirectorySizeBytes(dir: string): number {
+  if (!fs.existsSync(dir)) return 0;
+  let total = 0;
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        total += getDirectorySizeBytes(fullPath);
+      } else {
+        const stat = fs.statSync(fullPath);
+        total += stat.size;
+      }
+    }
+  } catch (e) {}
+  return total;
+}
+
+// Hitung jumlah berkas dalam direktori
+function countFilesInDir(dir: string): number {
+  if (!fs.existsSync(dir)) return 0;
+  let count = 0;
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        count += countFilesInDir(fullPath);
+      } else {
+        count += 1;
+      }
+    }
+  } catch (e) {}
+  return count;
+}
+
+// Format bytes
+function formatFileSize(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+}
+
+function generateSqlDump(allData: Record<string, any[]>): string {
+  let sql = `-- ========================================================\n`;
+  sql += `-- AttarOkey Database Backup SQL Dump\n`;
+  sql += `-- Waktu Cadangan: ${new Date().toISOString()}\n`;
+  sql += `-- ========================================================\n\n`;
+  sql += `SET FOREIGN_KEY_CHECKS = 0;\n\n`;
+
+  for (const [table, rows] of Object.entries(allData)) {
+    if (!Array.isArray(rows) || rows.length === 0) continue;
+    sql += `-- --------------------------------------------------------\n`;
+    sql += `-- Tabel: \`${table}\` (${rows.length} data record)\n`;
+    sql += `-- --------------------------------------------------------\n`;
+    sql += `DROP TABLE IF EXISTS \`${table}\`;\n`;
+
+    const cols = Object.keys(rows[0]);
+    sql += `CREATE TABLE IF NOT EXISTS \`${table}\` (\n`;
+    const colDefs = cols.map((c) => `  \`${c}\` LONGTEXT NULL`).join(",\n");
+    sql += `${colDefs}\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;\n\n`;
+
+    const chunkSize = 50;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+      sql += `INSERT INTO \`${table}\` (${cols.map((c) => `\`${c}\``).join(", ")}) VALUES\n`;
+      const valLines = chunk.map((row) => {
+        const vals = cols.map((c) => {
+          const v = row[c];
+          if (v === null || v === undefined) return "NULL";
+          const str = typeof v === "object" ? JSON.stringify(v) : String(v);
+          return `'${str.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
+        });
+        return `(${vals.join(", ")})`;
+      });
+      sql += valLines.join(",\n") + ";\n\n";
+    }
+  }
+  sql += `SET FOREIGN_KEY_CHECKS = 1;\n`;
+  return sql;
+}
+
+// 1. GET /api/backup-system/list - Ambil daftar cadangan dari direktori aman
+app.get("/api/backup-system/list", async (req, res) => {
+  try {
+    const backupDir = getBackupStorageDir();
+    if (!fs.existsSync(backupDir)) {
+      return res.json({ success: true, backups: [], storageDir: backupDir });
+    }
+
+    const items = fs.readdirSync(backupDir, { withFileTypes: true });
+    const backups: any[] = [];
+
+    for (const item of items) {
+      if (item.isDirectory() && item.name.startsWith("backup_")) {
+        const itemPath = path.join(backupDir, item.name);
+        const metaPath = path.join(itemPath, "meta.json");
+        let meta: any = null;
+        if (fs.existsSync(metaPath)) {
+          try {
+            meta = JSON.parse(fs.readFileSync(metaPath, "utf-8"));
+          } catch (e) {}
+        }
+
+        const hasSql = fs.existsSync(path.join(itemPath, "database.sql"));
+        const hasJson = fs.existsSync(path.join(itemPath, "data.json"));
+        const uploadsPath = path.join(itemPath, "uploads");
+        const photosCount = fs.existsSync(uploadsPath) ? countFilesInDir(uploadsPath) : 0;
+        const sizeBytes = getDirectorySizeBytes(itemPath);
+
+        if (!meta) {
+          const stat = fs.statSync(itemPath);
+          const timestamp = stat.mtimeMs;
+          const formattedDate = new Intl.DateTimeFormat("id-ID", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit"
+          }).format(new Date(timestamp));
+
+          meta = {
+            id: item.name,
+            name: `Backup ${formattedDate}`,
+            timestamp,
+            createdAt: new Date(timestamp).toISOString(),
+            formattedDate,
+            totalSantri: 0,
+            totalPhotos: photosCount,
+            sizeBytes,
+            formattedSize: formatFileSize(sizeBytes),
+            storagePath: itemPath
+          };
+        }
+
+        meta.hasSql = hasSql;
+        meta.hasJson = hasJson;
+        meta.totalPhotos = photosCount;
+        meta.sizeBytes = sizeBytes;
+        meta.formattedSize = formatFileSize(sizeBytes);
+        meta.storagePath = itemPath;
+        meta.downloadUrl = `/api/backup-system/download/${item.name}`;
+
+        backups.push(meta);
+      }
+    }
+
+    // Urutkan dari yang terbaru
+    backups.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+    return res.json({ success: true, backups, storageDir: backupDir });
+  } catch (err: any) {
+    console.error("Error listing backups:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 2. GET /api/backup-system/download/:id - Unduh arsip ZIP lengkap
+app.get("/api/backup-system/download/:id", (req, res) => {
+  try {
+    const { id } = req.params;
+    const safeId = id.replace(/[^a-zA-Z0-9_-]/g, "");
+    const backupStorageDir = getBackupStorageDir();
+    const targetBackupPath = path.join(backupStorageDir, safeId);
+
+    if (!fs.existsSync(targetBackupPath)) {
+      return res.status(404).json({ success: false, error: "Berkas cadangan tidak ditemukan di server." });
+    }
+
+    const zip = new AdmZip();
+    zip.addLocalFolder(targetBackupPath);
+    const zipBuffer = zip.toBuffer();
+
+    res.set({
+      "Content-Type": "application/zip",
+      "Content-Disposition": `attachment; filename="${safeId}.zip"`,
+      "Content-Length": String(zipBuffer.length)
+    });
+    return res.send(zipBuffer);
+  } catch (err: any) {
+    console.error("Error downloading backup zip:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3. POST /api/backup-system/create - Salin data santri & seluruh foto ke direktori aman
+app.post("/api/backup-system/create", async (req, res) => {
+  try {
+    const backupStorageDir = getBackupStorageDir();
+    const timestamp = Date.now();
+    const backupId = `backup_${timestamp}`;
+    const targetBackupPath = path.join(backupStorageDir, backupId);
+
+    // Buat folder backup utama
+    fs.mkdirSync(targetBackupPath, { recursive: true });
+
+    // A. Kumpulkan semua data database
+    const pool = getMySQLPool();
+    const allDbData: Record<string, any[]> = {};
+    for (const table of Array.from(VALID_TABLES)) {
+      let rows: any[] = [];
+      if (pool) {
+        const qRes = await tryMySQLQuery(`SELECT * FROM \`${table}\``);
+        if (qRes.success && Array.isArray(qRes.rows)) {
+          rows = qRes.rows;
+        }
+      }
+      if (rows.length === 0) {
+        rows = memoryStore.get(table) || [];
+      }
+      allDbData[table] = rows;
+    }
+
+    // Tulis data database ke data.json
+    fs.writeFileSync(
+      path.join(targetBackupPath, "data.json"),
+      JSON.stringify(allDbData, null, 2),
+      "utf-8"
+    );
+
+    // Tulis database.sql (Dump SQL Standar)
+    const sqlDump = generateSqlDump(allDbData);
+    fs.writeFileSync(
+      path.join(targetBackupPath, "database.sql"),
+      sqlDump,
+      "utf-8"
+    );
+
+    // B. Salin semua file foto & berkas upload ke subfolder 'uploads'
+    const backupUploadsPath = path.join(targetBackupPath, "uploads");
+    fs.mkdirSync(backupUploadsPath, { recursive: true });
+
+    const sourceUploadDir = getUploadDir();
+    if (fs.existsSync(sourceUploadDir)) {
+      copyFolderRecursiveSync(sourceUploadDir, backupUploadsPath);
+    }
+
+    // Salin juga jika ada uploads di dist/uploads
+    const distUploadsPath = path.join(process.cwd(), "dist", "uploads");
+    if (fs.existsSync(distUploadsPath)) {
+      copyFolderRecursiveSync(distUploadsPath, backupUploadsPath);
+    }
+
+    // Salin juga jika ada public/uploads
+    const publicUploadsPath = path.join(process.cwd(), "public", "uploads");
+    if (fs.existsSync(publicUploadsPath)) {
+      copyFolderRecursiveSync(publicUploadsPath, backupUploadsPath);
+    }
+
+    // Hitung statistik
+    const totalSantri = Array.isArray(allDbData.santri) ? allDbData.santri.length : 0;
+    const totalPhotos = countFilesInDir(backupUploadsPath);
+    const sizeBytes = getDirectorySizeBytes(targetBackupPath);
+
+    const now = new Date(timestamp);
+    const formattedDate = new Intl.DateTimeFormat("id-ID", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    }).format(now);
+
+    const meta = {
+      id: backupId,
+      name: `Backup ${formattedDate}`,
+      timestamp,
+      createdAt: now.toISOString(),
+      formattedDate,
+      totalSantri,
+      totalPhotos,
+      tablesCount: Object.keys(allDbData).length,
+      hasSql: true,
+      hasJson: true,
+      sizeBytes,
+      formattedSize: formatFileSize(sizeBytes),
+      storagePath: targetBackupPath,
+      downloadUrl: `/api/backup-system/download/${backupId}`
+    };
+
+    // Tulis meta.json
+    fs.writeFileSync(
+      path.join(targetBackupPath, "meta.json"),
+      JSON.stringify(meta, null, 2),
+      "utf-8"
+    );
+
+    console.log(`>>> Berhasil membuat backup aman di ${targetBackupPath} (${totalSantri} santri, ${totalPhotos} foto, ${meta.formattedSize})`);
+
+    return res.json({
+      success: true,
+      message: "Cadangan data santri, tabel database.sql, dan foto berhasil dibuat di direktori aman.",
+      backup: meta
+    });
+  } catch (err: any) {
+    console.error("Error creating backup:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3. POST /api/backup-system/restore/:id - Kembalikan data dan foto ke foldernya masing-masing dengan menimpa berkas
+app.post("/api/backup-system/restore/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const safeId = id.replace(/[^a-zA-Z0-9_-]/g, "");
+    const backupStorageDir = getBackupStorageDir();
+    const targetBackupPath = path.join(backupStorageDir, safeId);
+
+    if (!fs.existsSync(targetBackupPath)) {
+      return res.status(404).json({ success: false, error: "Berkas cadangan tidak ditemukan di direktori penyimpanan aman." });
+    }
+
+    const dataJsonPath = path.join(targetBackupPath, "data.json");
+    if (!fs.existsSync(dataJsonPath)) {
+      return res.status(400).json({ success: false, error: "Data database (data.json) tidak ditemukan di dalam cadangan." });
+    }
+
+    // A. Pulihkan Database (Menimpa tabel & memoryStore)
+    const rawData = fs.readFileSync(dataJsonPath, "utf-8");
+    const restoredDbData: Record<string, any[]> = JSON.parse(rawData);
+
+    const pool = getMySQLPool();
+    for (const [table, rows] of Object.entries(restoredDbData)) {
+      if (!VALID_TABLES.has(table)) continue;
+      // 1. Timpa memoryStore
+      memoryStore.set(table, Array.isArray(rows) ? rows : []);
+
+      // 2. Timpa tabel MySQL jika aktif
+      if (pool && Array.isArray(rows)) {
+        try {
+          await ensureTableExists(table, pool).catch(() => {});
+          await withTimeout(pool.query(`TRUNCATE TABLE \`${table}\``), 4000).catch(async () => {
+            await withTimeout(pool.query(`DELETE FROM \`${table}\``), 4000).catch(() => {});
+          });
+
+          if (rows.length > 0) {
+            const existingColumns = await getTableColumns(table, pool);
+            const chunkSize = 100;
+            for (let i = 0; i < rows.length; i += chunkSize) {
+              const chunk = rows.slice(i, i + chunkSize);
+              const firstRow = chunk[0];
+              let keys = Object.keys(firstRow);
+              if (existingColumns) {
+                keys = keys.filter(k => existingColumns.has(k));
+              }
+              if (keys.length === 0) continue;
+
+              const cols = keys.map(k => `\`${k}\``).join(", ");
+              const rowPlaceholders = `(${keys.map(() => "?").join(", ")})`;
+              const allPlaceholders = chunk.map(() => rowPlaceholders).join(", ");
+
+              const values: any[] = [];
+              for (const row of chunk) {
+                for (const k of keys) {
+                  const val = row[k];
+                  values.push(typeof val === "object" && val !== null ? JSON.stringify(val) : val);
+                }
+              }
+
+              const sql = `INSERT INTO \`${table}\` (${cols}) VALUES ${allPlaceholders}`;
+              await withTimeout(pool.query(sql, values), 10000).catch((e: any) => {
+                console.warn(`Bulk insert error in ${table} (chunk ${i}):`, e.message);
+              });
+            }
+          }
+        } catch (dbErr: any) {
+          console.warn(`Gagal menimpa tabel MySQL '${table}':`, dbErr.message);
+        }
+      }
+    }
+
+    // Simpan ke database_backup.json dan bersihkan query cache
+    saveMemoryStoreToDisk();
+    invalidateTableCache();
+
+    // B. Pulihkan Foto & Berkas Upload ke foldernya masing-masing (Menimpa file di folder itu)
+    const backupUploadsPath = path.join(targetBackupPath, "uploads");
+    let restoredPhotosCount = 0;
+
+    if (fs.existsSync(backupUploadsPath)) {
+      restoredPhotosCount = countFilesInDir(backupUploadsPath);
+      const targetUploadDir = getUploadDir();
+      if (!fs.existsSync(targetUploadDir)) {
+        fs.mkdirSync(targetUploadDir, { recursive: true });
+      }
+      // Salin kembali menimpa file yang ada
+      copyFolderRecursiveSync(backupUploadsPath, targetUploadDir);
+
+      // Salin juga ke dist/uploads agar preview statis instan
+      const distUploadsPath = path.join(process.cwd(), "dist", "uploads");
+      if (!fs.existsSync(distUploadsPath)) {
+        fs.mkdirSync(distUploadsPath, { recursive: true });
+      }
+      copyFolderRecursiveSync(backupUploadsPath, distUploadsPath);
+    }
+
+    // Broadcast WebSocket event agar semua klien memuat ulang
+    broadcastWebSocketMessage({
+      event: "db_change",
+      action: "restore",
+      timestamp: Date.now()
+    });
+
+    const totalSantri = Array.isArray(restoredDbData.santri) ? restoredDbData.santri.length : 0;
+    console.log(`>>> Pemulihan sukses: ${totalSantri} data santri dan ${restoredPhotosCount} foto dikembalikan menimpa file aktif.`);
+
+    return res.json({
+      success: true,
+      message: `Data santri (${totalSantri}) dan ${restoredPhotosCount} foto berhasil dikembalikan ke foldernya masing-masing dengan menimpa file lama.`,
+      data: restoredDbData
+    });
+  } catch (err: any) {
+    console.error("Error restoring backup:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 4. DELETE /api/backup-system/:id - Hapus arsip cadangan dari direktori aman
+app.delete("/api/backup-system/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const safeId = id.replace(/[^a-zA-Z0-9_-]/g, "");
+    const backupStorageDir = getBackupStorageDir();
+    const targetBackupPath = path.join(backupStorageDir, safeId);
+
+    if (fs.existsSync(targetBackupPath)) {
+      fs.rmSync(targetBackupPath, { recursive: true, force: true });
+      console.log(`>>> Berhasil menghapus cadangan: ${targetBackupPath}`);
+      return res.json({ success: true, message: "Cadangan berhasil dihapus." });
+    }
+
+    return res.status(404).json({ success: false, error: "Cadangan tidak ditemukan." });
+  } catch (err: any) {
+    console.error("Error deleting backup:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 export default app;
