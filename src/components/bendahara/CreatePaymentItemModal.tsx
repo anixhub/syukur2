@@ -4,6 +4,7 @@ import { X, ChevronDown, ShieldAlert, Info } from 'lucide-react';
 import { SantriPaymentItem, PaymentFrequency, PaymentSubPeriod } from './pembayaranTypes';
 import { Lembaga } from '../../types';
 import { fetchTableData } from '../../lib/api';
+import { WalletCard, getStoredWalletCards } from './walletStorage';
 
 interface CreatePaymentItemModalProps {
   isOpen: boolean;
@@ -247,6 +248,8 @@ export default function CreatePaymentItemModal({
 }: CreatePaymentItemModalProps) {
   const [name, setName] = useState('');
   const [amountInput, setAmountInput] = useState('');
+  const [targetAccountId, setTargetAccountId] = useState('');
+  const [walletCards, setWalletCards] = useState<WalletCard[]>([]);
   const [paymentFrequency, setPaymentFrequency] = useState<PaymentFrequency>('bulanan');
   const [startMonth, setStartMonth] = useState<number>(7); // Default Juli (Tahun Ajaran Baru)
   const [startYear, setStartYear] = useState<number>(() => new Date().getFullYear());
@@ -436,8 +439,12 @@ export default function CreatePaymentItemModal({
   // Populate data saat modal dibuka
   useEffect(() => {
     if (isOpen) {
+      const cards = getStoredWalletCards();
+      setWalletCards(cards);
+
       if (itemToEdit) {
         setName(itemToEdit.name || '');
+        setTargetAccountId(itemToEdit.targetAccountId || '');
         setAmountInput(
           itemToEdit.defaultAmount && itemToEdit.defaultAmount > 0
             ? formatRupiahInput(String(itemToEdit.defaultAmount))
@@ -496,6 +503,7 @@ export default function CreatePaymentItemModal({
       } else {
         setName('');
         setAmountInput('');
+        setTargetAccountId('');
         setPaymentFrequency('bulanan');
         const defaultMonth = 7; // Juli
         const defaultYear = new Date().getFullYear();
@@ -629,6 +637,17 @@ export default function CreatePaymentItemModal({
       return;
     }
 
+    const parsedAmount = parseRupiahNumber(amountInput);
+    if (!amountInput.trim() || parsedAmount <= 0) {
+      setErrorMsg('Jumlah pembayaran wajib diisi lebih dari 0.');
+      return;
+    }
+
+    if (!targetAccountId) {
+      setErrorMsg('Rekening tujuan penyimpanan pembayaran wajib dipilih.');
+      return;
+    }
+
     // Validasi tanggal jika frekuensi sekali bayar
     if (paymentFrequency === 'sekali') {
       if (startDate && endDate && startDate > endDate) {
@@ -649,8 +668,6 @@ export default function CreatePaymentItemModal({
 
     // Kategori gender otomatis mengikuti halaman aktif (Putra / Putri)
     const finalGender = defaultTargetGender === 'Putra' ? 'Putra' : defaultTargetGender === 'Putri' ? 'Putri' : 'Semua';
-
-    const parsedAmount = parseRupiahNumber(amountInput);
 
     // Validasi fitur cicilan jika diaktifkan
     let finalAllowInstallment = false;
@@ -702,11 +719,16 @@ export default function CreatePaymentItemModal({
       }
     }
 
+    const matchedAccount = walletCards.find(c => c.id === targetAccountId);
+    const targetAccountName = matchedAccount ? matchedAccount.type : undefined;
+
     const finalItem: SantriPaymentItem = {
       id: itemToEdit ? itemToEdit.id : `pay-item-${Date.now()}`,
       name: name.trim(),
       category: itemToEdit?.category || (paymentFrequency === 'bulanan' ? 'syahriah' : 'lainnya'),
       defaultAmount: parsedAmount,
+      targetAccountId,
+      targetAccountName,
       targetGender: finalGender,
       targetLembagaIds: isAllLembagas ? [] : selectedLembagaIds,
       targetLembagas: isAllLembagas ? [] : selectedNames,
@@ -759,13 +781,13 @@ export default function CreatePaymentItemModal({
 
   const isInstallmentCountProblematic = allowInstallment && (!maxInstallmentCount || maxInstallmentCount < 2);
 
-  // Tombol buat/simpan mati jika nominal minimal cicilan masih bermasalah atau nama kosong
-  const isSubmitDisabled = !name.trim() || isMinInstallmentProblematic || isInstallmentCountProblematic;
+  // Tombol buat/simpan mati jika nama kosong, jumlah pembayaran belum diisi/0, rekening belum dipilih, atau nominal cicilan masih bermasalah
+  const isSubmitDisabled = !name.trim() || !isAmountFilled || !targetAccountId || isMinInstallmentProblematic || isInstallmentCountProblematic;
 
   const modalContent = (
     <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
       <div 
-        className="bg-white rounded-2xl max-w-xl w-full shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[92vh]"
+        className="bg-white rounded-3xl max-w-xl w-full shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[92vh]"
         onClick={e => e.stopPropagation()}
       >
         {/* Header Modal - Bersih tanpa icon dan tanpa keterangan di bawah judul */}
@@ -821,6 +843,7 @@ export default function CreatePaymentItemModal({
               </span>
               <input
                 type="text"
+                required
                 inputMode="numeric"
                 placeholder="0"
                 value={amountInput}
@@ -839,8 +862,14 @@ export default function CreatePaymentItemModal({
             </div>
           </div>
 
-          {/* Fitur Cicilan: Toggle di bawah Jumlah Pembayaran & Logika Cicilan */}
-          <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/60 space-y-3">
+          {/* Fitur Cicilan: Berada di atas Simpan ke Rekening */}
+          <div
+            className={`w-full border border-slate-200 rounded-3xl transition-all ${
+              !allowInstallment
+                ? 'px-4 py-2 min-h-[42px] bg-white flex flex-col justify-center'
+                : 'p-4 bg-slate-50/60 space-y-3'
+            }`}
+          >
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-1.5 flex-wrap">
                 <label
@@ -851,22 +880,18 @@ export default function CreatePaymentItemModal({
                 >
                   Izinkan Cicilan
                 </label>
-                {!isAmountFilled && (
-                  <span className="text-[10px] text-slate-400 font-normal">
-                    (Isi jumlah pembayaran dahulu)
-                  </span>
-                )}
                 <div className="relative group inline-flex items-center">
                   <button
                     type="button"
                     className="w-4 h-4 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 flex items-center justify-center transition-colors cursor-help"
                     aria-label="Keterangan cicilan pembayaran"
+                    title="Aktifkan bila santri diperbolehkan membayar tagihan ini secara bertahap/mencicil"
                   >
                     <Info className="w-3 h-3 text-slate-500" />
                   </button>
-                  <div className="absolute left-6 top-1/2 -translate-y-1/2 hidden group-hover:flex z-50 w-72 p-2.5 bg-slate-900 text-white text-[11px] rounded-xl shadow-xl leading-relaxed pointer-events-none animate-in fade-in zoom-in-95 duration-150 flex-col gap-1">
+                  <div className="absolute left-6 top-1/2 -translate-y-1/2 hidden group-hover:flex z-50 w-64 p-2.5 bg-slate-900 text-white text-[11px] rounded-2xl shadow-xl leading-relaxed pointer-events-none animate-in fade-in zoom-in-95 duration-150 flex-col gap-1">
                     <span>
-                      Aktifkan bila santri diperbolehkan membayar tagihan ini secara bertahap / mencicil dengan batas minimal per pembayaran dan batas maksimal kali transaksi.
+                      Aktifkan bila santri diperbolehkan membayar tagihan ini secara bertahap/mencicil
                     </span>
                   </div>
                 </div>
@@ -982,7 +1007,7 @@ export default function CreatePaymentItemModal({
 
                   if (totalAmount <= 0) {
                     return (
-                      <p className="text-[11px] text-amber-700 bg-amber-50/80 border border-amber-200 rounded-xl p-2 font-medium">
+                      <p className="text-[11px] text-amber-700 bg-amber-50/80 border border-amber-200 rounded-2xl p-2.5 font-medium">
                         💡 Tentukan jumlah pembayaran di atas terlebih dahulu untuk melihat simulasi kalkulasi cicilan.
                       </p>
                     );
@@ -990,7 +1015,7 @@ export default function CreatePaymentItemModal({
 
                   if (!minInstallmentInput || minVal <= 0) {
                     return (
-                      <p className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded-xl p-2 font-medium">
+                      <p className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded-2xl p-2.5 font-medium">
                         ⚠️ Minimal nominal cicilan wajib diisi. Tombol simpan dinonaktifkan sampai nominal valid.
                       </p>
                     );
@@ -998,7 +1023,7 @@ export default function CreatePaymentItemModal({
 
                   if (minVal > totalAmount) {
                     return (
-                      <p className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded-xl p-2 font-medium">
+                      <p className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded-2xl p-2.5 font-medium">
                         ⚠️ Nominal minimal cicilan (Rp {minVal.toLocaleString('id-ID')}) melebihi total pembayaran (Rp {totalAmount.toLocaleString('id-ID')}). Tombol simpan dinonaktifkan.
                       </p>
                     );
@@ -1006,7 +1031,7 @@ export default function CreatePaymentItemModal({
 
                   if (minVal > 0 && minVal * 2 > totalAmount) {
                     return (
-                      <p className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded-xl p-2 font-medium">
+                      <p className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded-2xl p-2.5 font-medium">
                         ⚠️ Minimal cicilan (Rp {minVal.toLocaleString('id-ID')}) melebihi 50% total tagihan (Rp {totalAmount.toLocaleString('id-ID')}), sehingga tidak dapat dicicil 2 kali atau lebih. Tombol simpan dinonaktifkan.
                       </p>
                     );
@@ -1016,7 +1041,7 @@ export default function CreatePaymentItemModal({
                   const maxPossibleWithMin = minVal > 0 ? Math.floor(totalAmount / minVal) : null;
 
                   return (
-                    <div className="p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-200/80 text-[11px] text-slate-700 space-y-1.5">
+                    <div className="p-3 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 text-[11px] text-slate-700 space-y-1.5">
                       <div className="flex items-center justify-between font-bold text-emerald-900 border-b border-emerald-200/60 pb-1">
                         <span>Simulasi Skema Cicilan</span>
                         <span className="font-mono text-emerald-700">Maks. {count}x cicilan</span>
@@ -1045,6 +1070,33 @@ export default function CreatePaymentItemModal({
                 })()}
               </div>
             )}
+          </div>
+
+          {/* Kolom Simpan ke Rekening (Wajib Dipilih dari sub-modul Wallet) */}
+          <div>
+            <label className="block font-semibold text-slate-800 text-xs sm:text-sm mb-1">
+              Simpan ke Rekening
+            </label>
+            <div className="relative">
+              <select
+                required
+                value={targetAccountId}
+                onChange={e => {
+                  setTargetAccountId(e.target.value);
+                  setErrorMsg('');
+                }}
+                className={`w-full px-4 py-2.5 rounded-full border focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 bg-white text-xs sm:text-sm font-semibold transition-colors ${
+                  !targetAccountId ? 'border-amber-300 text-slate-400' : 'border-slate-200 text-slate-800'
+                }`}
+              >
+                <option value="" disabled>-- Pilih Rekening --</option>
+                {walletCards.map(c => (
+                  <option key={c.id} value={c.id} className="text-slate-800 font-medium">
+                    {c.type}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* Jenis Pembayaran: Sekali Bayar, Bulanan, Triwulan, Caturwulan, Semester */}
@@ -1089,7 +1141,7 @@ export default function CreatePaymentItemModal({
                     <Info className="w-3 h-3 text-slate-500" />
                   </button>
                   {/* Tooltip on hover */}
-                  <div className="absolute left-6 top-1/2 -translate-y-1/2 hidden group-hover:flex z-50 w-72 p-2.5 bg-slate-900 text-white text-[11px] rounded-xl shadow-xl leading-relaxed pointer-events-none animate-in fade-in zoom-in-95 duration-150 flex-col gap-1">
+                  <div className="absolute left-6 top-1/2 -translate-y-1/2 hidden group-hover:flex z-50 w-72 p-2.5 bg-slate-900 text-white text-[11px] rounded-2xl shadow-xl leading-relaxed pointer-events-none animate-in fade-in zoom-in-95 duration-150 flex-col gap-1">
                     <span>
                       Santri yang boyong sebelum periode ini atau mendaftar setelah periode ini berakhir tidak dikenakan kewajiban bayar.
                     </span>
@@ -1215,7 +1267,7 @@ export default function CreatePaymentItemModal({
                       type="button"
                       title={period.label}
                       onClick={() => handleToggleSubPeriod(period.id)}
-                      className={`w-9.5 h-9.5 sm:w-10 sm:h-10 aspect-square rounded-xl border text-xs font-bold flex items-center justify-center shrink-0 transition-all select-none ${
+                      className={`w-9.5 h-9.5 sm:w-10 sm:h-10 aspect-square rounded-2xl border text-xs font-bold flex items-center justify-center shrink-0 transition-all select-none ${
                         isActive
                           ? 'bg-emerald-600 border-emerald-600 text-white shadow-2xs hover:bg-emerald-700'
                           : 'bg-white border-slate-200 text-slate-400 hover:border-slate-300 hover:text-slate-600 opacity-60 hover:opacity-100'
@@ -1231,11 +1283,18 @@ export default function CreatePaymentItemModal({
 
           {/* Batas Bebas Tagihan (Khusus pembayaran selain sekali bayar) */}
           {paymentFrequency !== 'sekali' && (
-            <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/60 space-y-2.5">
+            <div
+              className={`w-full border border-slate-200 rounded-3xl transition-all ${
+                !isEntryCutoffActive
+                  ? 'px-4 py-2 min-h-[42px] bg-white flex flex-col justify-center'
+                  : 'p-4 bg-slate-50/60 space-y-2.5'
+              }`}
+            >
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-1.5">
                   <label
                     htmlFor="toggle-cutoff"
+                    title="Santri yang masuk setelah tanggal batas ini dibebaskan dari tagihan periode ini dan baru ditagih di periode berikutnya."
                     className="font-bold text-slate-800 text-xs sm:text-sm cursor-pointer select-none"
                   >
                     Batas Bebas Tagihan
@@ -1245,12 +1304,13 @@ export default function CreatePaymentItemModal({
                       type="button"
                       className="w-4 h-4 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 flex items-center justify-center transition-colors cursor-help"
                       aria-label="Keterangan batas bebas tagihan"
+                      title="Santri yang masuk setelah tanggal batas ini dibebaskan dari tagihan periode ini dan baru ditagih di periode berikutnya."
                     >
                       <Info className="w-3 h-3 text-slate-500" />
                     </button>
-                    <div className="absolute left-6 top-1/2 -translate-y-1/2 hidden group-hover:flex z-50 w-72 p-2.5 bg-slate-900 text-white text-[11px] rounded-xl shadow-xl leading-relaxed pointer-events-none animate-in fade-in zoom-in-95 duration-150 flex-col gap-1">
+                    <div className="absolute left-6 top-1/2 -translate-y-1/2 hidden group-hover:flex z-50 w-64 p-2.5 bg-slate-900 text-white text-[11px] rounded-2xl shadow-xl leading-relaxed pointer-events-none animate-in fade-in zoom-in-95 duration-150 flex-col gap-1">
                       <span>
-                        Santri baru yang terdaftar masuk mulai tanggal batas ini ke atas dibebaskan dari kewajiban bayar sub-periode tersebut (mulai ditagih pada sub-periode berikutnya).
+                        Santri yang masuk setelah tanggal batas ini dibebaskan dari tagihan periode ini dan baru ditagih di periode berikutnya.
                       </span>
                     </div>
                   </div>
@@ -1275,11 +1335,6 @@ export default function CreatePaymentItemModal({
                   />
                 </button>
               </div>
-
-              {/* Keterangan di bawah batas bebas tagihan */}
-              <p className="text-[11px] text-slate-500 leading-normal">
-                Khusus untuk santri yang baru masuk di pertengahan periode pembayaran yang sedang berjalan
-              </p>
 
               {/* Saat Toggle ON: Bisa isi tanggalnya */}
               {isEntryCutoffActive && (
@@ -1368,7 +1423,7 @@ export default function CreatePaymentItemModal({
                     </div>
                   )}
 
-                  <p className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200/80 rounded-xl p-2 font-medium">
+                  <p className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200/80 rounded-2xl p-2.5 font-medium">
                     {entryCutoffDay
                       ? paymentFrequency === 'bulanan'
                         ? `Santri baru yang masuk mulai tanggal ${entryCutoffDay} ke atas dibebaskan dari tagihan bulan tersebut (mulai ditagih pada bulan berikutnya).`
@@ -1380,12 +1435,12 @@ export default function CreatePaymentItemModal({
             </div>
           )}
 
-          {/* Khususkan pembayaran santri untuk: */}
+          {/* Target Pembayaran */}
           <div className="space-y-2 pt-2 border-t border-slate-100">
             {/* Lembaga - Tanpa icon */}
             <div className="space-y-1.5">
-              <label className="block font-semibold text-slate-800 text-xs">
-                Khususkan pembayaran santri untuk:
+              <label className="block font-semibold text-slate-800 text-xs sm:text-sm">
+                Target Pembayaran
               </label>
 
               {/* Kotak Input / Tombol Dropdown - Menampilkan 'x lembaga terpilih' */}
@@ -1468,7 +1523,7 @@ export default function CreatePaymentItemModal({
                           return (
                             <label
                               key={lembaga.id}
-                              className={`w-full text-left p-2 rounded-xl flex items-center justify-between gap-2.5 transition-colors cursor-pointer ${
+                              className={`w-full text-left p-2 rounded-2xl flex items-center justify-between gap-2.5 transition-colors cursor-pointer ${
                                 isChecked
                                   ? 'bg-emerald-50/80 text-emerald-950 font-medium'
                                   : 'hover:bg-slate-50 text-slate-700'
@@ -1576,10 +1631,14 @@ export default function CreatePaymentItemModal({
               type="submit"
               disabled={isSubmitDisabled}
               title={
-                isMinInstallmentProblematic
-                  ? 'Tombol tidak aktif: nominal minimal cicilan masih bermasalah'
-                  : !name.trim()
+                !name.trim()
                   ? 'Nama item pembayaran wajib diisi'
+                  : !isAmountFilled
+                  ? 'Jumlah pembayaran wajib diisi'
+                  : !targetAccountId
+                  ? 'Rekening tujuan penyimpanan wajib dipilih'
+                  : isMinInstallmentProblematic
+                  ? 'Tombol tidak aktif: nominal minimal cicilan masih bermasalah'
                   : undefined
               }
               className={`px-6 py-2.5 rounded-full font-bold text-xs shadow-xs transition-all ${

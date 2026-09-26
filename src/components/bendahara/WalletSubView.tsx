@@ -48,6 +48,16 @@ import {
   Wallet,
   HelpCircle
 } from 'lucide-react';
+import {
+  WalletCard,
+  TransactionItem,
+  getStoredWalletCards,
+  saveStoredWalletCards,
+  getStoredWalletTransactions,
+  saveStoredWalletTransactions
+} from './walletStorage';
+
+export type { WalletCard, TransactionItem };
 
 interface Contact {
   id: string;
@@ -55,31 +65,6 @@ interface Contact {
   avatar: string;
   role?: string;
   accountNumber?: string;
-}
-
-interface TransactionItem {
-  id: string;
-  cardId?: string;
-  name: string;
-  date: string;
-  amount: number;
-  type: 'income' | 'expense';
-  status: 'Selesai' | 'Ditolak' | 'Menunggu';
-  logoType: 'td' | 'salesforce' | 'vanguard' | 'cnx' | 'amazon' | 'avatar';
-  avatarUrl?: string;
-  logoColor?: string;
-  logoLetter?: string;
-}
-
-export interface WalletCard {
-  id: string;
-  type: string;
-  brand: string;
-  balance: number;
-  holder: string;
-  gradient: string;
-  cardNumber?: string;
-  isLocked?: boolean;
 }
 
 export interface CardBudgetItem {
@@ -571,39 +556,8 @@ export default function WalletSubView() {
   // Interactive Hover on Chart: null by default so tooltip ONLY appears on hover!
   const [hoveredDay, setHoveredDay] = useState<string | null>(null);
 
-  // Cards State (with balance replacing card number)
-  const [cards, setCards] = useState<WalletCard[]>([
-    {
-      id: 'c-1',
-      type: 'Kas Utama Pesantren',
-      brand: 'BSI Syariah',
-      balance: 12450000,
-      holder: 'BENDAHARA PESANTREN',
-      gradient: 'from-blue-600 via-blue-700 to-indigo-800',
-      cardNumber: '4219 •••• •••• 8821',
-      isLocked: false
-    },
-    {
-      id: 'c-2',
-      type: 'Kas Sarpras & Gedung',
-      brand: 'Bank Muamalat',
-      balance: 5000000,
-      holder: 'BENDAHARA PESANTREN',
-      gradient: 'from-slate-800 via-slate-900 to-blue-950',
-      cardNumber: '5321 •••• •••• 4410',
-      isLocked: false
-    },
-    {
-      id: 'c-3',
-      type: 'Operasional & Dapur',
-      brand: 'GPN Syariah',
-      balance: 8750000,
-      holder: 'BENDAHARA PESANTREN',
-      gradient: 'from-emerald-700 via-teal-800 to-slate-900',
-      cardNumber: '6012 •••• •••• 1920',
-      isLocked: false
-    }
-  ]);
+  // Cards State (persisted & synced with Kasir)
+  const [cards, setCards] = useState<WalletCard[]>(() => getStoredWalletCards());
 
   // Total current balance across all cards (e.g. Rp 26.200.000)
   const totalWalletBalance = useMemo(() => {
@@ -611,7 +565,13 @@ export default function WalletSubView() {
   }, [cards]);
 
   // Today's dynamic transaction adjustments
-  const [todayIncomeAdded, setTodayIncomeAdded] = useState(0);
+  const [todayIncomeAdded, setTodayIncomeAdded] = useState(() => {
+    try {
+      return parseInt(localStorage.getItem('smartsantri_wallet_today_income') || '0', 10);
+    } catch (e) {
+      return 0;
+    }
+  });
   const [todayExpensesAdded, setTodayExpensesAdded] = useState(0);
 
   const todayIncome = 5800000 + todayIncomeAdded;
@@ -873,7 +833,34 @@ export default function WalletSubView() {
   const [newGoalCategory, setNewGoalCategory] = useState<'this_year' | 'long_term'>('this_year');
 
   // Transactions list
-  const [transactions, setTransactions] = useState<TransactionItem[]>(INITIAL_TRANSACTIONS);
+  const [transactions, setTransactions] = useState<TransactionItem[]>(() => getStoredWalletTransactions());
+
+  // Simpan kartu ke localStorage saat ada perubahan
+  useEffect(() => {
+    saveStoredWalletCards(cards);
+  }, [cards]);
+
+  // Simpan mutasi transaksi ke localStorage saat ada perubahan
+  useEffect(() => {
+    saveStoredWalletTransactions(transactions);
+  }, [transactions]);
+
+  // Listener event real-time saat kasir membukukan pembayaran santri
+  useEffect(() => {
+    const handleWalletUpdated = () => {
+      setCards(getStoredWalletCards());
+      setTransactions(getStoredWalletTransactions());
+      try {
+        const added = parseInt(localStorage.getItem('smartsantri_wallet_today_income') || '0', 10);
+        setTodayIncomeAdded(added);
+      } catch (e) {}
+    };
+
+    window.addEventListener('smartsantri_wallet_updated', handleWalletUpdated);
+    return () => {
+      window.removeEventListener('smartsantri_wallet_updated', handleWalletUpdated);
+    };
+  }, []);
 
   // ==========================================
   // ANGGARKAN DANA (BUDGETING) STATE & LOGIC
@@ -898,7 +885,7 @@ export default function WalletSubView() {
   const [budgetName, setBudgetName] = useState('');
   const [budgetTargetType, setBudgetTargetType] = useState<'transfer' | 'send'>('transfer');
   // For transfer to other bank account:
-  const [budgetBankName, setBudgetBankName] = useState('BSI Syariah');
+  const [budgetBankName, setBudgetBankName] = useState('');
   const [budgetAccountNumber, setBudgetAccountNumber] = useState('');
   const [budgetAccountHolder, setBudgetAccountHolder] = useState('');
   // For send / operasional:
@@ -955,7 +942,7 @@ export default function WalletSubView() {
   const handleOpenAddBudget = () => {
     setBudgetName('');
     setBudgetTargetType('transfer');
-    setBudgetBankName('BSI Syariah');
+    setBudgetBankName('');
     setBudgetAccountNumber('');
     setBudgetAccountHolder('');
     setBudgetRecipient('Dapur Pesantren');
@@ -2139,7 +2126,7 @@ export default function WalletSubView() {
 
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <h2 className="text-sm font-bold text-slate-900">Kartu Saya</h2>
+                  <h2 className="text-sm font-bold text-slate-900">Rekening</h2>
                   <span className="inline-flex items-center justify-center min-w-5 h-5 px-1.5 text-xs font-bold text-slate-600 bg-slate-100 rounded-full">
                     {cards.length}
                   </span>
@@ -2151,7 +2138,7 @@ export default function WalletSubView() {
                   className="flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>Tambah kartu</span>
+                  <span>Tambah</span>
                 </button>
               </div>
 
@@ -2734,9 +2721,8 @@ export default function WalletSubView() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Jumlah Nominal (Rp)</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Jumlah Nominal</label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">Rp</span>
                   <input
                     type="number"
                     step="any"
@@ -2744,7 +2730,7 @@ export default function WalletSubView() {
                     placeholder="0"
                     value={modalAmount}
                     onChange={e => setModalAmount(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 text-xs font-bold text-slate-900 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+                    className="w-full px-3 py-2 text-xs font-bold text-slate-900 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
                   />
                 </div>
               </div>
@@ -2856,9 +2842,8 @@ export default function WalletSubView() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Nominal Transfer (Rp)</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Nominal Transfer</label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">Rp</span>
                   <input
                     type="number"
                     step="any"
@@ -2866,7 +2851,7 @@ export default function WalletSubView() {
                     placeholder="0"
                     value={transferAmount}
                     onChange={e => setTransferAmount(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 text-xs font-bold text-slate-900 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
+                    className="w-full px-3 py-2 text-xs font-bold text-slate-900 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
                   />
                 </div>
               </div>
@@ -3916,8 +3901,10 @@ export default function WalletSubView() {
                           <select
                             value={budgetBankName}
                             onChange={e => setBudgetBankName(e.target.value)}
+                            required
                             className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-white font-medium focus:ring-1 focus:ring-blue-500 focus:outline-none"
                           >
+                            <option value="" disabled>-- Pilih Rekening / Bank Tujuan --</option>
                             <option value="Bank Syariah Indonesia (BSI)">Bank Syariah Indonesia (BSI)</option>
                             <option value="Bank Muamalat">Bank Muamalat</option>
                             <option value="BCA Syariah">BCA Syariah</option>
