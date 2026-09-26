@@ -94,16 +94,72 @@ export default function ProfilPesantrenSub({
           </div>
           
           <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-4 shadow-xs">
-            {/* Kolom Tunggal: Alamat Lengkap */}
             <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Alamat Lengkap</label>
-              <textarea 
-                rows={3}
-                value={profile.alamat || ''} 
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Alamat Jalan</label>
+              <input 
+                type="text" 
+                value={profile.alamat} 
                 onChange={(e) => handleProfileChange('alamat', e.target.value)}
-                className="w-full text-xs font-semibold px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#A30022] focus:bg-white transition-all text-slate-800 resize-none leading-relaxed"
-                placeholder="Masukkan alamat lengkap pesantren (Jalan, RT/RW, Dusun, Desa/Kelurahan, Kecamatan, Kab/Kota, Provinsi, Kode Pos)"
+                className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#A30022] focus:bg-white transition-all text-slate-800"
+                placeholder="Masukkan alamat jalan pesantren"
               />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Desa / Kelurahan</label>
+                <input 
+                  type="text" 
+                  value={profile.desa} 
+                  onChange={(e) => handleProfileChange('desa', e.target.value)}
+                  className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#A30022] focus:bg-white transition-all text-slate-800"
+                  placeholder="Desa / Kelurahan"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Kecamatan</label>
+                <input 
+                  type="text" 
+                  value={profile.kecamatan} 
+                  onChange={(e) => handleProfileChange('kecamatan', e.target.value)}
+                  className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#A30022] focus:bg-white transition-all text-slate-800"
+                  placeholder="Kecamatan"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Kabupaten / Kota</label>
+                <input 
+                  type="text" 
+                  value={profile.kabupaten} 
+                  onChange={(e) => handleProfileChange('kabupaten', e.target.value)}
+                  className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#A30022] focus:bg-white transition-all text-slate-800"
+                  placeholder="Kabupaten / Kota"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Provinsi</label>
+                <input 
+                  type="text" 
+                  value={profile.provinsi} 
+                  onChange={(e) => handleProfileChange('provinsi', e.target.value)}
+                  className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#A30022] focus:bg-white transition-all text-slate-800"
+                  placeholder="Provinsi"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Kode Pos</label>
+                <input 
+                  type="text" 
+                  value={profile.kodePos} 
+                  onChange={(e) => handleProfileChange('kodePos', e.target.value)}
+                  className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#A30022] focus:bg-white transition-all text-slate-800"
+                  placeholder="Kode Pos"
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -139,232 +195,122 @@ export default function ProfilPesantrenSub({
                   placeholder="081234567890"
                 />
               </div>
+            </div>
+          </div>
+        </div>
 
-              <div className="space-y-1.5 md:col-span-3">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Kota Penandatangan Dokumen &amp; Surat</label>
+        {/* Section 3: Pimpinan & Penandatangan Resmi */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-[#A30022] font-semibold text-sm">
+            <User className="h-4.5 w-4.5 text-[#A30022]" />
+            <span>Pimpinan & Penandatangan Resmi</span>
+          </div>
+          
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-4 shadow-xs">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Pengasuh / Pimpinan Tertinggi</label>
                 <input 
                   type="text" 
-                  value={profile.kotaTandaTangan} 
-                  onChange={(e) => handleProfileChange('kotaTandaTangan', e.target.value)}
+                  value={profile.namaPengasuh} 
+                  onChange={(e) => handleProfileChange('namaPengasuh', e.target.value)}
                   className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#A30022] focus:bg-white transition-all text-slate-800"
-                  placeholder="Contoh: Jombang, Kediri, Probolinggo, dll."
+                  placeholder="KH. Muhammad Shodiq, M.Ag."
                 />
               </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Wakil Pengasuh</label>
+                <input 
+                  type="text" 
+                  value={profile.namaWakilPengasuh} 
+                  onChange={(e) => handleProfileChange('namaWakilPengasuh', e.target.value)}
+                  className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#A30022] focus:bg-white transition-all text-slate-800"
+                  placeholder="Masukkan nama wakil pengasuh"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Ketua Yayasan</label>
+                <input 
+                  type="text" 
+                  value={profile.namaKetuaYayasan} 
+                  onChange={(e) => handleProfileChange('namaKetuaYayasan', e.target.value)}
+                  className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#A30022] focus:bg-white transition-all text-slate-800"
+                  placeholder="Masukkan nama ketua yayasan"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Ketua Pondok</label>
+                <input 
+                  type="text" 
+                  value={profile.namaKetuaPondok} 
+                  onChange={(e) => handleProfileChange('namaKetuaPondok', e.target.value)}
+                  className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#A30022] focus:bg-white transition-all text-slate-800"
+                  placeholder="Masukkan nama ketua pondok"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Sekretaris</label>
+                <input 
+                  type="text" 
+                  value={profile.namaSekretaris} 
+                  onChange={(e) => handleProfileChange('namaSekretaris', e.target.value)}
+                  className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#A30022] focus:bg-white transition-all text-slate-800"
+                  placeholder="Masukkan nama sekretaris"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Bendahara</label>
+                <input 
+                  type="text" 
+                  value={profile.namaBendahara} 
+                  onChange={(e) => handleProfileChange('namaBendahara', e.target.value)}
+                  className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#A30022] focus:bg-white transition-all text-slate-800"
+                  placeholder="Masukkan nama bendahara"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Ketua Keamanan</label>
+                <input 
+                  type="text" 
+                  value={profile.namaKetuaKeamanan} 
+                  onChange={(e) => handleProfileChange('namaKetuaKeamanan', e.target.value)}
+                  className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#A30022] focus:bg-white transition-all text-slate-800"
+                  placeholder="Masukkan nama ketua keamanan"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Ketua Pendidikan</label>
+                <input 
+                  type="text" 
+                  value={profile.namaKetuaPendidikan} 
+                  onChange={(e) => handleProfileChange('namaKetuaPendidikan', e.target.value)}
+                  className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#A30022] focus:bg-white transition-all text-slate-800"
+                  placeholder="Masukkan nama ketua pendidikan"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Kota Penandatangan Dokumen</label>
+              <input 
+                type="text" 
+                value={profile.kotaTandaTangan} 
+                onChange={(e) => handleProfileChange('kotaTandaTangan', e.target.value)}
+                className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#A30022] focus:bg-white transition-all text-slate-800"
+                placeholder="Kota Penandatangan"
+              />
             </div>
           </div>
         </div>
 
-        {/* Section 3: Struktur Kepengurusan Putra */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="h-6 w-6 rounded-lg bg-blue-100 text-blue-800 flex items-center justify-center text-xs font-black">
-                PA
-              </div>
-              <h3 className="text-base sm:text-lg font-bold text-blue-900 tracking-tight">Struktur Kepengurusan Putra</h3>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-2xl border border-blue-100 p-6 space-y-4 shadow-xs">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1.5 md:col-span-2">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Pengasuh Putra</label>
-                <input 
-                  type="text" 
-                  value={profile.namaPengasuhPutra ?? profile.namaPengasuh ?? ''} 
-                  onChange={(e) => {
-                    handleProfileChange('namaPengasuhPutra', e.target.value);
-                    handleProfileChange('namaPengasuh', e.target.value);
-                  }}
-                  className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-600 focus:bg-white transition-all text-slate-800"
-                  placeholder="Contoh: KH. Muhammad Shodiq, M.Ag."
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Ketua Pondok Putra</label>
-                <input 
-                  type="text" 
-                  value={profile.namaKetuaPondokPutra ?? profile.namaKetuaPondok ?? ''} 
-                  onChange={(e) => {
-                    handleProfileChange('namaKetuaPondokPutra', e.target.value);
-                    handleProfileChange('namaKetuaPondok', e.target.value);
-                  }}
-                  className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-600 focus:bg-white transition-all text-slate-800"
-                  placeholder="Nama ketua pondok putra"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Sekretaris Putra</label>
-                <input 
-                  type="text" 
-                  value={profile.namaSekretarisPutra ?? profile.namaSekretaris ?? ''} 
-                  onChange={(e) => {
-                    handleProfileChange('namaSekretarisPutra', e.target.value);
-                    handleProfileChange('namaSekretaris', e.target.value);
-                  }}
-                  className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-600 focus:bg-white transition-all text-slate-800"
-                  placeholder="Nama sekretaris putra"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Bendahara Putra</label>
-                <input 
-                  type="text" 
-                  value={profile.namaBendaharaPutra ?? profile.namaBendahara ?? ''} 
-                  onChange={(e) => {
-                    handleProfileChange('namaBendaharaPutra', e.target.value);
-                    handleProfileChange('namaBendahara', e.target.value);
-                  }}
-                  className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-600 focus:bg-white transition-all text-slate-800"
-                  placeholder="Nama bendahara putra"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Ketua Pendidikan Putra</label>
-                <input 
-                  type="text" 
-                  value={profile.namaKetuaPendidikanPutra ?? profile.namaKetuaPendidikan ?? ''} 
-                  onChange={(e) => {
-                    handleProfileChange('namaKetuaPendidikanPutra', e.target.value);
-                    handleProfileChange('namaKetuaPendidikan', e.target.value);
-                  }}
-                  className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-600 focus:bg-white transition-all text-slate-800"
-                  placeholder="Nama ketua pendidikan putra"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Ketua Keamanan Putra</label>
-                <input 
-                  type="text" 
-                  value={profile.namaKetuaKeamananPutra ?? profile.namaKetuaKeamanan ?? ''} 
-                  onChange={(e) => {
-                    handleProfileChange('namaKetuaKeamananPutra', e.target.value);
-                    handleProfileChange('namaKetuaKeamanan', e.target.value);
-                  }}
-                  className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-600 focus:bg-white transition-all text-slate-800"
-                  placeholder="Nama ketua keamanan putra"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Ketua Humasy Putra</label>
-                <input 
-                  type="text" 
-                  value={profile.namaKetuaHumasyPutra ?? profile.namaKetuaHumasy ?? ''} 
-                  onChange={(e) => {
-                    handleProfileChange('namaKetuaHumasyPutra', e.target.value);
-                    handleProfileChange('namaKetuaHumasy', e.target.value);
-                  }}
-                  className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-600 focus:bg-white transition-all text-slate-800"
-                  placeholder="Nama ketua humasy putra"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Section 4: Struktur Kepengurusan Putri */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="h-6 w-6 rounded-lg bg-pink-100 text-pink-800 flex items-center justify-center text-xs font-black">
-                PI
-              </div>
-              <h3 className="text-base sm:text-lg font-bold text-pink-900 tracking-tight">Struktur Kepengurusan Putri</h3>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-2xl border border-pink-100 p-6 space-y-4 shadow-xs">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1.5 md:col-span-2">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Pengasuh Putri</label>
-                <input 
-                  type="text" 
-                  value={profile.namaPengasuhPutri ?? profile.namaWakilPengasuhPutri ?? ''} 
-                  onChange={(e) => {
-                    handleProfileChange('namaPengasuhPutri', e.target.value);
-                    handleProfileChange('namaWakilPengasuhPutri', e.target.value);
-                  }}
-                  className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-pink-600 focus:bg-white transition-all text-slate-800"
-                  placeholder="Contoh: Nyai Hj. Nurul Hidayah"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Ketua Pondok Putri</label>
-                <input 
-                  type="text" 
-                  value={profile.namaKetuaPondokPutri ?? ''} 
-                  onChange={(e) => handleProfileChange('namaKetuaPondokPutri', e.target.value)}
-                  className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-pink-600 focus:bg-white transition-all text-slate-800"
-                  placeholder="Nama ketua pondok putri"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Sekretaris Putri</label>
-                <input 
-                  type="text" 
-                  value={profile.namaSekretarisPutri ?? ''} 
-                  onChange={(e) => handleProfileChange('namaSekretarisPutri', e.target.value)}
-                  className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-pink-600 focus:bg-white transition-all text-slate-800"
-                  placeholder="Nama sekretaris putri"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Bendahara Putri</label>
-                <input 
-                  type="text" 
-                  value={profile.namaBendaharaPutri ?? ''} 
-                  onChange={(e) => handleProfileChange('namaBendaharaPutri', e.target.value)}
-                  className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-pink-600 focus:bg-white transition-all text-slate-800"
-                  placeholder="Nama bendahara putri"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Ketua Pendidikan Putri</label>
-                <input 
-                  type="text" 
-                  value={profile.namaKetuaPendidikanPutri ?? ''} 
-                  onChange={(e) => handleProfileChange('namaKetuaPendidikanPutri', e.target.value)}
-                  className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-pink-600 focus:bg-white transition-all text-slate-800"
-                  placeholder="Nama ketua pendidikan putri"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Ketua Keamanan Putri</label>
-                <input 
-                  type="text" 
-                  value={profile.namaKetuaKeamananPutri ?? ''} 
-                  onChange={(e) => handleProfileChange('namaKetuaKeamananPutri', e.target.value)}
-                  className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-pink-600 focus:bg-white transition-all text-slate-800"
-                  placeholder="Nama ketua keamanan putri"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Ketua Humasy Putri</label>
-                <input 
-                  type="text" 
-                  value={profile.namaKetuaHumasyPutri ?? ''} 
-                  onChange={(e) => handleProfileChange('namaKetuaHumasyPutri', e.target.value)}
-                  className="w-full text-xs font-semibold px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-pink-600 focus:bg-white transition-all text-slate-800"
-                  placeholder="Nama ketua humasy putri"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Section 6: Kustomisasi Logo Institusi */}
+        {/* Section 4: Kustomisasi Logo Institusi */}
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-[#A30022] font-semibold text-sm">
             <Award className="h-4.5 w-4.5 text-[#A30022]" />

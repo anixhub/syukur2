@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, GraduationCap } from 'lucide-react';
-import { Santri, Lembaga, Kelas, isDefaultClass, isCalonClass } from '../../types';
+import { Santri, Lembaga, Kelas, isDefaultClass } from '../../types';
+import { demoteSantriToCalonPesertaDidik } from '../../lib/utils';
 import { fetchTableData } from '../../lib/api';
-import { getDefaultCalonClassName } from '../../lib/utils';
 
 interface BulkEditModalProps {
   isOpen: boolean;
@@ -97,7 +97,7 @@ export default function BulkEditModal({
   const [bulkForm, setBulkForm] = useState({
     statusKeanggotaan: 'Aktif' as 'Aktif' | 'Alumni' | 'Meninggal',
     statusDomisili: 'Muqim' as 'Muqim' | 'Kampung',
-    statusEmis: 'Terdaftar' as 'Terdaftar' | 'Belum' | 'Invalid' | 'Keluar' | 'Lulus',
+    statusEmis: 'Terdaftar' as 'Terdaftar' | 'Belum',
     tanggalMasuk: getTodayDateString(),
     tanggalKeluar: getTodayDateString(),
     catatan: '',
@@ -135,25 +135,24 @@ export default function BulkEditModal({
 
       const alreadyHasInternalClass = currentClasses.some(cls => {
         const lower = cls.trim().toLowerCase();
-        return internalClassNames.includes(lower) || isCalonClass(lower);
+        return internalClassNames.includes(lower) || lower === 'calon peserta didik' || lower === 'calon pelajar';
       });
 
       if (!alreadyHasInternalClass) {
-        const lemObj = lembagas.find(l => String(l.id) === String(internalId));
-        const defaultCls = kelases.find(k => getLemId(k) === String(internalId) && (isDefaultClass(k) || isCalonClass(k.nama)));
-        const newClsName = defaultCls ? defaultCls.nama : getDefaultCalonClassName(lemObj, santri.gender);
+        const defaultCls = kelases.find(k => getLemId(k) === String(internalId) && isDefaultClass(k));
+        const newClsName = defaultCls ? defaultCls.nama : 'Calon Peserta Didik';
         currentClasses.push(newClsName);
       }
     }
 
     const hasSpecificClass = currentClasses.some(c => {
       const lower = c.trim().toLowerCase();
-      return !isCalonClass(lower) && lower !== 'tanpa kelas';
+      return lower !== 'calon peserta didik' && lower !== 'calon pelajar' && lower !== 'tanpa kelas';
     });
     if (hasSpecificClass) {
       currentClasses = currentClasses.filter(c => {
         const lower = c.trim().toLowerCase();
-        return !isCalonClass(lower);
+        return lower !== 'calon peserta didik' && lower !== 'calon pelajar';
       });
     }
 
@@ -207,6 +206,11 @@ export default function BulkEditModal({
           }
           if (bulkSelectedFields.statusEmis) {
             updated.statusEmis = bulkForm.statusEmis;
+            if (bulkForm.statusEmis === 'Belum') {
+              const demoted = demoteSantriToCalonPesertaDidik(updated, lembagasList, kelasList);
+              updated.kelas = demoted.kelas;
+              updated.pendidikanFormal = demoted.pendidikanFormal;
+            }
           }
           if (bulkSelectedFields.tanggalMasuk) {
             updated.tanggalMasuk = bulkForm.tanggalMasuk;
@@ -442,9 +446,6 @@ export default function BulkEditModal({
                         className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none disabled:bg-slate-100/70 disabled:text-slate-400 disabled:border-slate-200/60 cursor-pointer"
                       >
                         <option value="Terdaftar">Terdaftar</option>
-                        <option value="Invalid">Invalid</option>
-                        <option value="Keluar">Keluar</option>
-                        <option value="Lulus">Lulus</option>
                         <option value="Belum">Belum Terdaftar</option>
                       </select>
                     </div>

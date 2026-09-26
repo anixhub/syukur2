@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Home, FileText, GraduationCap, Users, Shield } from 'lucide-react';
 import Header from './components/Header';
@@ -6,24 +6,19 @@ import Drawer from './components/Drawer';
 import Sidebar from './components/Sidebar';
 import HelpModal from './components/HelpModal';
 import AdminChatDrawer from './components/AdminChatDrawer';
-import NotificationsPage from './components/NotificationsPage';
-import NotificationPermissionModal from './components/NotificationPermissionModal';
-import { ChatNotificationToast } from './components/ChatNotificationToast';
-import OfflineStatusBanner from './components/OfflineStatusBanner';
 import { fetchTableData, insertTableRow, insertTableRows, updateTableRow, deleteTableRow, subscribeRealtimeChanges, snakeToCamel, safeLocalStorageSetItem } from './lib/api';
-import { sendDeviceNotification } from './lib/notificationHelper';
 
-// Views (Lazy-loaded for code splitting and instant initial page load)
-const HomeView = React.lazy(() => import('./components/HomeView'));
-const SekretarisView = React.lazy(() => import('./components/SekretarisView'));
-const BendaharaView = React.lazy(() => import('./components/BendaharaView'));
-const PendidikanView = React.lazy(() => import('./components/PendidikanView'));
-const HumasyView = React.lazy(() => import('./components/HumasyView'));
-const KeamananView = React.lazy(() => import('./components/KeamananView'));
-const PengaturanView = React.lazy(() => import('./components/PengaturanView'));
-const LoginView = React.lazy(() => import('./components/LoginView'));
-const SantriDetailModal = React.lazy(() => import('./components/sekretaris/SantriDetailModal'));
-const PendingRegistrationsModal = React.lazy(() => import('./components/PendingRegistrationsModal'));
+// Views
+import HomeView from './components/HomeView';
+import SekretarisView from './components/SekretarisView';
+import BendaharaView from './components/BendaharaView';
+import PendidikanView from './components/PendidikanView';
+import HumasyView from './components/HumasyView';
+import KeamananView from './components/KeamananView';
+import PengaturanView from './components/PengaturanView';
+import LoginView from './components/LoginView';
+import SantriDetailModal from './components/sekretaris/SantriDetailModal';
+import PendingRegistrationsModal from './components/PendingRegistrationsModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { formatBigDigit, mergeIdField } from './lib/utils';
 import { logAdminActivity } from './lib/activityLogger';
@@ -46,10 +41,9 @@ import {
   isEmisTerdaftar
 } from './types';
 import { DEFAULT_ROLES, fetchAndSyncPermissionsFromSupabase } from './lib/permissions';
-import { initAutoBackupScheduler } from './lib/backupManager';
 
 export default function App() {
-  // Initialize default roles permissions, background sync, and auto-backup scheduler
+  // Initialize default roles permissions and fetch latest in real-time from Supabase
   React.useEffect(() => {
     if (!localStorage.getItem('smartsantri_roles_permissions')) {
       try {
@@ -63,12 +57,6 @@ export default function App() {
     fetchAndSyncPermissionsFromSupabase().catch(err => {
       console.warn("Gagal sinkronisasi hak akses background dari Database:", err);
     });
-
-    // Inisialisasi pengecekan pencadangan otomatis (Auto Backup Scheduler)
-    const cleanupAutoBackup = initAutoBackupScheduler();
-    return () => {
-      cleanupAutoBackup();
-    };
   }, []);
 
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
@@ -80,203 +68,12 @@ export default function App() {
 
   const [activeSubTab, setActiveSubTab] = useState<string>('dashboard');
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
-  const [isDrawerClosing, setIsDrawerClosing] = useState<boolean>(false);
-  const [isDrawerSearchMode, setIsDrawerSearchMode] = useState<boolean>(false);
-  const [windowWidth, setWindowWidth] = useState<number>(() => {
-    return typeof window !== 'undefined' ? window.innerWidth : 1280;
-  });
-  const [isMobile, setIsMobile] = useState<boolean>(() => {
-    return typeof window !== 'undefined' ? window.innerWidth < 768 : false;
-  });
-
-  const handleCloseDrawer = React.useCallback(() => {
-    setIsDrawerOpen(false);
-    setIsDrawerClosing(true);
-    setIsDrawerSearchMode(false);
-  }, []);
-
-  React.useEffect(() => {
-    const handleResize = () => {
-      const w = window.innerWidth;
-      setWindowWidth(w);
-      const mobile = w < 768;
-      setIsMobile(mobile);
-      if (!mobile && isDrawerOpen) {
-        setIsDrawerOpen(false);
-        setIsDrawerClosing(false);
-        setIsDrawerSearchMode(false);
-      }
-    };
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [isDrawerOpen]);
-
-  // Lock scroll on mobile when sidebar drawer is open or animating close
-  React.useEffect(() => {
-    if (isMobile && (isDrawerOpen || isDrawerClosing)) {
-      const originalBodyOverflow = document.body.style.overflow;
-      const originalBodyTouchAction = document.body.style.touchAction;
-      const originalHtmlOverflow = document.documentElement.style.overflow;
-
-      document.body.style.overflow = 'hidden';
-      document.body.style.touchAction = 'none';
-      document.documentElement.style.overflow = 'hidden';
-
-      return () => {
-        document.body.style.overflow = originalBodyOverflow;
-        document.body.style.touchAction = originalBodyTouchAction;
-        document.documentElement.style.overflow = originalHtmlOverflow;
-      };
-    }
-  }, [isMobile, isDrawerOpen, isDrawerClosing]);
-
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
   const [isSelectionMode, setIsSelectionMode] = useState<boolean>(false);
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
-  const [chatLayoutMode, setChatLayoutMode] = useState<'sidebar' | 'floating' | 'full'>(() => {
-    try {
-      const saved = localStorage.getItem('attarokey_chat_layout_mode');
-      if (saved === 'sidebar' || saved === 'floating' || saved === 'full') return saved;
-    } catch (e) {}
-    return 'sidebar';
-  });
-  const [chatSidebarWidth, setChatSidebarWidth] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem('attarokey_chat_sidebar_width');
-      if (saved) {
-        const num = parseInt(saved, 10);
-        if (!isNaN(num) && num >= 320 && num <= 800) return num;
-      }
-    } catch (e) {}
-    return 440;
-  });
-  const [isResizingChat, setIsResizingChat] = useState<boolean>(false);
   const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
   const [hasMentionNotification, setHasMentionNotification] = useState<boolean>(false);
   const [headerSelectedSantri, setHeaderSelectedSantri] = useState<Santri | null>(null);
-  const [isNotificationsOpen, setIsNotificationsOpen] = useState<boolean>(false);
-  const [showNotifPermissionModal, setShowNotifPermissionModal] = useState<boolean>(false);
-  const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState<boolean>(true);
-
-  // Auto prompt for notification permission on initial load if not yet decided and not dismissed
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search);
-      if (urlParams.get('request_notification') === '1' || urlParams.get('prompt_notif') === '1') {
-        setShowNotifPermissionModal(true);
-        return;
-      }
-      if ('Notification' in window) {
-        if (Notification.permission === 'default' && !localStorage.getItem('smartsantri_notif_modal_dismissed')) {
-          const timer = setTimeout(() => {
-            setShowNotifPermissionModal(true);
-          }, 2200);
-          return () => clearTimeout(timer);
-        }
-      }
-    }
-  }, []);
-
-  // Measure physical rendered width of #main-app-container to handle responsive adaptations
-  const mainAppContainerRef = useRef<HTMLDivElement>(null);
-  const [mainContainerWidth, setMainContainerWidth] = useState<number>(0);
-
-  useEffect(() => {
-    if (!mainAppContainerRef.current) return;
-    const el = mainAppContainerRef.current;
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        if (entry.contentRect) {
-          setMainContainerWidth(entry.contentRect.width);
-        }
-      }
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  // Determine whether sidebar chat pushes the main layout (only on screens >= 1024px)
-  const isPushingSidebar = !isMobile && isChatOpen && chatLayoutMode === 'sidebar' && windowWidth >= 1024;
-
-  // Auto-collapse left desktop sidebar when space is tight (< 760px), and restore when chat closes
-  const wasDesktopSidebarOpenBeforeChatRef = useRef<boolean | null>(null);
-
-  useEffect(() => {
-    if (isMobile) return;
-
-    if (isChatOpen && chatLayoutMode === 'sidebar') {
-      const estimatedAvailable = windowWidth - 288 - chatSidebarWidth;
-      if (estimatedAvailable < 760 && isDesktopSidebarOpen) {
-        wasDesktopSidebarOpenBeforeChatRef.current = true;
-        setIsDesktopSidebarOpen(false);
-      }
-    } else {
-      if (wasDesktopSidebarOpenBeforeChatRef.current === true) {
-        setIsDesktopSidebarOpen(true);
-        wasDesktopSidebarOpenBeforeChatRef.current = null;
-      }
-    }
-  }, [isChatOpen, chatLayoutMode, isMobile, chatSidebarWidth, windowWidth]);
-
-  // Maximum expansion for sidebar chat: strictly 40% of main page size without sidebar chat
-  const maxChatSidebarWidth = React.useMemo(() => {
-    if (typeof window === 'undefined') return 520;
-    const currentLeft = isDesktopSidebarOpen ? 288 : 72;
-    const mainPageWidthWithoutChat = Math.max(320, windowWidth - currentLeft);
-    return Math.max(320, Math.floor(mainPageWidthWithoutChat * 0.40));
-  }, [windowWidth, isDesktopSidebarOpen]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || isMobile) return;
-    if (chatSidebarWidth > maxChatSidebarWidth) {
-      setChatSidebarWidth(maxChatSidebarWidth);
-      try {
-        localStorage.setItem('attarokey_chat_sidebar_width', maxChatSidebarWidth.toString());
-      } catch (e) {}
-    }
-  }, [maxChatSidebarWidth, isMobile]);
-
-  // Calculate if main layout is pushed narrow by sidebar chat or container constraint
-  const isMainNarrow = React.useMemo(() => {
-    if (isMobile) return false;
-    if (isPushingSidebar) {
-      if (mainContainerWidth > 0) return mainContainerWidth < 920;
-      const curLeft = isDesktopSidebarOpen ? 288 : 72;
-      return (windowWidth - curLeft - chatSidebarWidth) < 920;
-    }
-    return mainContainerWidth > 0 && mainContainerWidth < 820;
-  }, [isMobile, isPushingSidebar, mainContainerWidth, windowWidth, isDesktopSidebarOpen, chatSidebarWidth]);
-
-  const isMainUltraNarrow = React.useMemo(() => {
-    if (isMobile) return false;
-    if (mainContainerWidth > 0) return mainContainerWidth < 640;
-    if (isPushingSidebar) {
-      const curLeft = isDesktopSidebarOpen ? 288 : 72;
-      return (windowWidth - curLeft - chatSidebarWidth) < 640;
-    }
-    return false;
-  }, [isMobile, mainContainerWidth, isPushingSidebar, isDesktopSidebarOpen, windowWidth, chatSidebarWidth]);
-
-  const handleToggleChat = React.useCallback(() => {
-    setIsChatOpen(prev => {
-      const next = !prev;
-      if (next && chatLayoutMode === 'sidebar') {
-        setIsNotificationsOpen(false);
-      }
-      return next;
-    });
-  }, [chatLayoutMode]);
-
-  const handleToggleNotifications = React.useCallback(() => {
-    setIsNotificationsOpen(prev => {
-      const next = !prev;
-      if (next && chatLayoutMode === 'sidebar') {
-        setIsChatOpen(false);
-      }
-      return next;
-    });
-  }, [chatLayoutMode]);
 
   // Pending user registrations for Superadmin
   const [pendingRegistrations, setPendingRegistrations] = useState<any[]>([]);
@@ -358,9 +155,11 @@ export default function App() {
   };
 
   // Realtime WS unread notification counter & mention detector for Admin Chat
-  const processedChatIdsRef = useRef<Set<string>>(new Set());
-
   React.useEffect(() => {
+    const currentRole = (localStorage.getItem('smartsantri_active_role') || 'superadmin').toLowerCase();
+    const currentUsername = (localStorage.getItem('smartsantri_active_username') || 'pengurus@attaroqqy.com').toLowerCase();
+    const currentPrefix = currentUsername.split('@')[0];
+
     const unsubscribe = subscribeRealtimeChanges((payload: any) => {
       if (
         (payload.type === 'admin_chat_message' && payload.message) || 
@@ -370,121 +169,29 @@ export default function App() {
         if (!rawObj) return;
 
         const msgList = Array.isArray(rawObj) ? rawObj : [rawObj];
-        
-        // Dynamically read current active credentials at message receipt time
-        const currentRole = (localStorage.getItem('smartsantri_active_role') || 'superadmin').trim().toLowerCase();
-        const currentUsername = (localStorage.getItem('smartsantri_active_username') || '').trim().toLowerCase();
-        const currentUserId = String(localStorage.getItem('smartsantri_active_user_id') || '').trim();
-        const currentPrefix = currentUsername.includes('@') ? currentUsername.split('@')[0] : currentUsername;
-
-        let newUnreadCount = 0;
-
         msgList.forEach((msgObj: any) => {
-          if (!msgObj) return;
-
-          // Deduplicate message processing to prevent duplicate notifications from client WS + server DB broadcast
-          const msgId = String(msgObj.id || '');
-          if (msgId) {
-            if (processedChatIdsRef.current.has(msgId)) {
-              return; // Already handled, avoid duplicate chime/badge
+          if (msgObj && (msgObj.message || msgObj.text)) {
+            const lowerMsg = String(msgObj.message || msgObj.text).toLowerCase();
+            const isMentioned = lowerMsg.includes(`@${currentRole}`) || 
+                                lowerMsg.includes(`@${currentUsername}`) || 
+                                (currentPrefix && lowerMsg.includes(`@${currentPrefix}`)) ||
+                                lowerMsg.includes('@admin');
+            if (isMentioned) {
+              setHasMentionNotification(true);
             }
-            processedChatIdsRef.current.add(msgId);
-            if (processedChatIdsRef.current.size > 400) {
-              const firstId = processedChatIdsRef.current.values().next().value;
-              if (firstId) processedChatIdsRef.current.delete(firstId);
-            }
-          }
-
-          const senderUsername = (msgObj.sender_username || msgObj.sender || '').trim().toLowerCase();
-          const senderId = String(msgObj.sender_id || '').trim();
-
-          // Precise isFromMe verification (never fuzzy match generic prefixes)
-          const isFromMe = Boolean(
-            (currentUsername && senderUsername && senderUsername === currentUsername) ||
-            (currentUserId && senderId && senderId === currentUserId)
-          );
-
-          // Target channel check
-          const targetChannel = (msgObj.recipient_role || msgObj.channel || 'semua').trim().toLowerCase();
-          const isForMyRole = 
-            targetChannel === 'semua' || 
-            currentRole === 'superadmin' || 
-            currentRole === 'pimpinan' || 
-            targetChannel === currentRole;
-
-          // Mention detector
-          const rawMessageText = String(msgObj.message || msgObj.text || '');
-          const lowerMsg = rawMessageText.toLowerCase();
-          const isMentioned = Boolean(
-            lowerMsg.includes(`@${currentRole}`) || 
-            (currentUsername && lowerMsg.includes(`@${currentUsername}`)) || 
-            (currentPrefix && lowerMsg.includes(`@${currentPrefix}`)) ||
-            lowerMsg.includes('@admin') ||
-            lowerMsg.includes('@semua')
-          );
-
-          if (isMentioned && !isFromMe) {
-            setHasMentionNotification(true);
-          }
-
-          // Trigger Device / Browser Notification with sound and vibration if message is meant for this user
-          if (!isFromMe && (isForMyRole || isMentioned)) {
-            newUnreadCount++;
-
-            const senderName = msgObj.sender_name || msgObj.sender || 'Pengurus Pesantren';
-            const role = msgObj.sender_role || msgObj.senderRole || '';
-            const rawText = rawMessageText || (msgObj.attachment ? `[Lampiran: ${msgObj.attachment.name || 'File'}]` : 'Mengirim pesan baru.');
-            const cleanText = String(rawText).length > 120 ? String(rawText).slice(0, 117) + '...' : String(rawText);
-
-            // Send device notification & emit in-app toast event
-            sendDeviceNotification({
-              title: `${senderName}${role ? ` (${role})` : ''}`,
-              body: cleanText,
-              icon: msgObj.sender_avatar || msgObj.senderAvatar || '/logo.svg',
-              senderAvatar: msgObj.sender_avatar || msgObj.senderAvatar || '/logo.svg',
-              channel: targetChannel,
-              tag: `smartsantri-chat-${msgId || Date.now()}`,
-              url: '/',
-              onClick: () => {
-                setIsChatOpen(true);
-                setUnreadChatCount(0);
-                setHasMentionNotification(false);
-              }
-            });
           }
         });
 
-        if (!isChatOpen && newUnreadCount > 0) {
-          setUnreadChatCount(prev => prev + newUnreadCount);
+        if (!isChatOpen) {
+          setUnreadChatCount(prev => prev + (Array.isArray(rawObj) ? rawObj.length : 1));
         }
       }
     });
-
-    // Listen for service worker notification clicks
-    const handleSwMessage = (e: MessageEvent) => {
-      if (e.data && e.data.type === 'NOTIFICATION_CLICKED') {
-        setIsChatOpen(true);
-        setUnreadChatCount(0);
-        setHasMentionNotification(false);
-      }
-    };
-    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-      navigator.serviceWorker.addEventListener('message', handleSwMessage);
-    }
-
-    return () => {
-      unsubscribe();
-      if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-        navigator.serviceWorker.removeEventListener('message', handleSwMessage);
-      }
-    };
+    return () => unsubscribe();
   }, [isChatOpen]);
 
   const handleChangeModule = (mod: string, subTab?: string) => {
     if (isSelectionMode) return;
-    if (typeof window !== 'undefined') {
-      window.scrollTo({ top: 0, behavior: 'instant' });
-    }
     setActiveModule(mod);
     if (subTab) {
       setActiveSubTab(subTab);
@@ -521,208 +228,136 @@ export default function App() {
     }
   };
 
-  // Unified States for Pesantren Records (Full online Supabase state with Instant Local Cache Warm-up)
-  const [santriList, setSantriList] = useState<Santri[]>(() => {
-    try {
-      const cached = localStorage.getItem('smartsantri_santriList');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch (e) {}
-    return [];
-  });
-  const [bendaharaList, setBendaharaList] = useState<BendaharaRecord[]>(() => {
-    try {
-      const cached = localStorage.getItem('smartsantri_bendaharaList');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch (e) {}
-    return [];
-  });
-  const [keamananList, setKeamananList] = useState<KeamananRecord[]>(() => {
-    try {
-      const cached = localStorage.getItem('smartsantri_keamananList');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch (e) {}
-    return [];
-  });
-  const [humasList, setHumasList] = useState<HumasAgenda[]>(() => {
-    try {
-      const cached = localStorage.getItem('smartsantri_humasList');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch (e) {}
-    return [];
-  });
-  const [pendidikanList, setPendidikanList] = useState<KelasPendidikan[]>(() => {
-    try {
-      const cached = localStorage.getItem('smartsantri_pendidikanList');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch (e) {}
-    return [];
-  });
+  // Unified States for Pesantren Records (Full online Supabase state)
+  const [santriList, setSantriList] = useState<Santri[]>([]);
+  const [bendaharaList, setBendaharaList] = useState<BendaharaRecord[]>([]);
+  const [keamananList, setKeamananList] = useState<KeamananRecord[]>([]);
+  const [humasList, setHumasList] = useState<HumasAgenda[]>([]);
+  const [pendidikanList, setPendidikanList] = useState<KelasPendidikan[]>([]);
   
-  // Track loaded modules to fetch on demand
-  const loadedModulesRef = React.useRef<Set<string>>(new Set());
-
   // Track newly added or modified santri to prevent initial load from overwriting them while async requests are pending
   const pendingOperations = React.useRef<Map<string, { data: Santri; timestamp: number }>>(new Map());
   // Track recently deleted santri IDs to prevent realtime listeners from re-inserting them
   const deletedSantriIds = React.useRef<Map<string, number>>(new Map());
  
-  // Load core santri data
-  const loadSantriData = React.useCallback(() => {
-    fetchTableData<Santri>('santri', 'smartsantri_santriList', [])
-      .then(list => {
-        const needsEducationReset = !localStorage.getItem('smartsantri_education_reset_v2026');
-        let hasDummy = false;
-        const cleaned = list.map(s => {
-          let updated = { ...s };
-          const unifiedStatus = s.statusKeanggotaan || (s as any).status || 'Aktif';
-          updated.statusKeanggotaan = unifiedStatus as any;
+  // On mount, load data once from Supabase and set up automatic WebSockets Supabase Realtime listener
+  React.useEffect(() => {
+    const cleanSantri = (s: any) => {
+      let updated = { ...s };
+      const unifiedStatus = s.statusKeanggotaan || s.status || 'Aktif';
+      updated.statusKeanggotaan = unifiedStatus as any;
+      if (s.kelas === 'VII Tsanawiyah A') {
+        updated.kelas = 'Tanpa Kelas';
+      }
+      if (s.kamar === 'Al-Ghazali 01' || s.kamar === 'Al Ghazali 01') {
+        updated.kamar = 'Tanpa Kamar';
+      }
+      if (s.nik !== undefined && s.nik !== null) updated.nik = formatBigDigit(s.nik);
+      if (s.nisn !== undefined && s.nisn !== null) updated.nisn = formatBigDigit(s.nisn);
+      if (s.noKk !== undefined && s.noKk !== null) updated.noKk = formatBigDigit(s.noKk);
+      if (s.nikAyah !== undefined && s.nikAyah !== null) updated.nikAyah = formatBigDigit(s.nikAyah);
+      if (s.nikIbu !== undefined && s.nikIbu !== null) updated.nikIbu = formatBigDigit(s.nikIbu);
+      if (s.noHp !== undefined && s.noHp !== null) updated.noHp = formatBigDigit(s.noHp);
+      return updated;
+    };
 
-          if (needsEducationReset) {
-            hasDummy = true;
-            updated.pendidikanFormal = '';
-            updated.pendidikanInternal = '';
-            updated.nism = '';
-            updated.indukWustho = '';
-            updated.indukUlya = '';
-            updated.indukMhd = '';
-            (updated as any).calonLembagaId = undefined;
-            if (updated.kelas && (updated.kelas.toLowerCase().includes('calon') || updated.kelas === 'VII Tsanawiyah A')) {
+    const loadAllData = () => {
+      fetchTableData<Santri>('santri', 'smartsantri_santriList', [])
+        .then(list => {
+          let hasDummy = false;
+          const cleaned = list.map(s => {
+            let updated = { ...s };
+            // Ensure statusKeanggotaan is always set
+            const unifiedStatus = s.statusKeanggotaan || (s as any).status || 'Aktif';
+            updated.statusKeanggotaan = unifiedStatus as any;
+
+            if (s.kelas === 'VII Tsanawiyah A') {
+              hasDummy = true;
               updated.kelas = 'Tanpa Kelas';
             }
-          }
-
-          if (s.kelas === 'VII Tsanawiyah A') {
-            hasDummy = true;
-            updated.kelas = 'Tanpa Kelas';
-          }
-          if (updated.kelas && updated.kelas.toLowerCase().includes('calon pelajar')) {
-            hasDummy = true;
-            updated.kelas = updated.kelas.replace(/calon pelajar/gi, 'Calon Peserta Didik');
-            updateTableRow('santri', 'smartsantri_santriList', updated.id, updated).catch(() => {});
-          }
-          if (s.kamar === 'Al-Ghazali 01' || s.kamar === 'Al Ghazali 01') {
-            hasDummy = true;
-            updated.kamar = 'Tanpa Kamar';
-          }
-          if (s.nik !== undefined && s.nik !== null) updated.nik = formatBigDigit(s.nik);
-          if (s.nisn !== undefined && s.nisn !== null) updated.nisn = formatBigDigit(s.nisn);
-          if (s.noKk !== undefined && s.noKk !== null) updated.noKk = formatBigDigit(s.noKk);
-          if (s.nikAyah !== undefined && s.nikAyah !== null) updated.nikAyah = formatBigDigit(s.nikAyah);
-          if (s.nikIbu !== undefined && s.nikIbu !== null) updated.nikIbu = formatBigDigit(s.nikIbu);
-          if (s.noHp !== undefined && s.noHp !== null) updated.noHp = formatBigDigit(s.noHp);
-          // Hapus semua nomor NISM sesuai instruksi (dikosongkan agar diisi ulang sesuai acuan tanggal masuk)
-          updated.nism = '';
-          updated.indukWustho = '';
-          updated.indukUlya = '';
-          updated.indukMhd = '';
-          return updated;
-        });
-
-        if (needsEducationReset) {
-          try {
-            localStorage.setItem('smartsantri_education_reset_v2026', 'true');
-          } catch (e) {}
-        }
-
-        setSantriList((prev) => {
-          const now = Date.now();
-          for (const [id, op] of pendingOperations.current.entries()) {
-            if (now - op.timestamp > 15000) {
-              pendingOperations.current.delete(id);
+            if (updated.kelas && updated.kelas.toLowerCase().includes('calon pelajar')) {
+              hasDummy = true;
+              updated.kelas = updated.kelas.replace(/calon pelajar/gi, 'Calon Peserta Didik');
+              updateTableRow('santri', 'smartsantri_santriList', updated.id, updated).catch(() => {});
             }
-          }
-          for (const [id, time] of deletedSantriIds.current.entries()) {
-            if (now - time > 60000) {
-              deletedSantriIds.current.delete(id);
+            if (s.kamar === 'Al-Ghazali 01' || s.kamar === 'Al Ghazali 01') {
+              hasDummy = true;
+              updated.kamar = 'Tanpa Kamar';
             }
-          }
+            return updated;
+          });
 
-          const updatedCleaned = cleaned
-            .filter(item => !deletedSantriIds.current.has(item.id))
-            .map(item => {
-              const pending = pendingOperations.current.get(item.id);
-              if (pending) {
-                return pending.data;
+          setSantriList((prev) => {
+            const now = Date.now();
+            // Clean up operations older than 15 seconds
+            for (const [id, op] of pendingOperations.current.entries()) {
+              if (now - op.timestamp > 15000) {
+                pendingOperations.current.delete(id);
               }
-              return item;
-            });
+            }
+            // Clean up deleted items older than 60 seconds
+            for (const [id, time] of deletedSantriIds.current.entries()) {
+              if (now - time > 60000) {
+                deletedSantriIds.current.delete(id);
+              }
+            }
 
-          const brandNewPending = Array.from(pendingOperations.current.values())
-            .filter((op: { data: Santri; timestamp: number }) => !deletedSantriIds.current.has(op.data.id) && !cleaned.some(c => c.id === op.data.id))
-            .map((op: { data: Santri; timestamp: number }) => op.data);
+            // Map server's cleaned list, overriding any items with active pending updates
+            const updatedCleaned = cleaned
+              .filter(item => !deletedSantriIds.current.has(item.id))
+              .map(item => {
+                const pending = pendingOperations.current.get(item.id);
+                if (pending) {
+                  return pending.data;
+                }
+                return item;
+              });
 
-          const resultList = [...brandNewPending, ...updatedCleaned];
-          if (prev === resultList) {
-            return prev;
-          }
-          if (prev.length === resultList.length && prev.length > 0) {
-            // Fast equality heuristic to avoid freezing the main thread with 4.3MB JSON.stringify
-            if (prev[0]?.id === resultList[0]?.id && 
-                prev[prev.length - 1]?.id === resultList[resultList.length - 1]?.id &&
-                (prev[0] as any)?.updated_at === (resultList[0] as any)?.updated_at) {
+            // Find pending items that are not yet in the cleaned list (such as brand new ones)
+            const brandNewPending = Array.from(pendingOperations.current.values())
+              .filter((op: { data: Santri; timestamp: number }) => !deletedSantriIds.current.has(op.data.id) && !cleaned.some(c => c.id === op.data.id))
+              .map((op: { data: Santri; timestamp: number }) => op.data);
+
+            const resultList = [...brandNewPending, ...updatedCleaned];
+            if (JSON.stringify(prev) === JSON.stringify(resultList)) {
               return prev;
             }
+            return resultList;
+          });
+
+          if (hasDummy) {
+            list.forEach(async (s) => {
+              if (s.kelas === 'VII Tsanawiyah A' || s.kamar === 'Al-Ghazali 01' || s.kamar === 'Al Ghazali 01') {
+                try {
+                  const updatedKamar = s.kamar === 'Al-Ghazali 01' || s.kamar === 'Al Ghazali 01' ? 'Tanpa Kamar' : s.kamar;
+                  const updatedKelas = s.kelas === 'VII Tsanawiyah A' ? 'Tanpa Kelas' : s.kelas;
+                  await updateTableRow('santri', 'smartsantri_santriList', s.id, { ...s, kelas: updatedKelas, kamar: updatedKamar });
+                } catch (e) {
+                  console.error('Failed to update dummy class/room in DB:', e);
+                }
+              }
+            });
           }
-          return resultList;
         });
 
-        if (hasDummy) {
-          list.forEach(async (s) => {
-            if (s.kelas === 'VII Tsanawiyah A' || s.kamar === 'Al-Ghazali 01' || s.kamar === 'Al Ghazali 01') {
-              try {
-                const updatedKamar = s.kamar === 'Al-Ghazali 01' || s.kamar === 'Al Ghazali 01' ? 'Tanpa Kamar' : s.kamar;
-                const updatedKelas = s.kelas === 'VII Tsanawiyah A' ? 'Tanpa Kelas' : s.kelas;
-                await updateTableRow('santri', 'smartsantri_santriList', s.id, { ...s, kelas: updatedKelas, kamar: updatedKamar });
-              } catch (e) {
-                console.error('Failed to update dummy class/room in DB:', e);
-              }
-            }
-          });
-        }
-      });
-  }, []);
-
-  // Lazy load module data on demand when selected
-  React.useEffect(() => {
-    if (!loadedModulesRef.current.has('santri')) {
-      loadedModulesRef.current.add('santri');
-      loadSantriData();
-    }
-
-    if (activeModule === 'bendahara' && !loadedModulesRef.current.has('bendahara')) {
-      loadedModulesRef.current.add('bendahara');
       fetchTableData<BendaharaRecord>('bendahara', 'smartsantri_bendaharaList', [])
         .then(data => {
           setBendaharaList(prev => JSON.stringify(prev) === JSON.stringify(data) ? prev : data);
         });
-    }
 
-    if ((activeModule === 'keamanan' || activeModule === 'home') && !loadedModulesRef.current.has('keamanan')) {
-      loadedModulesRef.current.add('keamanan');
       fetchTableData<KeamananRecord>('keamanan', 'smartsantri_keamananList', [])
         .then(data => {
           setKeamananList(prev => JSON.stringify(prev) === JSON.stringify(data) ? prev : data);
         });
-    }
-  }, [activeModule, loadSantriData]);
+    };
 
-  // Realtime subscriptions
-  React.useEffect(() => {
+    loadAllData();
+
+    // Auto-polling every 10 seconds to ensure database changes (e.g. from MySQL / direct queries / other devices) are always displayed
+    const appPollInterval = setInterval(() => {
+      loadAllData();
+    }, 10000);
+
     // Subscribe to WebSocket realtime changes from server
     const unsubscribeWs = subscribeRealtimeChanges((payload: any) => {
       if (payload.event === 'db_change' || payload.type === 'db_change' || payload.action === 'db_change') {
@@ -775,16 +410,30 @@ export default function App() {
               return [camelData, ...prev];
             });
           }
-        } else if (payload.table === 'santri') {
-          loadSantriData();
+        } else {
+          loadAllData();
         }
+      } else if (payload.action === 'truncate_all' || !payload.data) {
+        loadAllData();
       }
     });
 
-    return () => {
-      unsubscribeWs();
+    // Re-fetch immediately when screen/tab regains focus or visibility
+    const handleFocusOrVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        loadAllData();
+      }
     };
-  }, [loadSantriData]);
+    window.addEventListener('focus', handleFocusOrVisibility);
+    document.addEventListener('visibilitychange', handleFocusOrVisibility);
+
+    return () => {
+      clearInterval(appPollInterval);
+      unsubscribeWs();
+      window.removeEventListener('focus', handleFocusOrVisibility);
+      document.removeEventListener('visibilitychange', handleFocusOrVisibility);
+    };
+  }, []);
 
   // Route newly logged-in users to their corresponding view immediately
   React.useEffect(() => {
@@ -1175,10 +824,7 @@ export default function App() {
         viewContent = (
           <BendaharaView
             bendaharaList={bendaharaList}
-            santriList={santriList}
             onToggleStatus={handleToggleBendahara}
-            activeSubTab={activeSubTab}
-            onChangeSubTab={setActiveSubTab}
           />
         );
         break;
@@ -1250,341 +896,122 @@ export default function App() {
 
     return (
       <ErrorBoundary key={activeModule} moduleName={moduleLabel}>
-        <React.Suspense fallback={
-          <div className="w-full min-h-[360px] flex flex-col items-center justify-center gap-3 text-slate-400">
-            <div className="w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin" />
-            <p className="text-xs font-semibold text-slate-500">Memuat modul {moduleLabel}...</p>
-          </div>
-        }>
-          {viewContent}
-        </React.Suspense>
+        {viewContent}
       </ErrorBoundary>
     );
   };
 
   if (!isLoggedIn) {
-    return (
-      <React.Suspense fallback={
-        <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">
-          <div className="w-8 h-8 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-        </div>
-      }>
-        <LoginView onLoginSuccess={() => setIsLoggedIn(true)} />
-      </React.Suspense>
-    );
+    return <LoginView onLoginSuccess={() => setIsLoggedIn(true)} />;
   }
 
   return (
-    <div className={`min-h-screen bg-white md:bg-slate-50 font-sans text-slate-800 antialiased flex flex-row relative selection:bg-emerald-200 selection:text-emerald-950 ${
-      isMobile && (isDrawerOpen || isDrawerClosing) ? 'h-screen max-h-screen overflow-hidden' : 'overflow-x-clip'
-    }`}>
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-800 antialiased flex flex-row selection:bg-emerald-200 selection:text-emerald-950">
       
-      {/* Mobile Drawer (Sidebar layer belakang di mode HP) */}
-      <Drawer
-        isOpen={isDrawerOpen}
-        onClose={handleCloseDrawer}
-        activeModule={activeModule}
-        activeSubTab={activeSubTab}
-        onChangeModule={(mod, sub) => {
-          setIsChatOpen(false);
-          handleChangeModule(mod, sub);
-          handleCloseDrawer();
-        }}
-        isSelectionMode={isSelectionMode}
-        onLogout={() => setIsLoggedIn(false)}
-        onOpenHelp={() => setShowHelpModal(true)}
-        onOpenChat={() => {
-          handleCloseDrawer();
-          setIsNotificationsOpen(false);
-          setIsChatOpen(true);
-        }}
-        isChatOpen={isChatOpen}
-        unreadChatCount={unreadChatCount}
-        hasMentionNotification={hasMentionNotification}
-        onSearchModeChange={(isSearching) => setIsDrawerSearchMode(isSearching)}
-        santriList={santriList}
-        onSelectSantri={(santri) => {
-          setIsChatOpen(false);
-          setHeaderSelectedSantri(santri);
-          handleCloseDrawer();
-        }}
-      />
-
-      {/* Sidebar - Desktop sidebar identical to mobile drawer, hidden on mobile */}
+      {/* Sidebar - Persistent floating sidebar on desktop, hidden on mobile */}
       <Sidebar 
-        isOpen={isDesktopSidebarOpen}
-        onClose={() => setIsDesktopSidebarOpen(false)}
-        onToggleExpand={() => setIsDesktopSidebarOpen(prev => !prev)}
         activeModule={activeModule}
         activeSubTab={activeSubTab}
-        onChangeModule={(mod, sub) => {
-          handleChangeModule(mod, sub);
-        }}
+        onChangeModule={handleChangeModule}
         isSelectionMode={isSelectionMode}
         onLogout={() => setIsLoggedIn(false)}
         onOpenHelp={() => setShowHelpModal(true)}
-        santriList={santriList}
-        onSelectSantri={(santri) => {
-          setHeaderSelectedSantri(santri);
-        }}
-        onOpenChat={handleToggleChat}
-        isChatOpen={isChatOpen}
-        unreadChatCount={unreadChatCount}
-        hasMentionNotification={hasMentionNotification}
       />
 
-      {/* Main Container - Pushed to right with rounded-2.5rem and scaled relatively to screen size when drawer open on mobile */}
-      <motion.div
-        ref={mainAppContainerRef}
-        id="main-app-container"
-        initial={false}
-        animate={
-          isMobile && isDrawerOpen
-            ? isDrawerSearchMode
-              ? {
-                  x: '100%',
-                  marginRight: '0px',
-                  scale: 0.88,
-                  opacity: 0,
-                  borderRadius: '40px',
-                  boxShadow: '0px 0px 0px 0px rgba(0, 0, 0, 0)',
-                  borderColor: 'rgba(229, 231, 235, 0)',
-                }
-              : {
-                  x: '80%',
-                  marginRight: '0px',
-                  scale: 0.88,
-                  opacity: 1,
-                  borderRadius: '40px',
-                  boxShadow: '0px 20px 50px 0px rgba(0, 0, 0, 0.25)',
-                  borderColor: 'rgba(229, 231, 235, 1)',
-                }
-            : !isMobile && isChatOpen && chatLayoutMode === 'sidebar'
-              ? {
-                  x: '0%',
-                  marginRight: `${isPushingSidebar ? chatSidebarWidth : 0}px`,
-                  scale: 1,
-                  opacity: 1,
-                  borderRadius: '0px',
-                  boxShadow: '0px 0px 0px 0px rgba(0, 0, 0, 0)',
-                  borderColor: 'rgba(229, 231, 235, 0)',
-                }
-              : {
-                  x: '0%',
-                  marginRight: '0px',
-                  scale: 1,
-                  opacity: 1,
-                  borderRadius: '0px',
-                  boxShadow: '0px 0px 0px 0px rgba(0, 0, 0, 0)',
-                  borderColor: 'rgba(229, 231, 235, 0)',
-                }
-        }
-        transition={
-          isResizingChat
-            ? { duration: 0 }
-            : { type: 'tween', ease: [0.25, 1, 0.5, 1], duration: 0.32 }
-        }
-        onAnimationComplete={() => {
-          if (!isDrawerOpen && isDrawerClosing) {
-            setIsDrawerClosing(false);
-          }
-        }}
-        style={{
-          transformOrigin: '0 50vh',
-          height: isMobile && (isDrawerOpen || isDrawerClosing) ? '100vh' : 'auto',
-          maxHeight: isMobile && (isDrawerOpen || isDrawerClosing) ? '100vh' : 'none',
-          borderStyle: 'solid',
-          borderWidth: isMobile ? '1px' : '0px',
-        }}
-        className={`w-full flex-1 flex flex-col min-w-0 bg-white relative z-20 ${
-          isMobile && isChatOpen ? 'hidden' : ''
-        } ${
-          isMainNarrow ? 'is-narrow-main' : ''
-        } ${isMainUltraNarrow ? 'is-ultra-narrow-main' : ''} ${
-          isMobile && (isDrawerOpen || isDrawerClosing)
-            ? 'h-screen max-h-screen overflow-hidden select-none' + (isDrawerSearchMode ? ' pointer-events-none' : '')
-            : 'min-h-screen'
-        }`}
-      >
-        {/* Tap-to-close Overlay on top of scaled-down main screen */}
-        {isMobile && isDrawerOpen && !isDrawerSearchMode && (
-          <div
-            id="mobile-main-dim-tap-overlay"
-            onClick={handleCloseDrawer}
-            className="absolute inset-0 z-50 cursor-pointer bg-transparent touch-none"
-            title="Ketuk untuk menutup menu"
-          />
-        )}
+      {/* Main Container */}
+      <div className="flex-1 flex flex-col min-h-screen min-w-0">
         
-        {/* Content Area - Text, icons, and contents fade/dim when sidebar is open, and immediately start transitioning back to full opacity the moment close is triggered */}
-        <motion.div 
-          initial={false}
-          animate={{
-            opacity: isMobile && isDrawerOpen ? 0.35 : 1
-          }}
-          transition={{ type: 'tween', ease: [0.25, 1, 0.5, 1], duration: 0.32 }}
-          className={`flex-1 flex flex-col w-full ${
-            isMobile && isDrawerOpen 
-              ? 'pointer-events-none max-h-screen overflow-hidden' 
-              : 'min-h-full'
-          }`}
-        >
-          {/* Upper Navigation Header bar */}
-          <Header 
-            activeModule={activeModule}
-            activeSubTab={activeSubTab}
-            onOpenDrawer={() => {
-              if (isMobile) {
-                if (isDrawerOpen) {
-                  handleCloseDrawer();
-                } else {
-                  setIsDrawerOpen(true);
-                  setIsDrawerClosing(false);
-                  setIsDrawerSearchMode(false);
-                }
-              } else {
-                setIsDesktopSidebarOpen(prev => !prev);
-              }
-            }}
-            onOpenChat={handleToggleChat}
-            isChatOpen={isChatOpen}
-            unreadChatCount={unreadChatCount}
-            hasMentionNotification={hasMentionNotification}
-            pendingRegistrationsCount={pendingRegistrations.length}
-            onOpenPendingModal={() => setShowPendingModal(true)}
-            onOpenNotifications={handleToggleNotifications}
-            isNotificationsOpen={isNotificationsOpen}
-            santriList={santriList}
-            onChangeModule={handleChangeModule}
-            onSelectSantri={(santri) => setHeaderSelectedSantri(santri)}
-          />
+        {/* Upper Navigation Header bar */}
+        <Header 
+          activeModule={activeModule}
+          activeSubTab={activeSubTab}
+          onOpenDrawer={() => setIsDrawerOpen(true)}
+          onOpenChat={() => setIsChatOpen(true)}
+          unreadChatCount={unreadChatCount}
+          hasMentionNotification={hasMentionNotification}
+          pendingRegistrationsCount={pendingRegistrations.length}
+          onOpenPendingModal={() => setShowPendingModal(true)}
+          santriList={santriList}
+          onChangeModule={handleChangeModule}
+          onSelectSantri={(santri) => setHeaderSelectedSantri(santri)}
+        />
 
-          {/* Modal Pending User Registrations for Superadmin */}
-          {showPendingModal && (
-            <React.Suspense fallback={null}>
-              <PendingRegistrationsModal
-                isOpen={showPendingModal}
-                onClose={() => setShowPendingModal(false)}
-                pendingList={pendingRegistrations}
-                onApprove={handleApprovePendingUser}
-                onReject={handleRejectPendingUser}
-              />
-            </React.Suspense>
-          )}
+        {/* Modal Pending User Registrations for Superadmin */}
+        <PendingRegistrationsModal
+          isOpen={showPendingModal}
+          onClose={() => setShowPendingModal(false)}
+          pendingList={pendingRegistrations}
+          onApprove={handleApprovePendingUser}
+          onReject={handleRejectPendingUser}
+        />
 
-          {/* Modal Santri Detail from Global Header Search */}
-          {headerSelectedSantri && (
-            <React.Suspense fallback={null}>
-              <SantriDetailModal
-                selectedSantri={headerSelectedSantri}
-                onClose={() => setHeaderSelectedSantri(null)}
-              />
-            </React.Suspense>
-          )}
-
-          {/* Global Help Modal */}
-          <HelpModal 
-            isOpen={showHelpModal} 
-            onClose={() => setShowHelpModal(false)} 
-            />
-
-          {/* Main Responsive Content Zone */}
-          <main className={`flex-1 w-full focus:outline-none transition-all duration-200 ${
-            isMainNarrow 
-              ? 'px-3.5 py-4 sm:px-4 pb-6' 
-              : 'px-4 py-6 pb-6 sm:px-6 lg:px-8'
-          }`}>
-            {/* Animated clean transitions for active module view */}
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={activeModule}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.15, ease: 'easeInOut' }}
-              >
-                {renderView()}
-              </motion.div>
-            </AnimatePresence>
-          </main>
-
-          {/* Modern minimal footer */}
-          <footer className="w-full border-t border-slate-200/60 bg-white py-5 text-center mt-12 hidden md:block">
-            <div className="w-full px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-slate-400 text-xs font-semibold">
-              <p>© 2026 AttarOkey 4.0. Hak Cipta Dilindungi Pengurus Pesantren.</p>
-              <div className="flex gap-4">
-                <span className="text-emerald-700">Tepat • Cepat • Teratur</span>
-                <span>v1.2.0 Stable</span>
-              </div>
-            </div>
-          </footer>
-        </motion.div>
-      </motion.div>
-
-      {/* Notifications Drawer (Mobile full-page or Desktop push side-panel) */}
-      <AnimatePresence>
-        {isNotificationsOpen && (
-          <NotificationsPage
-            isOpen={isNotificationsOpen}
-            onClose={() => setIsNotificationsOpen(false)}
-            pendingRegistrationsCount={pendingRegistrations.length}
-            onOpenPendingModal={() => setShowPendingModal(true)}
-            isMobile={isMobile}
+        {/* Modal Santri Detail from Global Header Search */}
+        {headerSelectedSantri && (
+          <SantriDetailModal
+            selectedSantri={headerSelectedSantri}
+            onClose={() => setHeaderSelectedSantri(null)}
           />
         )}
-      </AnimatePresence>
 
-      {/* Admin Obrolan Chat Drawer (Root level - strictly sits above Sidebar and pushes main layout) */}
-      <AdminChatDrawer
-        isOpen={isChatOpen}
-        onClose={() => setIsChatOpen(false)}
-        onOpenDrawer={() => {
-          if (isMobile) {
-            if (isDrawerOpen) {
-              handleCloseDrawer();
-            } else {
-              setIsDrawerOpen(true);
-              setIsDrawerClosing(false);
-              setIsDrawerSearchMode(false);
-            }
-          } else {
-            setIsDesktopSidebarOpen(prev => !prev);
-          }
-        }}
-        isDrawerOpen={isDrawerOpen}
-        onCloseDrawer={handleCloseDrawer}
-        isDrawerSearchMode={isDrawerSearchMode}
-        unreadCount={unreadChatCount}
-        onClearUnread={() => {
-          setUnreadChatCount(0);
-          setHasMentionNotification(false);
-        }}
-        layoutMode={chatLayoutMode}
-        onLayoutModeChange={(mode) => setChatLayoutMode(mode)}
-        sidebarWidth={chatSidebarWidth}
-        onSidebarWidthChange={(width) => setChatSidebarWidth(width)}
-        onResizeStateChange={(resizing) => setIsResizingChat(resizing)}
-        isDesktopSidebarOpen={isDesktopSidebarOpen}
-        maxSidebarWidth={maxChatSidebarWidth}
-      />
+        {/* Admin Obrolan Chat Drawer */}
+        <AdminChatDrawer
+          isOpen={isChatOpen}
+          onClose={() => setIsChatOpen(false)}
+          unreadCount={unreadChatCount}
+          onClearUnread={() => {
+            setUnreadChatCount(0);
+            setHasMentionNotification(false);
+          }}
+        />
 
-      {/* Offline & Sync Status Banner */}
-      <OfflineStatusBanner />
+        {/* Main Drawer Container (Mobile Menu) */}
+        <Drawer
+          isOpen={isDrawerOpen}
+          onClose={() => setIsDrawerOpen(false)}
+          activeModule={activeModule}
+          activeSubTab={activeSubTab}
+          onChangeModule={handleChangeModule}
+          isSelectionMode={isSelectionMode}
+          onLogout={() => setIsLoggedIn(false)}
+          onOpenHelp={() => setShowHelpModal(true)}
+        />
 
-      {/* Global Notification Permission Pop-up Dialog */}
-      <NotificationPermissionModal
-        isOpen={showNotifPermissionModal}
-        onClose={() => setShowNotifPermissionModal(false)}
-      />
+        {/* Global Help Modal */}
+        <HelpModal 
+          isOpen={showHelpModal} 
+          onClose={() => setShowHelpModal(false)} 
+        />
 
-      {/* Realtime In-App Chat Notification Toast Banner */}
-      <ChatNotificationToast 
-        onOpenChat={(channel) => {
-          setIsChatOpen(true);
-          setUnreadChatCount(0);
-          setHasMentionNotification(false);
-        }}
-      />
+        {/* Main Responsive Content Zone */}
+        <main className="flex-1 w-full max-w-7xl mx-auto px-4 py-6 pb-6 sm:px-6 lg:px-8 focus:outline-none">
+          
+          {/* Animated slide transitions for active module view */}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeModule}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+            >
+              {renderView()}
+            </motion.div>
+          </AnimatePresence>
+
+        </main>
+
+        {/* Modern minimal footer */}
+        <footer className="w-full border-t border-slate-200/60 bg-white py-5 text-center mt-12 hidden md:block">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-slate-400 text-xs font-semibold">
+            <p>© 2026 AttarOkey 4.0. Hak Cipta Dilindungi Pengurus Pesantren.</p>
+            <div className="flex gap-4">
+              <span className="text-emerald-700">Tepat • Cepat • Teratur</span>
+              <span>v1.2.0 Stable</span>
+            </div>
+          </div>
+        </footer>
+
+      </div>
 
     </div>
   );

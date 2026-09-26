@@ -9,10 +9,6 @@ export interface Santri {
   tanggalMasuk: string;
 
   // Identitas Santri tambahan
-  tahunMasuk?: string;
-  tanggalMasukLembaga?: string;
-  tahunMasukLembaga?: string;
-  nism?: string;
   nisn?: string;
   indukMhd?: string;
   indukWustho?: string;
@@ -48,14 +44,11 @@ export interface Santri {
   hubunganWali?: string;
 
   // Status Tambahan
-  statusKeanggotaan: 'Aktif' | 'Alumni' | 'Meninggal' | 'Mutasi';
+  statusKeanggotaan: 'Aktif' | 'Alumni' | 'Meninggal';
   status?: string;
   statusDomisili?: 'Muqim' | 'Kampung';
-  statusEmis?: 'Terdaftar' | 'Invalid' | 'Belum' | 'Keluar' | 'Lulus';
+  statusEmis?: 'Terdaftar' | 'Invalid' | 'Belum';
   statusVerval?: 'Sukses' | 'Proses';
-  tahunLulus?: string;
-  semester?: string;
-  kelasMhd?: string;
 
   // Administrasi
   tanggalKeluar?: string;
@@ -94,9 +87,6 @@ export interface KeamananRecord {
   poin: number;
   santriId?: string;
   nis?: string;
-  kelas?: string;
-  kategori?: string;
-  status?: string;
 }
 
 export interface BendaharaRecord {
@@ -107,42 +97,6 @@ export interface BendaharaRecord {
   nominal: number;
   status: 'Lunas' | 'Belum Lunas';
   tanggalBayar?: string;
-}
-
-export type WalletType = 'cash' | 'bank' | 'ewallet' | 'saving' | 'other';
-export type WalletTransactionType = 'bayar' | 'transfer' | 'terima';
-
-export interface Wallet {
-  id: string;
-  nama: string;
-  tipe: WalletType;
-  nomorRekening?: string;
-  atasNama?: string;
-  saldo: number;
-  warna: string;
-  icon?: string;
-  keterangan?: string;
-  isDefault?: boolean;
-  createdAt: string;
-  updatedAt?: string;
-}
-
-export interface WalletTransaction {
-  id: string;
-  walletId: string;
-  walletName?: string;
-  targetWalletId?: string;
-  targetWalletName?: string;
-  tipe: WalletTransactionType;
-  nominal: number;
-  biayaAdmin?: number;
-  kategori: string;
-  pihakTerkait?: string;
-  tanggal: string;
-  catatan?: string;
-  nomorReferensi?: string;
-  lampiran?: string;
-  createdAt: string;
 }
 
 export interface KelasPendidikan {
@@ -166,14 +120,10 @@ export interface Lembaga {
   id: string;
   nama: string;
   kode: string; // e.g., "MADIN", "MA", "TAHFIDZ"
-  jenjang?: string;
   deskripsi?: string;
   gender?: 'Putra' | 'Putri';
   jenis?: 'Formal' | 'Internal' | 'Rombel';
   logo?: string;
-  nomorStatistik?: string;
-  nomor_statistik?: string;
-  npsn?: string;
   taMulaiTanggal?: number; // 1-31
   taMulaiBulan?: number; // 1-12
   taSelesaiTanggal?: number; // 1-31
@@ -185,7 +135,7 @@ export interface Kelas {
   lembagaId: string;
   nama: string;
   waliKelas: string;
-  tingkatan: 'Ula' | 'Wustho' | 'Ulya' | 'Lainnya' | string;
+  tingkatan: 'Ula' | 'Wustho' | 'Ulya' | 'Lainnya';
   kapasitas?: number;
   batasUsiaHari?: number;
   batasUsiaBulan?: number;
@@ -194,36 +144,13 @@ export interface Kelas {
   isDefault?: boolean;
 }
 
-export const isCalonClass = (className?: string | null): boolean => {
-  if (!className) return false;
-  const lower = className.trim().toLowerCase();
-  return (
-    lower === 'calon pelajar' ||
-    lower === 'calon peserta didik' ||
-    lower.startsWith('calon ') ||
-    lower.startsWith('calon-') ||
-    lower.includes('calon wustho') ||
-    lower.includes('calon wushto') ||
-    lower.includes('calon ulya') ||
-    lower.includes('calon formal')
-  );
-};
-
-export const isDefaultClass = (c: { id?: string; nama?: string; isDefault?: boolean; pillType?: string } | null | undefined): boolean => {
+export const isDefaultClass = (c: { id?: string; nama?: string; isDefault?: boolean } | null | undefined): boolean => {
   if (!c) return false;
-  if (c.pillType === 'induk' || c.pillType === 'calon' || c.pillType === 'all' || c.pillType === 'unassigned') return true;
-  if (c.id && (c.id === 'default-induk' || c.id === 'default-calon' || c.id.endsWith('-default') || c.id.includes('-default') || c.id === 'all' || c.id === 'unassigned')) return true;
   if (c.nama) {
     const lower = c.nama.trim().toLowerCase();
-    if (
-      lower === 'data induk' ||
-      lower === 'calon pelajar' ||
-      lower === 'calon peserta didik' ||
-      lower === 'semua santri' ||
-      lower === 'tanpa kelas' ||
-      isCalonClass(lower)
-    ) return true;
+    if (lower === 'calon pelajar' || lower === 'calon peserta didik') return true;
   }
+  if (c.id && (c.id.endsWith('-default') || c.id.includes('-default'))) return true;
   if (c.isDefault !== undefined) return Boolean(c.isDefault);
   return false;
 };
@@ -246,24 +173,6 @@ export const isGenderMatch = (lembagaGender?: string | null, santriGender?: stri
   if (isMale(lG) && isMale(sG)) return true;
   if (isFemale(lG) && isFemale(sG)) return true;
   return lG === sG;
-};
-
-export const isClassGenderMatch = (className?: string | null, santriGender?: string | null): boolean => {
-  if (!className || !santriGender) return true;
-  const cNorm = className.trim().toLowerCase();
-  const sG = santriGender.trim().toLowerCase();
-  const isMale = sG === 'putra' || sG === 'laki-laki' || sG === 'l';
-  const isFemale = sG === 'putri' || sG === 'perempuan' || sG === 'p';
-
-  if (isMale) {
-    if (/\b(pi|putri)\b/i.test(cNorm)) return false;
-    if (cNorm.endsWith(' pi') || cNorm.endsWith('-pi') || cNorm.endsWith('_pi')) return false;
-  }
-  if (isFemale) {
-    if (/\b(pa|putra)\b/i.test(cNorm)) return false;
-    if (cNorm.endsWith(' pa') || cNorm.endsWith('-pa') || cNorm.endsWith('_pa')) return false;
-  }
-  return true;
 };
 
 export const isEmisTerdaftar = (status?: string | null): boolean => {
@@ -362,62 +271,5 @@ export interface AppCredentials {
   avatarUrl?: string;
   createdAt?: string;
   updatedAt?: string;
-}
-
-export interface PesantrenProfile {
-  namaPesantren: string;
-  namaYayasan: string;
-  nspp: string;
-  nomorNotaris: string;
-  alamat: string;
-  rt?: string;
-  rw?: string;
-  desa: string;
-  kecamatan: string;
-  kabupaten: string;
-  provinsi: string;
-  kodePos: string;
-  telepon: string;
-  email: string;
-  website: string;
-  
-  // Pengasuh & Pimpinan Tunggal
-  namaPengasuh: string;
-  namaKetuaYayasan: string;
-  
-  // Struktur Kepengurusan Putra
-  namaPengasuhPutra?: string;
-  namaWakilPengasuhPutra?: string;
-  namaKetuaPondokPutra?: string;
-  namaSekretarisPutra?: string;
-  namaBendaharaPutra?: string;
-  namaKetuaKeamananPutra?: string;
-  namaKetuaPendidikanPutra?: string;
-  namaKetuaHumasyPutra?: string;
-
-  // Struktur Kepengurusan Putri
-  namaPengasuhPutri?: string;
-  namaWakilPengasuhPutri?: string;
-  namaKetuaPondokPutri?: string;
-  namaSekretarisPutri?: string;
-  namaBendaharaPutri?: string;
-  namaKetuaKeamananPutri?: string;
-  namaKetuaPendidikanPutri?: string;
-  namaKetuaHumasyPutri?: string;
-
-  // Kompatibilitas Legacy
-  namaWakilPengasuh: string;
-  namaKetuaPondok: string;
-  namaSekretaris: string;
-  namaBendahara: string;
-  namaKetuaKeamanan: string;
-  namaKetuaPendidikan: string;
-  namaKetuaHumasy?: string;
-
-  kotaTandaTangan: string;
-  logoStyle: 'classic' | 'elegant' | 'modern';
-  kopTambahan1: string;
-  kopTambahan2: string;
-  logoUrl?: string;
 }
 

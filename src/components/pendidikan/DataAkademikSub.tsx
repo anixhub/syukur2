@@ -28,8 +28,8 @@ import {
   UserCheck,
   GraduationCap
 } from 'lucide-react';
-import { Santri, Lembaga, Kelas, KategoriRombel, KelompokRombel, RombelAssignment, isGenderMatch, isClassGenderMatch, isDefaultClass, isCalonClass } from '../../types';
-import { parseCatatanInvalid, cleanWaliKelas, isMatchLembagaStrict, getLembagaJenis, getSantriFormalEducationInfo, getDefaultCalonClassName } from '../../lib/utils';
+import { Santri, Lembaga, Kelas, KategoriRombel, KelompokRombel, RombelAssignment, isEmisTerdaftar, isGenderMatch } from '../../types';
+import { demoteSantriToCalonPesertaDidik, parseCatatanInvalid, cleanWaliKelas } from '../../lib/utils';
 import { renderSantriAvatar, getPesantrenProfile, calculateRealtimeAge } from '../SekretarisHelper';
 import SantriDetailModal from '../sekretaris/SantriDetailModal';
 import { ExportModal } from '../ExportModal';
@@ -74,6 +74,27 @@ export default function DataAkademikSub({
 
   // Primary mode state: 'formal' (Pendidikan Formal), 'internal' (Internal Pondok), or 'rombel' (Rombongan Belajar)
   const [academicType, setAcademicType] = useState<'formal' | 'internal' | 'rombel'>('formal');
+
+  // Helper to determine whether a Lembaga is Formal or Internal
+  const getLembagaJenis = (l: Lembaga): 'Formal' | 'Internal' => {
+    if (l.jenis && (l.jenis === 'Formal' || l.jenis === 'Internal')) return l.jenis;
+    const lower = (l.nama || '').toLowerCase();
+    const kode = (l.kode || '').toLowerCase();
+    if (
+      lower.includes('madin') || 
+      lower.includes('diniyah') || 
+      lower.includes('tpq') || 
+      lower.includes('tahfidz') || 
+      lower.includes('pondok') || 
+      lower.includes('kitab') || 
+      lower.includes('internal') ||
+      kode.includes('madin') ||
+      kode.includes('tahf')
+    ) {
+      return 'Internal';
+    }
+    return 'Formal';
+  };
 
   // Search & Filter States
   const [searchQuery, setSearchQuery] = useState('');
@@ -202,7 +223,7 @@ export default function DataAkademikSub({
   // Status EMIS Dropdown States
   const [activeEmisDropdownId, setActiveEmisDropdownId] = useState<string | null>(null);
   const [emisDropdownPos, setEmisDropdownPos] = useState<{ top: number; left: number; isUpward?: boolean } | null>(null);
-  const [pendingEmis, setPendingEmis] = useState<{ [santriId: string]: 'Terdaftar' | 'Belum' | 'Invalid' | 'Keluar' | 'Lulus' }>({});
+  const [pendingEmis, setPendingEmis] = useState<{ [santriId: string]: 'Terdaftar' | 'Belum' | 'Invalid' }>({});
 
   // Row Action Dropdown State
   const [openDropdownRowId, setOpenDropdownRowId] = useState<string | null>(null);
@@ -281,17 +302,14 @@ export default function DataAkademikSub({
 
   const scrollSourceRef = React.useRef<'main' | 'floating' | null>(null);
   const scrollTimeoutRef = React.useRef<number | null>(null);
-  const rafScrollRef = React.useRef<number | null>(null);
 
   const updateScrollButtons = () => {
     const container = containerRef.current;
     if (container) {
       const { scrollLeft, scrollWidth, clientWidth } = container;
       const hasHorizontalScroll = scrollWidth > clientWidth + 4;
-      const canLeft = hasHorizontalScroll && scrollLeft > 2;
-      const canRight = hasHorizontalScroll && scrollLeft + clientWidth < scrollWidth - 2;
-      setCanScrollLeft(prev => prev !== canLeft ? canLeft : prev);
-      setCanScrollRight(prev => prev !== canRight ? canRight : prev);
+      setCanScrollLeft(hasHorizontalScroll && scrollLeft > 2);
+      setCanScrollRight(hasHorizontalScroll && scrollLeft + clientWidth < scrollWidth - 2);
     }
   };
 
@@ -312,70 +330,59 @@ export default function DataAkademikSub({
   };
 
   const handleTableScroll = () => {
-    if (rafScrollRef.current) return;
-    rafScrollRef.current = requestAnimationFrame(() => {
-      rafScrollRef.current = null;
-      updateScrollButtons();
-      const container = containerRef.current;
-      if (!container) return;
+    updateScrollButtons();
+    const container = containerRef.current;
+    if (!container) return;
 
-      if (scrollSourceRef.current !== 'floating') {
-        scrollSourceRef.current = 'main';
-        if (scrollTimeoutRef.current) {
-          window.clearTimeout(scrollTimeoutRef.current);
-        }
-        scrollTimeoutRef.current = window.setTimeout(() => {
-          scrollSourceRef.current = null;
-        }, 150);
-
-        if (floatingHeaderRef.current && floatingHeaderRef.current.scrollLeft !== container.scrollLeft) {
-          floatingHeaderRef.current.scrollLeft = container.scrollLeft;
-        }
+    if (scrollSourceRef.current !== 'floating') {
+      scrollSourceRef.current = 'main';
+      if (scrollTimeoutRef.current) {
+        window.clearTimeout(scrollTimeoutRef.current);
       }
+      scrollTimeoutRef.current = window.setTimeout(() => {
+        scrollSourceRef.current = null;
+      }, 150);
 
-      const mainHeader = document.querySelector('header');
-      const mainHeaderHeight = mainHeader ? (mainHeader as HTMLElement).offsetHeight : 64;
-      const computedStickyTop = mainHeaderHeight;
-
-      setStickyTop(prev => prev !== computedStickyTop ? computedStickyTop : prev);
-
-      const containerRect = container.getBoundingClientRect();
-      const isHeaderFloating = 
-        containerRect.top <= computedStickyTop && 
-        containerRect.bottom > (computedStickyTop + 48);
-      setIsScrolled(prev => prev !== isHeaderFloating ? isHeaderFloating : prev);
-
-      setFloatingHeaderStyle(prev => {
-        if (Math.abs(prev.left - containerRect.left) < 0.5 && Math.abs(prev.width - containerRect.width) < 0.5) {
-          return prev;
-        }
-        return {
-          left: containerRect.left,
-          width: containerRect.width,
-        };
-      });
-
-      const tableEl = container.querySelector('table');
-      if (tableEl) {
-        const fullW = Math.max(tableEl.scrollWidth, tableEl.getBoundingClientRect().width);
-        if (fullW > 0) {
-          setFloatingTableWidth(prev => Math.abs(prev - fullW) < 1 ? prev : fullW);
-        }
-
-        const mainThs = tableEl.querySelectorAll('thead tr th');
-        if (mainThs && mainThs.length > 0) {
-          const widths = Array.from(mainThs).map(th => (th as HTMLElement).getBoundingClientRect().width);
-          if (widths.some(w => w > 0)) {
-            setColWidths(prev => {
-              if (prev.length === widths.length && prev.every((w, i) => Math.abs(w - widths[i]) < 0.5)) {
-                return prev;
-              }
-              return widths;
-            });
-          }
-        }
+      if (floatingHeaderRef.current && floatingHeaderRef.current.scrollLeft !== container.scrollLeft) {
+        floatingHeaderRef.current.scrollLeft = container.scrollLeft;
       }
+    }
+
+    const mainHeader = document.querySelector('header');
+    const mainHeaderHeight = mainHeader ? (mainHeader as HTMLElement).offsetHeight : 64;
+    const computedStickyTop = mainHeaderHeight;
+
+    setStickyTop(computedStickyTop);
+
+    const containerRect = container.getBoundingClientRect();
+    const isHeaderFloating = 
+      containerRect.top <= computedStickyTop && 
+      containerRect.bottom > (computedStickyTop + 48);
+    setIsScrolled(isHeaderFloating);
+
+    setFloatingHeaderStyle({
+      left: containerRect.left,
+      width: containerRect.width,
     });
+
+    const tableEl = container.querySelector('table');
+    if (tableEl) {
+      const fullW = Math.max(tableEl.scrollWidth, tableEl.getBoundingClientRect().width);
+      if (fullW > 0) setFloatingTableWidth(fullW);
+
+      const mainThs = tableEl.querySelectorAll('thead tr th');
+      if (mainThs && mainThs.length > 0) {
+        const widths = Array.from(mainThs).map(th => (th as HTMLElement).getBoundingClientRect().width);
+        if (widths.some(w => w > 0)) {
+          setColWidths(prev => {
+            if (prev.length === widths.length && prev.every((w, i) => Math.abs(w - widths[i]) < 0.5)) {
+              return prev;
+            }
+            return widths;
+          });
+        }
+      }
+    }
   };
 
   useEffect(() => {
@@ -411,7 +418,6 @@ export default function DataAkademikSub({
     }
 
     return () => {
-      if (rafScrollRef.current) cancelAnimationFrame(rafScrollRef.current);
       clearTimeout(timer);
       window.removeEventListener('resize', handleResize);
       document.removeEventListener('scroll', handleGlobalScroll, { capture: true });
@@ -421,47 +427,16 @@ export default function DataAkademikSub({
     };
   }, []);
 
-  // Active Lembagas list based on gender filter and selected mode (formal vs internal) - MEMOIZED
-  const activeLembagas = useMemo(() => {
-    return lembagasList.filter(l => {
-      const matchesGender = !l.gender || l.gender === (genderFilter as string) || (l.gender as string) === 'Campuran' || (l.gender as string) === 'Semua';
-      if (!matchesGender) return false;
-      if (academicType === 'rombel') return true;
-      const jenis = getLembagaJenis(l);
-      if (academicType === 'formal') return jenis === 'Formal';
-      if (academicType === 'internal') return jenis === 'Internal';
-      return true;
-    });
-  }, [lembagasList, genderFilter, academicType]);
-
-  // Pre-index classes by Lembaga ID for O(1) cell lookup
-  const classesByLembagaId = useMemo(() => {
-    const map = new Map<string, Kelas[]>();
-    kelasList.forEach(c => {
-      const lemId = String(c.lembagaId || (c as any).lembaga_id || '');
-      if (!map.has(lemId)) map.set(lemId, []);
-      map.get(lemId)!.push(c);
-    });
-    return map;
-  }, [kelasList]);
-
-  const cleanClassesByLembagaId = useMemo(() => {
-    const map = new Map<string, Kelas[]>();
-    classesByLembagaId.forEach((classes, lemId) => {
-      map.set(lemId, classes.filter(c => {
-        const lower = c.nama.trim().toLowerCase();
-        return !isCalonClass(lower) && lower !== 'tanpa kelas';
-      }));
-    });
-    return map;
-  }, [classesByLembagaId]);
-
-  // Performance caches across render cycles
-  const studentClassInLembagaCache = useMemo(() => new Map<string, string | null>(), [santriList, kelasList, lembagasList]);
-  const studentClassInfoCache = useMemo(() => new Map<string, { className: string; institutionCode: string; lembagaId: string }[]>(), [kelasList, lembagasList, santriList]);
-  const studentRombelInfoCache = useMemo(() => new Map<string, { groupId: string; groupName: string; categoryName: string }[]>(), [assignmentsList, groupsList, categoriesList, santriList]);
-  const formattedAlamatCache = useMemo(() => new Map<string, string>(), [santriList]);
-  const formalInfoCache = useMemo(() => new Map<string, any>(), [santriList, lembagasList, kelasList]);
+  // Active Lembagas list based on gender filter and selected mode (formal vs internal)
+  const activeLembagas = lembagasList.filter(l => {
+    const matchesGender = !l.gender || l.gender === (genderFilter as string) || (l.gender as string) === 'Campuran' || (l.gender as string) === 'Semua';
+    if (!matchesGender) return false;
+    if (academicType === 'rombel') return true;
+    const jenis = getLembagaJenis(l);
+    if (academicType === 'formal') return jenis === 'Formal';
+    if (academicType === 'internal') return jenis === 'Internal';
+    return true;
+  });
 
   // Reset page, filters and selection when major criteria change
   useEffect(() => {
@@ -486,11 +461,6 @@ export default function DataAkademikSub({
 
   // Helper to resolve student institution & class
   const getStudentClassInfo = (s: Santri) => {
-    const cacheKey = `${s.id}_${s.kelas || ''}_${s.pendidikanInternal || ''}`;
-    if (studentClassInfoCache.has(cacheKey)) {
-      return studentClassInfoCache.get(cacheKey)!;
-    }
-
     const sClasses = s.kelas ? s.kelas.split(',').map(x => x.trim()) : [];
     // Filter active classes that exist in our database
     const activeClasses = sClasses.map(clsName => {
@@ -520,7 +490,7 @@ export default function DataAkademikSub({
           const alreadyIn = activeClasses.some(c => c.lembagaId === String(lem.id));
           if (!alreadyIn) {
             activeClasses.push({
-              className: getDefaultCalonClassName(lem, s.gender),
+              className: 'Calon Peserta Didik',
               institutionCode: lem.kode || lem.nama,
               lembagaId: String(lem.id)
             });
@@ -529,203 +499,98 @@ export default function DataAkademikSub({
       });
     }
 
-    studentClassInfoCache.set(cacheKey, activeClasses);
     return activeClasses;
   };
 
   // Helper to get student's class name in a specific Lembaga
   const getStudentClassInLembaga = (s: Santri, l: Lembaga): string | null => {
-    const cacheKey = `${s.id}_${l.id}_${s.kelas || ''}_${s.pendidikanFormal || ''}_${s.pendidikanInternal || ''}`;
-    if (studentClassInLembagaCache.has(cacheKey)) {
-      return studentClassInLembagaCache.get(cacheKey)!;
-    }
-
-    if (!s || !l) return null;
-    // STRICT GENDER CONSTRAINT:
-    if (!isGenderMatch(l.gender, s.gender)) {
-      studentClassInLembagaCache.set(cacheKey, null);
-      return null;
-    }
-
-    const isFormal = getLembagaJenis(l) === 'Formal';
     const norm = (str?: string | null) => (str || '').trim().toLowerCase();
     const targetId = norm(l.id);
+    const targetNama = norm(l.nama);
+    const targetKode = norm(l.kode);
 
     const cleanClassName = (raw: string): string => {
       let str = raw.trim();
       if (str.includes(' - ')) {
-        const parts = str.split(' - ').map(p => p.trim()).filter(Boolean);
-        if (parts.length >= 3 && /^(?:at[- ]?taroqqy|taroqqy)$/i.test(parts[1])) {
-          str = parts.slice(2).join(' - ').trim();
-        } else {
-          str = parts.slice(1).join(' - ').trim();
-        }
+        const parts = str.split(' - ');
+        str = parts.slice(1).join(' - ').trim();
       } else if (str.includes('-')) {
-        const parts = str.split('-').map(p => p.trim()).filter(Boolean);
-        if (parts.length >= 3 && /^(?:at[- ]?taroqqy|taroqqy)$/i.test(parts[1])) {
-          str = parts.slice(2).join('-').trim();
-        } else {
-          const candidate = parts.slice(1).join('-').trim();
-          if (candidate && !/^\d{6,}$/.test(candidate)) {
-            str = candidate;
-          }
+        const parts = str.split('-');
+        const candidate = parts.slice(1).join('-').trim();
+        if (candidate && !/^\d{6,}$/.test(candidate)) {
+          str = candidate;
         }
       }
-      str = str.replace(/^(?:at[- ]?taroqqy|taroqqy)\s*[-:]\s*/i, '').trim();
       return str || raw;
     };
 
-    const cleanClassStr = (str?: string | null) => {
-      if (!str) return '';
-      return str.trim().toLowerCase()
-        .replace(/[-_]/g, ' ')
-        .replace(/^(kelas|kls)\s+/, '')
-        .replace(/\s+(pa|pi|putra|putri)$/i, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-    };
-    const compactClassStr = (str?: string | null) => cleanClassStr(str).replace(/\s+/g, '');
-
-    let computedResult: string | null = null;
-
-    if (isFormal) {
-      // 1. Check s.pendidikanFormal
-      if (s.pendidikanFormal && s.pendidikanFormal.trim() !== '' && s.pendidikanFormal !== 'TIDAK TERDAFTAR' && s.pendidikanFormal !== 'Belum / Non-Formal' && s.pendidikanFormal !== '-') {
-        const formalParts = s.pendidikanFormal.split(',').map(x => x.trim()).filter(Boolean);
-        for (const entry of formalParts) {
-          const dashParts = entry.split('-');
-          const prefix = dashParts[0].trim();
-          if (isMatchLembagaStrict(l, prefix, s.gender) || isMatchLembagaStrict(l, entry, s.gender)) {
-            if (dashParts.length > 1) {
-              const clsPart = dashParts.slice(1).join('-').trim();
-              if (clsPart && !/^\d{6,}$/.test(clsPart) && isClassGenderMatch(clsPart, s.gender)) {
-                const clsPartClean = cleanClassStr(clsPart);
-                const clsPartCompact = compactClassStr(clsPart);
-                const matched = kelasList.find(k => {
-                  if (String(k.lembagaId || (k as any).lembaga_id) !== String(l.id)) return false;
-                  if (!isClassGenderMatch(k.nama, s.gender)) return false;
-                  const kClean = cleanClassStr(k.nama);
-                  const kCompact = compactClassStr(k.nama);
-                  return k.nama.trim().toLowerCase() === clsPart.toLowerCase() ||
-                         kClean === clsPartClean ||
-                         (clsPartCompact && kCompact === clsPartCompact);
-                });
-                computedResult = cleanClassName(matched ? matched.nama : clsPart);
-                studentClassInLembagaCache.set(cacheKey, computedResult);
-                return computedResult;
-              }
+    // 1. Check s.pendidikanFormal
+    if (s.pendidikanFormal) {
+      const formalParts = s.pendidikanFormal.split(',').map(x => norm(x)).filter(Boolean);
+      for (const pf of formalParts) {
+        if (
+          pf === targetId ||
+          (targetNama && pf === targetNama) ||
+          (targetKode && pf === targetKode) ||
+          (targetNama && targetNama.length > 2 && (pf.includes(targetNama) || targetNama.includes(pf))) ||
+          (targetKode && targetKode.length > 2 && (pf.includes(targetKode) || targetKode.includes(pf)))
+        ) {
+          const dashParts = pf.split('-');
+          if (dashParts.length > 1) {
+            const clsPart = dashParts.slice(1).join('-').trim();
+            if (clsPart && !/^\d{6,}$/.test(clsPart)) {
+              const matched = kelasList.find(k => String(k.lembagaId) === String(l.id) && k.nama.trim().toLowerCase() === clsPart.toLowerCase());
+              return cleanClassName(matched ? matched.nama : clsPart);
             }
-            computedResult = getDefaultCalonClassName(l, s.gender);
-            studentClassInLembagaCache.set(cacheKey, computedResult);
-            return computedResult;
           }
-        }
-        // If s.pendidikanFormal is set to another formal institution, NEVER return a class for this formal institution
-        studentClassInLembagaCache.set(cacheKey, null);
-        return null;
-      }
-
-      // 2. Fallback check on s.kelas if s.pendidikanFormal is empty
-      if (s.kelas) {
-        const sClasses = s.kelas.split(',').map(x => norm(x)).filter(Boolean);
-        const otherFormalLembagas = lembagasList.filter(otherL => getLembagaJenis(otherL) === 'Formal' && String(otherL.id) !== String(l.id));
-        const hasOtherFormalConflict = otherFormalLembagas.some(otherL => {
-          return sClasses.some(sc => isMatchLembagaStrict(otherL, sc, s.gender));
-        });
-        if (hasOtherFormalConflict) {
-          studentClassInLembagaCache.set(cacheKey, null);
-          return null;
-        }
-
-        const classesOfL = kelasList.filter(k => {
-          const lemId = norm((k as any).lembagaId || (k as any).lembaga_id);
-          return lemId === targetId && !norm(k.nama).includes('calon') && !norm(k.nama).includes('tanpa kelas') && isClassGenderMatch(k.nama, s.gender);
-        });
-        for (const k of classesOfL) {
-          const kClean = cleanClassStr(k.nama);
-          const kCompact = compactClassStr(k.nama);
-          const hasMatch = sClasses.some(sc => {
-            const scClean = cleanClassStr(sc);
-            const scCompact = compactClassStr(sc);
-            return sc === norm(k.nama) || scClean === kClean || (kCompact && scCompact === kCompact);
-          });
-          if (k.nama && hasMatch && !/^\d{6,}$/.test(k.nama)) {
-            computedResult = cleanClassName(k.nama);
-            studentClassInLembagaCache.set(cacheKey, computedResult);
-            return computedResult;
-          }
+          return 'Calon Peserta Didik';
         }
       }
-      studentClassInLembagaCache.set(cacheKey, null);
-      return null;
-    } else {
-      // 1. Check s.pendidikanInternal
-      if (s.pendidikanInternal && s.pendidikanInternal.trim() !== '' && s.pendidikanInternal !== 'Belum / Non-Madin' && s.pendidikanInternal !== '-') {
-        const internalParts = s.pendidikanInternal.split(',').map(x => x.trim()).filter(Boolean);
-        for (const entry of internalParts) {
-          const dashParts = entry.split('-');
-          const prefix = dashParts[0].trim();
-          if (isMatchLembagaStrict(l, prefix, s.gender) || norm(prefix) === targetId) {
-            if (dashParts.length > 1) {
-              const clsPart = dashParts.slice(1).join('-').trim();
-              if (clsPart && !/^\d{6,}$/.test(clsPart) && isClassGenderMatch(clsPart, s.gender)) {
-                const clsPartClean = cleanClassStr(clsPart);
-                const clsPartCompact = compactClassStr(clsPart);
-                const matched = kelasList.find(k => {
-                  if (String(k.lembagaId || (k as any).lembaga_id) !== String(l.id)) return false;
-                  if (!isClassGenderMatch(k.nama, s.gender)) return false;
-                  const kClean = cleanClassStr(k.nama);
-                  const kCompact = compactClassStr(k.nama);
-                  return k.nama.trim().toLowerCase() === clsPart.toLowerCase() ||
-                         kClean === clsPartClean ||
-                         (clsPartCompact && kCompact === clsPartCompact);
-                });
-                computedResult = cleanClassName(matched ? matched.nama : clsPart);
-                studentClassInLembagaCache.set(cacheKey, computedResult);
-                return computedResult;
-              }
-            }
-            computedResult = getDefaultCalonClassName(l, s.gender);
-            studentClassInLembagaCache.set(cacheKey, computedResult);
-            return computedResult;
-          }
-        }
-      }
-
-      // 2. Check s.kelas matching only non-default specific classes belonging to this internal lembaga
-      if (s.kelas) {
-        const sClasses = s.kelas.split(',').map(x => norm(x)).filter(Boolean);
-        const classesOfL = kelasList.filter(k => {
-          const lemId = norm((k as any).lembagaId || (k as any).lembaga_id);
-          return lemId === targetId && !norm(k.nama).includes('calon') && !norm(k.nama).includes('tanpa kelas') && isClassGenderMatch(k.nama, s.gender);
-        });
-        for (const k of classesOfL) {
-          const kClean = cleanClassStr(k.nama);
-          const kCompact = compactClassStr(k.nama);
-          const hasMatch = sClasses.some(sc => {
-            const scClean = cleanClassStr(sc);
-            const scCompact = compactClassStr(sc);
-            return sc === norm(k.nama) || scClean === kClean || (kCompact && scCompact === kCompact);
-          });
-          if (k.nama && hasMatch && !/^\d{6,}$/.test(k.nama)) {
-            computedResult = cleanClassName(k.nama);
-            studentClassInLembagaCache.set(cacheKey, computedResult);
-            return computedResult;
-          }
-        }
-      }
-      studentClassInLembagaCache.set(cacheKey, null);
-      return null;
     }
+
+    // 2. Check s.pendidikanInternal
+    if (s.pendidikanInternal) {
+      const internalParts = s.pendidikanInternal.split(',').map(x => norm(x)).filter(Boolean);
+      for (const pi of internalParts) {
+        if (
+          pi === targetId ||
+          (targetNama && pi === targetNama) ||
+          (targetKode && pi === targetKode) ||
+          (targetNama && targetNama.length > 2 && (pi.includes(targetNama) || targetNama.includes(pi))) ||
+          (targetKode && targetKode.length > 2 && (pi.includes(targetKode) || targetKode.includes(pi)))
+        ) {
+          const dashParts = pi.split('-');
+          if (dashParts.length > 1) {
+            const clsPart = dashParts.slice(1).join('-').trim();
+            if (clsPart && !/^\d{6,}$/.test(clsPart)) {
+              const matched = kelasList.find(k => String(k.lembagaId) === String(l.id) && k.nama.trim().toLowerCase() === clsPart.toLowerCase());
+              return cleanClassName(matched ? matched.nama : clsPart);
+            }
+          }
+          return 'Calon Peserta Didik';
+        }
+      }
+    }
+
+    // 3. Check s.kelas matching any class in kelasList belonging to this lembaga
+    if (s.kelas) {
+      const sClasses = s.kelas.split(',').map(x => norm(x)).filter(Boolean);
+      const classesOfL = kelasList.filter(k => {
+        const lemId = norm((k as any).lembagaId || (k as any).lembaga_id);
+        return lemId === targetId;
+      });
+      for (const k of classesOfL) {
+        if (k.nama && sClasses.includes(norm(k.nama)) && !/^\d{6,}$/.test(k.nama)) {
+          return cleanClassName(k.nama);
+        }
+      }
+    }
+
+    return null;
   };
 
   // Helper to resolve student Rombel groups
   const getStudentRombelInfo = (s: Santri) => {
-    const cacheKey = s.id;
-    if (studentRombelInfoCache.has(cacheKey)) {
-      return studentRombelInfoCache.get(cacheKey)!;
-    }
-
     const sAssignments = assignmentsList.filter(a => a.santriId === s.id);
     const assignedGroups = sAssignments.map(asg => {
       const group = groupsList.find(g => g.id === asg.kelompokId);
@@ -740,21 +605,16 @@ export default function DataAkademikSub({
       return null;
     }).filter(Boolean) as { groupId: string; groupName: string; categoryName: string }[];
 
-    studentRombelInfoCache.set(cacheKey, assignedGroups);
     return assignedGroups;
   };
 
   // Combine address parts safely
   const getFormattedAlamat = (s: Santri) => {
-    const cacheKey = s.id;
-    if (formattedAlamatCache.has(cacheKey)) {
-      return formattedAlamatCache.get(cacheKey)!;
-    }
-
     const parts = [s.desa, s.kecamatan, s.kabupaten].filter(Boolean).map(x => x!.trim());
-    const res = parts.length === 0 ? (s.alamat || s.asal || '-') : parts.join(', ');
-    formattedAlamatCache.set(cacheKey, res);
-    return res;
+    if (parts.length === 0) {
+      return s.alamat || s.asal || '-';
+    }
+    return parts.join(', ');
   };
 
   // Helper to resolve cell display value for Excel column filtering
@@ -798,262 +658,139 @@ export default function DataAkademikSub({
     return Array.from(valuesSet).sort((a, b) => a.localeCompare(b, 'id', { numeric: true, sensitivity: 'base' }));
   };
 
-  // Filter students based on academic query, gender, academic filters, and Excel column filters - MEMOIZED
-  const filteredSantri = useMemo(() => {
-    return santriList.filter(s => {
-      // 0. Filter statusKeanggotaan:
-      if (academicType === 'formal') {
-        if (s.statusKeanggotaan === 'Meninggal') {
-          return false;
-        }
-      } else {
-        if (s.statusKeanggotaan === 'Alumni' || s.statusKeanggotaan === 'Meninggal') {
-          return false;
-        }
-      }
-
-      // 1. Gender check
-      if (s.gender !== genderFilter) {
+  // Filter students based on academic query, gender, academic filters, and Excel column filters
+  const filteredSantri = santriList.filter(s => {
+    // 0. Filter statusKeanggotaan:
+    if (academicType === 'formal') {
+      if (s.statusKeanggotaan === 'Meninggal') {
         return false;
       }
-
-      const classInfo = getStudentClassInfo(s);
-      const rombelInfo = getStudentRombelInfo(s);
-
-      // 2. Search Query Matching (Name, NIS, Address, Class, Rombel)
-      const classStr = classInfo.map(c => `${c.institutionCode} ${c.className}`).join(', ');
-      const rombelStr = rombelInfo.map(r => `${r.categoryName} ${r.groupName}`).join(', ');
-      const matchesSearch = 
-        String(s.nama || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        String(s.nis || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        getFormattedAlamat(s).toLowerCase().includes(searchQuery.toLowerCase()) ||
-        classStr.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        rombelStr.toLowerCase().includes(searchQuery.toLowerCase());
-
-      if (!matchesSearch) return false;
-
-      // 3. Mode specific filtering
-      if (academicType === 'formal') {
-        let formalInfo = formalInfoCache.get(s.id);
-        if (!formalInfo) {
-          formalInfo = getSantriFormalEducationInfo(s, lembagasList, kelasList);
-          formalInfoCache.set(s.id, formalInfo);
-        }
-        const hasFormalPlacement = formalInfo.isFormal && 
-          formalInfo.kelas !== null && 
-          !isCalonClass(formalInfo.display) && 
-          formalInfo.display !== 'TIDAK TERDAFTAR' && 
-          formalInfo.display !== 'Tanpa Kelas';
-
-        const isCandidate = isCalonClass(formalInfo.display) || 
-          activeLembagas.some(al => isCalonClass(getStudentClassInLembaga(s, al)));
-
-        // Assignment Status Filter
-        if (assignmentStatusFilter === 'sudah' && !hasFormalPlacement) return false;
-        if (assignmentStatusFilter === 'calon' && !isCandidate) return false;
-        if (assignmentStatusFilter === 'belum' && hasFormalPlacement) return false;
-
-        // Lembaga Filter
-        if (selectedLembagaFilter !== 'semua') {
-          const matchesLembaga = (formalInfo.lembaga && String(formalInfo.lembaga.id) === String(selectedLembagaFilter)) ||
-            activeLembagas.some(al => String(al.id) === String(selectedLembagaFilter) && getStudentClassInLembaga(s, al) !== null);
-          if (!matchesLembaga) return false;
-        }
-
-        // Kelas Filter
-        if (selectedKelasFilter !== 'semua') {
-          const targetClsLower = selectedKelasFilter.trim().toLowerCase();
-          const matchesKelas = (formalInfo.display && formalInfo.display.trim().toLowerCase() === targetClsLower) ||
-            (formalInfo.kelas && formalInfo.kelas.nama.trim().toLowerCase() === targetClsLower) ||
-            activeLembagas.some(al => {
-              const clsInLem = getStudentClassInLembaga(s, al);
-              return clsInLem && clsInLem.trim().toLowerCase() === targetClsLower;
-            });
-          if (!matchesKelas) return false;
-        }
-      } else if (academicType === 'internal') {
-        const hasClass = classInfo.some(c => activeLembagas.some(al => al.id === c.lembagaId));
-        
-        // Assignment Status Filter
-        if (assignmentStatusFilter === 'sudah' && !hasClass) return false;
-        if (assignmentStatusFilter === 'belum' && hasClass) return false;
-
-        // Lembaga Filter
-        if (selectedLembagaFilter !== 'semua') {
-          const matchesLembaga = classInfo.some(c => {
-            const foundClass = kelasList.find(cls => cls.nama.toLowerCase() === c.className.toLowerCase());
-            return foundClass && String(foundClass.lembagaId) === String(selectedLembagaFilter);
-          });
-          if (!matchesLembaga) return false;
-        }
-
-        // Kelas Filter
-        if (selectedKelasFilter !== 'semua') {
-          const matchesKelas = classInfo.some(c => c.className.toLowerCase() === selectedKelasFilter.toLowerCase());
-          if (!matchesKelas) return false;
-        }
-      } else {
-        // Rombel mode
-        const hasRombel = rombelInfo.length > 0;
-
-        // Assignment Status Filter
-        if (assignmentStatusFilter === 'sudah' && !hasRombel) return false;
-        if (assignmentStatusFilter === 'belum' && hasRombel) return false;
-
-        // Category Filter
-        if (selectedCategoryFilter !== 'semua') {
-          const matchesCat = assignmentsList.some(a => a.santriId === s.id && a.kategoriId === selectedCategoryFilter);
-          if (!matchesCat) return false;
-        }
-
-        // Group Filter
-        if (selectedGroupFilter !== 'semua') {
-          const matchesGroup = assignmentsList.some(a => a.santriId === s.id && a.kelompokId === selectedGroupFilter);
-          if (!matchesGroup) return false;
-        }
+    } else {
+      if (s.statusKeanggotaan === 'Alumni' || s.statusKeanggotaan === 'Meninggal') {
+        return false;
       }
+    }
 
-      // 4. Excel Column Filters Check
-      for (const [colKey, selectedVals] of Object.entries(excelColumnFilters)) {
-        if (selectedVals && selectedVals.length > 0) {
-          const cellValue = getStudentColumnValue(s, colKey);
-          if (!selectedVals.includes(cellValue)) {
-            return false;
-          }
-        }
-      }
+    // 1. Gender check
+    if (s.gender !== genderFilter) {
+      return false;
+    }
 
-      return true;
-    });
-  }, [
-    santriList,
-    academicType,
-    genderFilter,
-    searchQuery,
-    assignmentStatusFilter,
-    selectedLembagaFilter,
-    selectedKelasFilter,
-    selectedCategoryFilter,
-    selectedGroupFilter,
-    excelColumnFilters,
-    activeLembagas,
-    lembagasList,
-    kelasList,
-    assignmentsList,
-    groupsList
-  ]);
+    const classInfo = getStudentClassInfo(s);
+    const rombelInfo = getStudentRombelInfo(s);
 
-  // Filter options for Kelas dropdown based on actual students in the current view
-  // Only displays classes with at least 1 santri (count > 0) to avoid 48 empty clutter items.
-  const availableKelasOptions = useMemo(() => {
-    // 1. Base list of students considering current academic type and gender filter
-    const baseStudents = santriList.filter(s => {
-      if (academicType === 'formal') {
-        if (s.statusKeanggotaan === 'Meninggal') return false;
-      } else {
-        if (s.statusKeanggotaan === 'Alumni' || s.statusKeanggotaan === 'Meninggal') return false;
-      }
-      return isGenderMatch(s.gender, genderFilter);
-    });
+    // 2. Search Query Matching (Name, NIS, Address, Class, Rombel)
+    const classStr = classInfo.map(c => `${c.institutionCode} ${c.className}`).join(', ');
+    const rombelStr = rombelInfo.map(r => `${r.categoryName} ${r.groupName}`).join(', ');
+    const matchesSearch = 
+      String(s.nama || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      String(s.nis || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      getFormattedAlamat(s).toLowerCase().includes(searchQuery.toLowerCase()) ||
+      classStr.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      rombelStr.toLowerCase().includes(searchQuery.toLowerCase());
 
-    // 2. Count actual active students per class display string
-    const countsMap = new Map<string, number>();
-    baseStudents.forEach(s => {
-      if (academicType === 'formal') {
-        let fInfo = formalInfoCache.get(s.id);
-        if (!fInfo) {
-          fInfo = getSantriFormalEducationInfo(s, lembagasList, kelasList);
-          formalInfoCache.set(s.id, fInfo);
-        }
-        if (fInfo.display && fInfo.display !== 'TIDAK TERDAFTAR' && fInfo.display !== 'Tanpa Kelas') {
-          // If a specific lembaga filter is selected, check if student belongs to that lembaga
-          if (selectedLembagaFilter !== 'semua') {
-            const matchesLembaga = (fInfo.lembaga && String(fInfo.lembaga.id) === String(selectedLembagaFilter)) ||
-              activeLembagas.some(al => String(al.id) === String(selectedLembagaFilter) && getStudentClassInLembaga(s, al) !== null);
-            if (!matchesLembaga) return;
-          }
-          const key = fInfo.display.trim();
-          countsMap.set(key, (countsMap.get(key) || 0) + 1);
-        }
-      } else {
-        const cInfo = getStudentClassInfo(s);
-        cInfo.forEach(c => {
-          if (selectedLembagaFilter !== 'semua' && String(c.lembagaId) !== String(selectedLembagaFilter)) {
-            return;
-          }
-          const key = c.className.trim();
-          countsMap.set(key, (countsMap.get(key) || 0) + 1);
+    if (!matchesSearch) return false;
+
+    // 3. Mode specific filtering
+    if (academicType === 'internal') {
+      const hasClass = classInfo.some(c => activeLembagas.some(al => al.id === c.lembagaId));
+      
+      // Assignment Status Filter
+      if (assignmentStatusFilter === 'sudah' && !hasClass) return false;
+      if (assignmentStatusFilter === 'belum' && hasClass) return false;
+
+      // Lembaga Filter
+      if (selectedLembagaFilter !== 'semua' && hasClass) {
+        const matchesLembaga = classInfo.some(c => {
+          const foundClass = kelasList.find(cls => cls.nama.toLowerCase() === c.className.toLowerCase());
+          return foundClass && foundClass.lembagaId === selectedLembagaFilter;
         });
-      }
-    });
-
-    // 3. Collect distinct options with count > 0
-    const options: { id: string; name: string; count: number; lembagaKode?: string }[] = [];
-    countsMap.forEach((count, name) => {
-      if (count > 0) {
-        // Resolve associated lembaga code if possible
-        const matchedClass = kelasList.find(k => k.nama.trim().toLowerCase() === name.toLowerCase());
-        const lemObj = matchedClass ? lembagasList.find(l => String(l.id) === String(matchedClass.lembagaId || (matchedClass as any).lembaga_id)) : null;
-        options.push({
-          id: matchedClass ? String(matchedClass.id) : name,
-          name,
-          count,
-          lembagaKode: lemObj ? (lemObj.kode || lemObj.nama) : undefined
-        });
-      }
-    });
-
-    return options.sort((a, b) => a.name.localeCompare(b.name, 'id', { numeric: true, sensitivity: 'base' }));
-  }, [santriList, academicType, genderFilter, selectedLembagaFilter, lembagasList, kelasList, activeLembagas]);
-
-  // Sort filtered list dynamically - MEMOIZED
-  const sortedSantri = useMemo(() => {
-    return [...filteredSantri].sort((a, b) => {
-      let comparison = 0;
-      if (sortKey === 'nama') {
-        comparison = a.nama.localeCompare(b.nama, 'id', { sensitivity: 'base', numeric: true });
-      } else if (sortKey === 'statusEmis') {
-        const emisA = a.statusEmis || 'Belum';
-        const emisB = b.statusEmis || 'Belum';
-        comparison = emisA.localeCompare(emisB, 'id', { sensitivity: 'base' });
-      } else if (sortKey === 'nis') {
-        const nisA = a.nis || '';
-        const nisB = b.nis || '';
-        comparison = nisA.localeCompare(nisB, 'id', { sensitivity: 'base', numeric: true });
-      } else if (sortKey === 'alamat') {
-        const addrA = getFormattedAlamat(a);
-        const addrB = getFormattedAlamat(b);
-        comparison = addrA.localeCompare(addrB, 'id', { sensitivity: 'base', numeric: true });
-      } else if (sortKey.startsWith('lembaga_')) {
-        const lemId = sortKey.replace('lembaga_', '');
-        const classA = getStudentClassInfo(a).find(c => c.lembagaId === lemId)?.className || '';
-        const classB = getStudentClassInfo(b).find(c => c.lembagaId === lemId)?.className || '';
-        comparison = classA.localeCompare(classB, 'id', { sensitivity: 'base', numeric: true });
-      } else if (sortKey.startsWith('rombel_')) {
-        const catId = sortKey.replace('rombel_', '');
-        const getGroupForCategory = (s: Santri) => {
-          const asg = assignmentsList.find(as => as.santriId === s.id && as.kategoriId === catId);
-          if (!asg) return '';
-          const grp = groupsList.find(g => g.id === asg.kelompokId);
-          return grp ? grp.nama : '';
-        };
-        const groupA = getGroupForCategory(a);
-        const groupB = getGroupForCategory(b);
-        comparison = groupA.localeCompare(groupB, 'id', { sensitivity: 'base', numeric: true });
+        if (!matchesLembaga) return false;
       }
 
-      return sortDirection === 'asc' ? comparison : -comparison;
-    });
-  }, [filteredSantri, sortKey, sortDirection, activeLembagas, assignmentsList, groupsList]);
+      // Kelas Filter
+      if (selectedKelasFilter !== 'semua' && hasClass) {
+        const matchesKelas = classInfo.some(c => c.className.toLowerCase() === selectedKelasFilter.toLowerCase());
+        if (!matchesKelas) return false;
+      }
+    } else {
+      // Rombel mode
+      const hasRombel = rombelInfo.length > 0;
 
-  // Pagination calculation - MEMOIZED
+      // Assignment Status Filter
+      if (assignmentStatusFilter === 'sudah' && !hasRombel) return false;
+      if (assignmentStatusFilter === 'belum' && hasRombel) return false;
+
+      // Category Filter
+      if (selectedCategoryFilter !== 'semua' && hasRombel) {
+        const matchesCat = assignmentsList.some(a => a.santriId === s.id && a.kategoriId === selectedCategoryFilter);
+        if (!matchesCat) return false;
+      }
+
+      // Group Filter
+      if (selectedGroupFilter !== 'semua' && hasRombel) {
+        const matchesGroup = assignmentsList.some(a => a.santriId === s.id && a.kelompokId === selectedGroupFilter);
+        if (!matchesGroup) return false;
+      }
+    }
+
+    // 4. Excel Column Filters Check
+    for (const [colKey, selectedVals] of Object.entries(excelColumnFilters)) {
+      if (selectedVals && selectedVals.length > 0) {
+        const cellValue = getStudentColumnValue(s, colKey);
+        if (!selectedVals.includes(cellValue)) {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  });
+
+  // Sort filtered list dynamically
+  const sortedSantri = [...filteredSantri].sort((a, b) => {
+    let comparison = 0;
+    if (sortKey === 'nama') {
+      comparison = a.nama.localeCompare(b.nama, 'id', { sensitivity: 'base', numeric: true });
+    } else if (sortKey === 'statusEmis') {
+      const emisA = a.statusEmis || 'Belum';
+      const emisB = b.statusEmis || 'Belum';
+      comparison = emisA.localeCompare(emisB, 'id', { sensitivity: 'base' });
+    } else if (sortKey === 'nis') {
+      const nisA = a.nis || '';
+      const nisB = b.nis || '';
+      comparison = nisA.localeCompare(nisB, 'id', { sensitivity: 'base', numeric: true });
+    } else if (sortKey === 'alamat') {
+      const addrA = getFormattedAlamat(a);
+      const addrB = getFormattedAlamat(b);
+      comparison = addrA.localeCompare(addrB, 'id', { sensitivity: 'base', numeric: true });
+    } else if (sortKey.startsWith('lembaga_')) {
+      const lemId = sortKey.replace('lembaga_', '');
+      const classA = getStudentClassInfo(a).find(c => c.lembagaId === lemId)?.className || '';
+      const classB = getStudentClassInfo(b).find(c => c.lembagaId === lemId)?.className || '';
+      comparison = classA.localeCompare(classB, 'id', { sensitivity: 'base', numeric: true });
+    } else if (sortKey.startsWith('rombel_')) {
+      const catId = sortKey.replace('rombel_', '');
+      const getGroupForCategory = (s: Santri) => {
+        const asg = assignmentsList.find(as => as.santriId === s.id && as.kategoriId === catId);
+        if (!asg) return '';
+        const grp = groupsList.find(g => g.id === asg.kelompokId);
+        return grp ? grp.nama : '';
+      };
+      const groupA = getGroupForCategory(a);
+      const groupB = getGroupForCategory(b);
+      comparison = groupA.localeCompare(groupB, 'id', { sensitivity: 'base', numeric: true });
+    }
+
+    return sortDirection === 'asc' ? comparison : -comparison;
+  });
+
+  // Pagination calculation
   const totalItems = sortedSantri.length;
   const totalPages = Math.ceil(totalItems / pageSize);
   const startIndex = (currentPage - 1) * pageSize;
   const endIndex = Math.min(startIndex + pageSize, totalItems);
-  const paginatedSantri = useMemo(() => {
-    return sortedSantri.slice(startIndex, endIndex);
-  }, [sortedSantri, startIndex, endIndex]);
+  const paginatedSantri = sortedSantri.slice(startIndex, endIndex);
 
   useEffect(() => {
     updateScrollButtons();
@@ -1066,25 +803,23 @@ export default function DataAkademikSub({
     };
   }, [paginatedSantri]);
 
-  // Count unassigned students - MEMOIZED
-  const unassignedCount = useMemo(() => {
-    return santriList.filter(s => {
-      if (s.gender !== genderFilter) return false;
-      if (academicType === 'formal') {
-        if (s.statusKeanggotaan === 'Meninggal') return false;
-      } else {
-        if (s.statusKeanggotaan === 'Alumni' || s.statusKeanggotaan === 'Meninggal') return false;
-      }
-      if (academicType === 'rombel') {
-        const rombelInfo = getStudentRombelInfo(s);
-        return rombelInfo.length === 0;
-      } else {
-        const classInfo = getStudentClassInfo(s);
-        const hasClassInActiveLembagas = classInfo.some(c => activeLembagas.some(al => al.id === c.lembagaId));
-        return !hasClassInActiveLembagas;
-      }
-    }).length;
-  }, [santriList, genderFilter, academicType, activeLembagas, assignmentsList, groupsList, categoriesList, kelasList, lembagasList]);
+  // Count unassigned students
+  const unassignedCount = santriList.filter(s => {
+    if (s.gender !== genderFilter) return false;
+    if (academicType === 'formal') {
+      if (s.statusKeanggotaan === 'Meninggal') return false;
+    } else {
+      if (s.statusKeanggotaan === 'Alumni' || s.statusKeanggotaan === 'Meninggal') return false;
+    }
+    if (academicType === 'rombel') {
+      const rombelInfo = getStudentRombelInfo(s);
+      return rombelInfo.length === 0;
+    } else {
+      const classInfo = getStudentClassInfo(s);
+      const hasClassInActiveLembagas = classInfo.some(c => activeLembagas.some(al => al.id === c.lembagaId));
+      return !hasClassInActiveLembagas;
+    }
+  }).length;
 
   // Edit action trigger
   const handleOpenEditModal = (students: Santri[]) => {
@@ -1173,7 +908,7 @@ export default function DataAkademikSub({
               finalClassNames.push(targetClass.nama);
               updatedEmis = 'Terdaftar';
             } else {
-              finalClassNames.push(getDefaultCalonClassName(lem, s.gender));
+              finalClassNames.push('Calon Peserta Didik');
             }
           }
         });
@@ -1279,7 +1014,7 @@ export default function DataAkademikSub({
         // Filter out all formal class names and calon labels
         currentClasses = currentClasses.filter(cls => {
           const lowerCls = cls.trim().toLowerCase();
-          if (isCalonClass(lowerCls)) return false;
+          if (lowerCls === 'calon pelajar' || lowerCls === 'calon peserta didik') return false;
           if (formalClassNamesLower.includes(lowerCls)) return false;
           return true;
         });
@@ -1289,13 +1024,11 @@ export default function DataAkademikSub({
         if (newClassName === 'Tanpa Kelas' || newClassName === '-' || !newClassName) {
           newFormalStr = '';
         } else {
-          const isTargetCalon = isCalonClass(newClassName);
-          const targetCalonName = getDefaultCalonClassName(lembaga, student.gender);
-          newFormalStr = !isTargetCalon
+          newFormalStr = (newClassName !== 'Calon Peserta Didik' && newClassName !== 'Calon Pelajar')
             ? `${lembaga.nama} - ${newClassName}`
-            : `${lembaga.nama} - ${targetCalonName}`;
+            : `${lembaga.nama} - Calon Peserta Didik`;
 
-          if (!isTargetCalon) {
+          if (newClassName !== 'Calon Peserta Didik' && newClassName !== 'Calon Pelajar') {
             if (!currentClasses.some(c => c.toLowerCase() === newClassName.toLowerCase())) {
               currentClasses.push(newClassName.trim());
             }
@@ -1315,14 +1048,14 @@ export default function DataAkademikSub({
         // INTERNAL RULE: Independent per internal institution
         currentClasses = currentClasses.filter(cls => {
           const lowerCls = cls.trim().toLowerCase();
-          if (isCalonClass(lowerCls)) return false;
+          if (lowerCls === 'calon pelajar' || lowerCls === 'calon peserta didik') return false;
           const c = kelasList.find(x => x.nama.trim().toLowerCase() === lowerCls && String(x.lembagaId) === String(lembaga.id));
           if (c && String(c.lembagaId) === String(lembaga.id)) return false;
           return true;
         });
 
         if (newClassName !== 'Tanpa Kelas' && newClassName !== '-' && newClassName) {
-          if (!isCalonClass(newClassName)) {
+          if (newClassName !== 'Calon Peserta Didik' && newClassName !== 'Calon Pelajar') {
             if (!currentClasses.some(c => c.toLowerCase() === newClassName.toLowerCase())) {
               currentClasses.push(newClassName.trim());
             }
@@ -1394,7 +1127,7 @@ export default function DataAkademikSub({
 
   // Excel Export Handler (XML Format compatible with Excel)
   const handleExportExcel = (customFileName?: string) => {
-    const isKelas = academicType !== 'rombel';
+    const isKelas = academicType === 'internal';
     
     const dynamicHeaders: string[] = [];
     if (isKelas) {
@@ -1407,14 +1140,15 @@ export default function DataAkademikSub({
       });
     }
 
-    const headers = ['No', 'Nama Lengkap', 'NIS', 'Status EMIS', ...dynamicHeaders];
+    const headers = ['No', 'Nama Lengkap', 'NIS', 'Gender', 'Alamat', ...dynamicHeaders];
     
     const rows = sortedSantri.map((s, idx) => {
       const dynamicValues: string[] = [];
       if (isKelas) {
+        const classInfo = getStudentClassInfo(s);
         activeLembagas.forEach(lem => {
-          const clsName = getStudentClassInLembaga(s, lem);
-          dynamicValues.push(clsName || '-');
+          const match = classInfo.find(c => c.lembagaId === lem.id);
+          dynamicValues.push(match ? match.className : '-');
         });
       } else {
         filteredCategories.forEach(cat => {
@@ -1428,7 +1162,8 @@ export default function DataAkademikSub({
         String(idx + 1),
         s.nama,
         s.nis || '-',
-        s.statusEmis || 'Belum',
+        s.gender,
+        getFormattedAlamat(s),
         ...dynamicValues
       ];
     });
@@ -1526,7 +1261,7 @@ export default function DataAkademikSub({
       return;
     }
 
-    const isKelas = academicType !== 'rombel';
+    const isKelas = academicType === 'internal';
     
     const dynamicHeaders: string[] = [];
     if (isKelas) {
@@ -1561,7 +1296,7 @@ export default function DataAkademikSub({
             font-weight: bold; 
             color: #4f46e5; 
             text-align: center; 
-            text-transform: uppercase; 
+            text-transform: uppercase;
             letter-spacing: 0.5px;
           }
           .subtitle {
@@ -1651,9 +1386,9 @@ export default function DataAkademikSub({
           <thead>
             <tr>
               <th style="width: 5%; text-align: center;">No</th>
-              <th style="width: 28%;">Nama Lengkap</th>
+              <th style="width: 25%;">Nama Lengkap</th>
               <th style="width: 12%; text-align: center;">NIS</th>
-              <th style="width: 12%; text-align: center;">Status EMIS</th>
+              <th style="width: 25%;">Alamat</th>
               ${dynamicHeaders.map(hdr => `<th>${hdr}</th>`).join('')}
             </tr>
           </thead>
@@ -1661,9 +1396,10 @@ export default function DataAkademikSub({
             ${sortedSantri.map((s, idx) => {
               let dynamicCellsHtml = '';
               if (isKelas) {
+                const classInfo = getStudentClassInfo(s);
                 dynamicCellsHtml = activeLembagas.map(lem => {
-                  const clsName = getStudentClassInLembaga(s, lem);
-                  return `<td>${clsName || '-'}</td>`;
+                  const match = classInfo.find(c => c.lembagaId === lem.id);
+                  return `<td>${match ? match.className : '-'}</td>`;
                 }).join('');
               } else {
                 dynamicCellsHtml = filteredCategories.map(cat => {
@@ -1678,7 +1414,7 @@ export default function DataAkademikSub({
                   <td class="text-center font-mono">${idx + 1}</td>
                   <td style="font-weight: 600;">${s.nama}</td>
                   <td class="text-center font-mono">${s.nis || '-'}</td>
-                  <td class="text-center">${s.statusEmis || 'Belum'}</td>
+                  <td>${getFormattedAlamat(s)}</td>
                   ${dynamicCellsHtml}
                 </tr>
               `;
@@ -1733,19 +1469,14 @@ export default function DataAkademikSub({
     const countMap = new Map<string, number>();
     baseList.forEach(s => {
       const val = getStudentColumnValue(s, key);
-      if (val) {
-        countMap.set(val, (countMap.get(val) || 0) + 1);
-      }
+      countMap.set(val, (countMap.get(val) || 0) + 1);
     });
 
-    return Array.from(countMap.entries())
-      .filter(([_, count]) => count > 0)
-      .map(([value, count]) => ({
-        value,
-        count
-      }))
-      .sort((a, b) => a.value.localeCompare(b.value, 'id', { numeric: true, sensitivity: 'base' }));
-  }, [openExcelFilterCol, santriList, academicType, genderFilter, activeLembagas, assignmentsList, groupsList, categoriesList, kelasList]);
+    return Array.from(countMap.entries()).map(([value, count]) => ({
+      value,
+      count
+    })).sort((a, b) => a.value.localeCompare(b.value, 'id', { numeric: true, sensitivity: 'base' }));
+  }, [openExcelFilterCol, santriList, academicType, genderFilter, activeLembagas, assignmentsList, groupsList, categoriesList]);
 
   const renderSortHeader = (key: string, label: string, isSticky: boolean = false, extraClasses: string = '', styleOverride?: React.CSSProperties) => {
     const isSorted = sortKey === key;
@@ -2121,10 +1852,8 @@ export default function DataAkademikSub({
                         {assignmentStatusFilter === 'semua'
                           ? 'Semua Status'
                           : assignmentStatusFilter === 'sudah'
-                          ? (academicType === 'formal' ? 'Sudah Ada Kelas Formal' : 'Sudah Ditempatkan')
-                          : assignmentStatusFilter === 'calon'
-                          ? 'Calon Peserta Didik'
-                          : (academicType === 'formal' ? 'Belum / Tanpa Kelas ⚠️' : 'Belum Ditempatkan ⚠️')}
+                          ? 'Sudah Ditempatkan'
+                          : 'Belum Ditempatkan ⚠️'}
                       </span>
                       <ChevronDown className="h-4 w-4 opacity-60 shrink-0" />
                     </button>
@@ -2143,16 +1872,11 @@ export default function DataAkademikSub({
                             className="absolute left-0 mt-2 w-full min-w-[200px] rounded-2xl border border-slate-100 bg-white p-2.5 shadow-xl z-[120] text-slate-700 font-sans"
                           >
                             <div className="space-y-1">
-                              {(academicType === 'formal' ? [
-                                { value: 'semua', label: 'Semua Status' },
-                                { value: 'sudah', label: 'Sudah Ada Kelas Formal' },
-                                { value: 'calon', label: 'Calon Peserta Didik' },
-                                { value: 'belum', label: 'Belum / Tanpa Kelas ⚠️' }
-                              ] : [
+                              {[
                                 { value: 'semua', label: 'Semua Status' },
                                 { value: 'sudah', label: 'Sudah Ditempatkan' },
                                 { value: 'belum', label: 'Belum Ditempatkan ⚠️' }
-                              ]).map((opt) => {
+                              ].map((opt) => {
                                 const isActive = assignmentStatusFilter === opt.value;
                                 return (
                                   <button
@@ -2182,12 +1906,12 @@ export default function DataAkademikSub({
                 </div>
 
                 {/* 2 & 3. Cascading inputs depending on academicType */}
-                {(academicType === 'internal' || academicType === 'formal') ? (
+                {academicType === 'internal' ? (
                   <>
                     {/* Lembaga Filter */}
                     <div>
                       <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                        {academicType === 'formal' ? 'Lembaga Pendidikan Formal' : 'Lembaga Internal Pondok'}
+                        Lembaga Internal Pondok
                       </label>
                       <div className="relative">
                         <button
@@ -2240,7 +1964,7 @@ export default function DataAkademikSub({
                                     {selectedLembagaFilter === 'semua' && <Check className="h-3.5 w-3.5 text-indigo-700 shrink-0" />}
                                   </button>
                                   {lembagasList
-                                    .filter(l => (!l.gender || l.gender === (genderFilter as string) || (l.gender as string) === 'Campuran' || (l.gender as string) === 'Semua') && getLembagaJenis(l) === (academicType === 'formal' ? 'Formal' : 'Internal'))
+                                    .filter(l => (!l.gender || l.gender === (genderFilter as string) || (l.gender as string) === 'Campuran' || (l.gender as string) === 'Semua') && getLembagaJenis(l) === 'Internal')
                                     .map(lem => {
                                       const isActive = selectedLembagaFilter === lem.id;
                                       return (
@@ -2274,9 +1998,7 @@ export default function DataAkademikSub({
 
                     {/* Kelas Filter */}
                     <div>
-                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                        {academicType === 'formal' ? 'Kelas Formal' : 'Kelas'}
-                      </label>
+                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Kelas</label>
                       <div className="relative">
                         <button
                           type="button"
@@ -2322,39 +2044,36 @@ export default function DataAkademikSub({
                                     <span>Semua Kelas</span>
                                     {selectedKelasFilter === 'semua' && <Check className="h-3.5 w-3.5 text-indigo-700 shrink-0" />}
                                   </button>
-                                  {availableKelasOptions.map(cls => {
-                                    const isActive = selectedKelasFilter === cls.name;
-                                    return (
-                                      <button
-                                        key={cls.id}
-                                        type="button"
-                                        onClick={() => {
-                                          setSelectedKelasFilter(cls.name);
-                                          setIsKelasDropdownOpen(false);
-                                        }}
-                                        className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-left text-xs font-bold transition-colors cursor-pointer ${
-                                          isActive
-                                            ? 'bg-indigo-50 text-indigo-800 font-bold'
-                                            : 'hover:bg-slate-50 text-slate-600'
-                                        }`}
-                                      >
-                                        <div className="flex items-center gap-1.5 min-w-0">
-                                          <span className="truncate">{cls.name}</span>
-                                          {cls.lembagaKode && selectedLembagaFilter === 'semua' && (
-                                            <span className="text-[10px] text-slate-400 font-normal">
-                                              ({cls.lembagaKode})
-                                            </span>
-                                          )}
-                                        </div>
-                                        <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                                          <span className="px-1.5 py-0.5 rounded-md bg-slate-100 text-[10px] font-bold text-slate-600">
-                                            {cls.count}
-                                          </span>
+                                  {kelasList
+                                    .filter(c => {
+                                      const lemObj = lembagasList.find(l => l.id === c.lembagaId);
+                                      const matchesGender = !lemObj || !lemObj.gender || lemObj.gender === genderFilter;
+                                      const matchesLembaga = selectedLembagaFilter === 'semua' || c.lembagaId === selectedLembagaFilter;
+                                      const matchesType = !lemObj || getLembagaJenis(lemObj) === 'Internal';
+                                      return matchesGender && matchesLembaga && matchesType;
+                                    })
+                                    .map(cls => {
+                                      const isActive = selectedKelasFilter === cls.nama;
+                                      return (
+                                        <button
+                                          key={cls.id}
+                                          type="button"
+                                          onClick={() => {
+                                            setSelectedKelasFilter(cls.nama);
+                                            setIsKelasDropdownOpen(false);
+                                          }}
+                                          className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-left text-xs font-bold transition-colors cursor-pointer ${
+                                            isActive
+                                              ? 'bg-indigo-50 text-indigo-800 font-bold'
+                                              : 'hover:bg-slate-50 text-slate-600'
+                                          }`}
+                                        >
+                                          <span>{cls.nama}</span>
                                           {isActive && <Check className="h-3.5 w-3.5 text-indigo-700 shrink-0" />}
-                                        </div>
-                                      </button>
-                                    );
-                                  })}
+                                        </button>
+                                      );
+                                    })
+                                  }
                                 </div>
                               </motion.div>
                             </>
@@ -3006,25 +2725,55 @@ export default function DataAkademikSub({
                         {s.nis || '-'}
                       </td>
 
-                      {/* Status EMIS Cell (Read-Only di Modul Pendidikan) */}
+                      {/* Status EMIS Cell */}
                       <td className="px-4 py-4 whitespace-nowrap text-xs w-[110px] min-w-[110px]">
                         <div className="relative inline-block text-left">
-                          <span 
-                            title={`Status EMIS: ${s.statusEmis || 'Belum'} (hanya menerima keterangan dari sekretaris)`}
-                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wide select-none ${
+                          {canWriteCurrent ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                if (isSelectionMode) return;
+                                e.stopPropagation();
+                                if (activeEmisDropdownId === s.id) {
+                                  setActiveEmisDropdownId(null);
+                                  setEmisDropdownPos(null);
+                                } else {
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  const spaceBelow = window.innerHeight - rect.bottom;
+                                  const spaceAbove = rect.top;
+                                  const isUpward = spaceBelow < 180 && spaceAbove > spaceBelow;
+
+                                  setEmisDropdownPos({
+                                    top: isUpward ? rect.top - 6 : rect.bottom + 6,
+                                    left: Math.max(10, Math.min(window.innerWidth - 150, rect.left)),
+                                    isUpward
+                                  });
+                                  setActiveEmisDropdownId(s.id);
+                                }
+                              }}
+                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wide transition-colors cursor-pointer shadow-2xs ${
+                                s.statusEmis === 'Terdaftar'
+                                  ? 'bg-[#E6F4EA] text-[#137333] hover:bg-emerald-200'
+                                  : s.statusEmis === 'Invalid'
+                                  ? 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                              }`}
+                              title="Klik untuk ubah Status EMIS"
+                            >
+                              <span>{s.statusEmis || 'Belum'}</span>
+                              <ChevronsUpDown className="h-3 w-3 opacity-60 shrink-0" />
+                            </button>
+                          ) : (
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wide ${
                               s.statusEmis === 'Terdaftar'
                                 ? 'bg-[#E6F4EA] text-[#137333]'
                                 : s.statusEmis === 'Invalid'
                                 ? 'bg-rose-50 text-rose-700'
-                                : s.statusEmis === 'Keluar'
-                                ? 'bg-amber-50 text-amber-700'
-                                : s.statusEmis === 'Lulus'
-                                ? 'bg-blue-50 text-blue-700'
                                 : 'bg-slate-100 text-slate-600'
-                            }`}
-                          >
-                            {s.statusEmis || 'Belum'}
-                          </span>
+                            }`}>
+                              {s.statusEmis || 'Belum'}
+                            </span>
+                          )}
                         </div>
                       </td>
 
@@ -3035,9 +2784,13 @@ export default function DataAkademikSub({
                           const initialClassVal = clsName || 'Tanpa Kelas';
                           const cellKey = `lembaga_${lem.id}`;
                           const isOpen = activeCellDropdown?.santriId === s.id && activeCellDropdown?.columnKey === cellKey;
+                          const availableClasses = kelasList.filter(c => String(c.lembagaId) === String(lem.id));
                           const isFormalLem = getLembagaJenis(lem) === 'Formal';
-                          const availableClasses = classesByLembagaId.get(String(lem.id)) || [];
-                          const cleanAvailableClasses = cleanClassesByLembagaId.get(String(lem.id)) || [];
+                          const isStudentEmisRegistered = isEmisTerdaftar(s.statusEmis);
+                          const cleanAvailableClasses = availableClasses.filter(c => {
+                            const lower = c.nama.trim().toLowerCase();
+                            return lower !== 'calon peserta didik' && lower !== 'calon pelajar' && lower !== 'tanpa kelas';
+                          });
                           const isClassChanged = isOpen && pendingCellValue !== null && pendingCellValue !== initialClassVal;
 
                           return (
@@ -3056,7 +2809,7 @@ export default function DataAkademikSub({
                                       }
                                     }}
                                     className={`inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1 text-xs font-bold border transition-all cursor-pointer shadow-2xs hover:shadow-xs ${
-                                      clsName && isCalonClass(clsName)
+                                      clsName === 'Calon Peserta Didik'
                                         ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
                                         : clsName
                                           ? 'bg-indigo-50 text-indigo-800 border-indigo-200 hover:bg-indigo-100'
@@ -3069,7 +2822,7 @@ export default function DataAkademikSub({
                                   </button>
                                 ) : (
                                   <span className={`inline-flex items-center rounded-xl px-2.5 py-1 font-extrabold border shadow-xs ${
-                                    clsName && isCalonClass(clsName)
+                                    clsName === 'Calon Peserta Didik'
                                       ? 'bg-amber-50 text-amber-800 border-amber-200'
                                       : clsName
                                         ? 'bg-indigo-50 text-indigo-800 border-indigo-100'
@@ -3098,6 +2851,14 @@ export default function DataAkademikSub({
                                         } w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl z-50 text-left font-sans text-xs`}
                                         onClick={(e) => e.stopPropagation()}
                                       >
+                                        {/* Warning Banner for Unregistered EMIS in Formal Institutions */}
+                                        {isFormalLem && !isStudentEmisRegistered && (
+                                          <div className="mb-2 p-2 rounded-xl bg-amber-50 border border-amber-200/80 text-[10.5px] font-medium text-amber-900 flex items-center justify-center gap-1.5 leading-snug text-center">
+                                            <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                                            <span>Santri belum EMIS.</span>
+                                          </div>
+                                        )}
+
                                         {/* Confirmation Action Header: Only visible when value has changed */}
                                         {isClassChanged && (
                                           <div className="flex items-center justify-between pb-2 mb-2 border-b border-amber-100 bg-amber-50/80 -mx-2 -mt-2 p-2 rounded-t-2xl">
@@ -3155,56 +2916,57 @@ export default function DataAkademikSub({
                                             )}
                                           </button>
 
-                                          {(() => {
-                                            const targetCalonName = getDefaultCalonClassName(lem, s.gender);
-                                            const isCalonSelected = isCalonClass(pendingCellValue || '');
-                                            return (
-                                              <button
-                                                type="button"
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  setPendingCellValue(targetCalonName);
-                                                }}
-                                                onDoubleClick={(e) => {
-                                                  e.stopPropagation();
-                                                  handleInlineClassChange(s, lem, targetCalonName);
-                                                }}
-                                                className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer text-left ${
-                                                  isCalonSelected ? 'bg-indigo-50 font-bold text-indigo-900' : ''
-                                                }`}
-                                              >
-                                                <span>{targetCalonName}</span>
-                                                {isCalonSelected && (
-                                                  <Check className="h-3.5 w-3.5 text-indigo-800 shrink-0 stroke-[2.5]" />
-                                                )}
-                                              </button>
-                                            );
-                                          })()}
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setPendingCellValue('Calon Peserta Didik');
+                                            }}
+                                            onDoubleClick={(e) => {
+                                              e.stopPropagation();
+                                              handleInlineClassChange(s, lem, 'Calon Peserta Didik');
+                                            }}
+                                            className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer text-left ${
+                                              pendingCellValue === 'Calon Peserta Didik' ? 'bg-indigo-50 font-bold text-indigo-900' : ''
+                                            }`}
+                                          >
+                                            <span>Calon Peserta Didik</span>
+                                            {pendingCellValue === 'Calon Peserta Didik' && (
+                                              <Check className="h-3.5 w-3.5 text-indigo-800 shrink-0 stroke-[2.5]" />
+                                            )}
+                                          </button>
 
                                           {cleanAvailableClasses.map(c => {
                                             const isSelected = pendingCellValue === c.nama;
+                                            const isClassDisabled = isFormalLem && !isStudentEmisRegistered;
                                             return (
                                               <button
                                                 key={c.id}
                                                 type="button"
+                                                disabled={isClassDisabled}
                                                 onClick={(e) => {
                                                   e.stopPropagation();
+                                                  if (isClassDisabled) return;
                                                   setPendingCellValue(c.nama);
                                                 }}
                                                 onDoubleClick={(e) => {
                                                   e.stopPropagation();
+                                                  if (isClassDisabled) return;
                                                   handleInlineClassChange(s, lem, c.nama);
                                                 }}
                                                 className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-medium transition-colors text-left ${
-                                                  isSelected
-                                                    ? 'bg-indigo-50 font-bold text-indigo-900 cursor-pointer'
-                                                    : 'text-slate-700 hover:bg-slate-100 cursor-pointer'
+                                                  isClassDisabled
+                                                    ? 'opacity-50 bg-slate-50 text-slate-400 cursor-not-allowed select-none'
+                                                    : isSelected
+                                                      ? 'bg-indigo-50 font-bold text-indigo-900 cursor-pointer'
+                                                      : 'text-slate-700 hover:bg-slate-100 cursor-pointer'
                                                 }`}
+                                                title={isClassDisabled ? 'Santri belum EMIS' : undefined}
                                               >
                                                 <div className="flex items-center gap-1.5 min-w-0">
                                                   <span className="truncate">{c.nama}</span>
                                                 </div>
-                                                {isSelected && (
+                                                {isSelected && !isClassDisabled && (
                                                   <Check className="h-3.5 w-3.5 text-indigo-800 shrink-0 stroke-[2.5]" />
                                                 )}
                                               </button>
@@ -3400,7 +3162,7 @@ export default function DataAkademikSub({
                 }}
                 className="appearance-none rounded-xl border border-slate-200 bg-white pl-3.5 pr-8 py-2 text-xs font-bold text-slate-700 focus:border-indigo-500 focus:outline-none cursor-pointer"
               >
-                {[20, 50, 100].map(sz => (
+                {[10, 20, 50, 100].map(sz => (
                   <option key={sz} value={sz}>{sz}</option>
                 ))}
               </select>
@@ -3549,7 +3311,23 @@ export default function DataAkademikSub({
                   <div className="space-y-4.5 max-h-[350px] overflow-y-auto pr-1">
                     {activeLembagas.map(lem => {
                       const value = selectedClassesByLembaga[lem.id] || 'no_change';
-                      const availableClasses = kelasList.filter(c => c.lembagaId === lem.id);
+                      const isFormalLembaga = (lem as any).jenis === 'Formal';
+                      const hasUnregisteredEmis = santriToEdit.some(s => !isEmisTerdaftar(s.statusEmis));
+                      
+                      let availableClasses = kelasList.filter(c => c.lembagaId === lem.id);
+                      if (isFormalLembaga && hasUnregisteredEmis) {
+                        availableClasses = availableClasses.filter(c => (c as any).isDefault || c.nama.trim().toLowerCase() === 'calon peserta didik');
+                        if (availableClasses.length === 0) {
+                          availableClasses = [{
+                            id: 'default-' + lem.id,
+                            lembagaId: String(lem.id),
+                            nama: 'Calon Peserta Didik',
+                            waliKelas: '-',
+                            tingkatan: 'Lainnya',
+                            isDefault: true
+                          } as any];
+                        }
+                      }
 
                       return (
                         <div key={lem.id} className="space-y-1.5">
@@ -3576,6 +3354,11 @@ export default function DataAkademikSub({
                               </option>
                             ))}
                           </select>
+                          {isFormalLembaga && hasUnregisteredEmis && (
+                            <p className="text-[11px] font-medium text-amber-700 mt-1">
+                              ⚠️ Terdapat santri belum terdaftar EMIS. Pada pendidikan formal, kelas dibatasi ke <strong>"Calon Peserta Didik"</strong>.
+                            </p>
+                          )}
                         </div>
                       );
                     })}
@@ -3657,11 +3440,6 @@ export default function DataAkademikSub({
       <SantriDetailModal 
         selectedSantri={selectedSantri} 
         onClose={() => setSelectedSantri(null)} 
-        lembagasList={lembagasList}
-        kelasList={kelasList}
-        rombelAssignments={assignmentsList}
-        rombelGroups={groupsList}
-        rombelCategories={categoriesList}
       />
 
       {/* --- PINDAH KELAS MODAL --- */}
@@ -3675,73 +3453,52 @@ export default function DataAkademikSub({
           const activeLemId = transferLembagaId || (eligibleLembagas[0]?.id || '');
           const currentLemObj = lembagasList.find(l => l.id === activeLemId) || eligibleLembagas[0];
           const isFormalTarget = (currentLemObj?.jenis === 'Formal' || targetKind === 'Formal');
+          const isStudentEmis = isEmisTerdaftar(transferStudent.statusEmis);
 
           let targetClasses = kelasList.filter(k => {
             const lemId = String((k as any).lembagaId || (k as any).lembaga_id || '');
             return lemId === String(activeLemId);
           });
 
-          if (currentLemObj) {
-            const targetCalonName = getDefaultCalonClassName(currentLemObj, studentGender);
-            const hasCalon = targetClasses.some(c => isDefaultClass(c) || c.nama.toLowerCase() === targetCalonName.toLowerCase());
-            if (!hasCalon) {
-              targetClasses = [
-                {
-                  id: 'default-calon-' + currentLemObj.id,
-                  lembagaId: currentLemObj.id,
-                  nama: targetCalonName,
-                  waliKelas: '-',
-                  tingkatan: 'Calon Pelajar',
-                  isDefault: true
-                } as Kelas,
-                ...targetClasses
-              ];
+          if (isFormalTarget && !isStudentEmis) {
+            targetClasses = targetClasses.filter(c => (c as any).isDefault || c.nama.trim().toLowerCase() === 'calon peserta didik');
+            if (targetClasses.length === 0) {
+              targetClasses = [{
+                id: 'default-' + activeLemId,
+                lembagaId: String(activeLemId),
+                nama: 'Calon Peserta Didik',
+                waliKelas: '-',
+                tingkatan: 'Lainnya',
+                isDefault: true
+              } as any];
             }
           }
 
           const handleExecuteTransferModal = () => {
             if (!transferStudent || !activeLemId) return;
+            const destClassObj = targetClasses.find(c => c.id === destClassId) || targetClasses[0] || { nama: 'Calon Peserta Didik' };
             const targetLemObj = lembagasList.find(l => l.id === activeLemId);
-            const targetCalonName = getDefaultCalonClassName(targetLemObj, studentGender);
-            const destClassObj = targetClasses.find(c => c.id === destClassId) || targetClasses[0] || { nama: targetCalonName };
 
-            if (onUpdateSantriClassBatch) {
-              onUpdateSantriClassBatch([transferStudent.id], destClassObj.nama, activeLemId);
-            } else if (onUpdateSantri) {
+            if (onUpdateSantri) {
               let newFormal = transferStudent.pendidikanFormal;
               let newInternal = transferStudent.pendidikanInternal;
               
               if (isFormalTarget) {
-                newFormal = !isCalonClass(destClassObj.nama) 
+                newFormal = destClassObj.nama !== 'Calon Peserta Didik' 
                   ? `${targetLemObj?.nama || ''} - ${destClassObj.nama}` 
-                  : `${targetLemObj?.nama || ''} - ${targetCalonName}`;
+                  : `${targetLemObj?.nama || ''} - Calon Peserta Didik`;
               } else {
-                newInternal = !isCalonClass(destClassObj.nama) ? `${targetLemObj?.nama || ''} - ${destClassObj.nama}` : `${targetLemObj?.nama || ''}`;
+                newInternal = destClassObj.nama !== 'Calon Peserta Didik' ? `${targetLemObj?.nama || ''} - ${destClassObj.nama}` : `${targetLemObj?.nama || ''}`;
               }
 
               let updatedClasses = transferStudent.kelas ? transferStudent.kelas.split(',').map(x => x.trim()).filter(Boolean) : [];
-              if (isFormalTarget) {
-                const formalLembagas = lembagasList.filter(l => getLembagaJenis(l) === 'Formal');
-                const allFormalClassesLower = kelasList
-                  .filter(k => formalLembagas.some(fl => String(fl.id) === String((k as any).lembagaId || (k as any).lembaga_id)))
-                  .map(k => k.nama.trim().toLowerCase());
-
-                updatedClasses = updatedClasses.filter(c => {
-                  const lowerC = c.toLowerCase();
-                  if (isCalonClass(lowerC) || lowerC === 'tanpa kelas') return false;
-                  if (allFormalClassesLower.includes(lowerC)) return false;
-                  if (formalLembagas.some(fl => isMatchLembagaStrict(fl, lowerC))) return false;
-                  return true;
-                });
-              }
-
-              if (!updatedClasses.includes(destClassObj.nama) && !isCalonClass(destClassObj.nama)) {
+              if (!updatedClasses.includes(destClassObj.nama) && destClassObj.nama !== 'Calon Peserta Didik') {
                 updatedClasses.push(destClassObj.nama);
               }
 
               onUpdateSantri({
                 ...transferStudent,
-                kelas: updatedClasses.join(', ') || 'Tanpa Kelas',
+                kelas: updatedClasses.join(', '),
                 pendidikanFormal: newFormal,
                 pendidikanInternal: newInternal
               });
@@ -3827,6 +3584,12 @@ export default function DataAkademikSub({
                       </select>
                     )}
                   </div>
+
+                  {isFormalTarget && !isStudentEmis && (
+                    <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-800 font-medium leading-relaxed">
+                      ⚠️ Santri belum terdaftar EMIS. Pada pendidikan formal, kelas tujuan dibatasi hanya ke <strong>"Calon Peserta Didik"</strong>.
+                    </div>
+                  )}
                 </div>
 
                 <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex items-center justify-end gap-2">
@@ -3951,6 +3714,9 @@ export default function DataAkademikSub({
                                 statusEmis: valToApply as any,
                                 catatan: s.statusEmis === 'Invalid' && valToApply !== 'Invalid' ? extraNote : (valToApply === 'Invalid' && !s.catatan?.toLowerCase().startsWith('emis invalid:') ? `Emis Invalid: Status EMIS Invalid${s.catatan ? ` | ${s.catatan}` : ''}` : s.catatan)
                               };
+                              if (valToApply === 'Belum') {
+                                updated = demoteSantriToCalonPesertaDidik(s, lembagasList, kelasList);
+                              }
                               onUpdateSantri(updated);
                               setToast({ message: `Status EMIS ${s.nama} berhasil diubah ke ${valToApply}`, type: 'success' });
                             }
@@ -3988,7 +3754,7 @@ export default function DataAkademikSub({
                     </div>
                   )}
 
-                  {(['Terdaftar', 'Invalid', 'Belum', 'Keluar', 'Lulus'] as const).map((emisOption) => {
+                  {(['Terdaftar', 'Invalid', 'Belum'] as const).map((emisOption) => {
                     const activeVal = pendingEmis[s.id] || currentEmis;
                     const isCurrent = activeVal === emisOption;
                     return (
@@ -4001,32 +3767,12 @@ export default function DataAkademikSub({
                         }}
                         className={`w-full text-left px-3 py-1.5 transition-colors flex items-center justify-between cursor-pointer ${
                           isCurrent 
-                            ? (emisOption === 'Invalid' 
-                                ? 'bg-rose-50 text-rose-700 font-bold' 
-                                : emisOption === 'Keluar'
-                                  ? 'bg-amber-50 text-amber-700 font-bold'
-                                  : emisOption === 'Lulus'
-                                    ? 'bg-blue-50 text-blue-700 font-bold'
-                                    : emisOption === 'Terdaftar'
-                                      ? 'bg-emerald-50 text-emerald-700 font-bold'
-                                      : 'bg-slate-100 text-slate-700 font-bold') 
+                            ? (emisOption === 'Invalid' ? 'bg-rose-50 text-rose-700 font-bold' : 'bg-emerald-50 text-emerald-700 font-bold') 
                             : 'hover:bg-slate-50 text-slate-600'
                         }`}
                       >
-                        <span className={
-                          emisOption === 'Invalid' ? 'text-rose-600 font-bold' :
-                          emisOption === 'Keluar' ? 'text-amber-700 font-bold' :
-                          emisOption === 'Lulus' ? 'text-blue-700 font-bold' :
-                          emisOption === 'Terdaftar' ? 'text-emerald-700 font-bold' : ''
-                        }>{emisOption}</span>
-                        {isCurrent && (
-                          <span className={`h-1.5 w-1.5 rounded-full ${
-                            emisOption === 'Invalid' ? 'bg-rose-600' :
-                            emisOption === 'Keluar' ? 'bg-amber-600' :
-                            emisOption === 'Lulus' ? 'bg-blue-600' :
-                            emisOption === 'Terdaftar' ? 'bg-emerald-600' : 'bg-slate-600'
-                          }`} />
-                        )}
+                        <span className={emisOption === 'Invalid' ? 'text-rose-600 font-bold' : ''}>{emisOption}</span>
+                        {isCurrent && <span className={`h-1.5 w-1.5 rounded-full ${emisOption === 'Invalid' ? 'bg-rose-600' : 'bg-emerald-600'}`} />}
                       </button>
                     );
                   })}

@@ -1,9 +1,23 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MoreVertical } from 'lucide-react';
+import { 
+  Eye, 
+  MoreVertical, 
+  CheckSquare, 
+  Pencil, 
+  Printer, 
+  Trash2, 
+  Hash, 
+  User, 
+  Calendar, 
+  MapPin,
+  ChevronsUpDown
+} from 'lucide-react';
 import { Santri, Lembaga, Kelas } from '../../../types';
-import { fetchTableData, getApiUrl } from '../../../lib/api';
-import { isCustomPasFoto } from '../../SekretarisHelper';
+import { demoteSantriToCalonPesertaDidik } from '../../../lib/utils';
+import { fetchTableData } from '../../../lib/api';
+import { renderSantriAvatar, isCustomPasFoto } from '../../SekretarisHelper';
+import { MembershipBadge } from '../components/HelperComponents';
 import { AgeFilterConfig, calculateAgeOnDate } from '../AgeFilterModal';
 
 interface SantriCardViewProps {
@@ -57,10 +71,8 @@ export default function SantriCardView({
     if ((!lembagasList || lembagasList.length === 0) || (!kelasList || kelasList.length === 0)) {
       const loadEdu = async () => {
         try {
-          const [lems, kls] = await Promise.all([
-            fetchTableData<Lembaga>('lembaga', 'smartsantri_lembagas', []),
-            fetchTableData<Kelas>('kelas', 'smartsantri_kelas', [])
-          ]);
+          const lems = await fetchTableData<Lembaga>('lembaga', 'smartsantri_lembagas', []);
+          const kls = await fetchTableData<Kelas>('kelas', 'smartsantri_kelas', []);
           if (lems && lems.length > 0) setInternalLembagas(lems);
           if (kls && kls.length > 0) setInternalKelas(kls);
         } catch {}
@@ -287,12 +299,10 @@ export default function SantriCardView({
   }, [dragStart, setSelectedSantriIds]);
 
   const handleCardClick = (e: React.MouseEvent, index: number, s: Santri) => {
-    if (isSelectionMode) {
-      if (draggedRef.current) return;
-      toggleSingleSelection(s.id, e.shiftKey);
-    } else {
-      setSelectedSantri(s);
-    }
+    if (!isSelectionMode) return;
+    if (draggedRef.current) return;
+
+    toggleSingleSelection(s.id, e.shiftKey);
   };
 
   return (
@@ -312,13 +322,13 @@ export default function SantriCardView({
           }}
         />
       )}
-      <div className="grid grid-cols-1 gap-3.5 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {paginatedSantri.map((s, index) => {
           const isSelected = selectedSantriIds.includes(s.id);
-          const canWriteForSantri = s.gender === 'Putri' ? canWritePutri : canWritePutra;
+          const canWriteForSantri = s.gender === 'Putra' ? canWritePutra : canWritePutri;
           const isPutri = s.gender === 'Putri';
-          const isAlumni = s.statusKeanggotaan === 'Alumni';
-
+          const genderBgColor = isPutri ? 'bg-pink-500' : 'bg-[#00b0f0]';
+          
           // Initials helper
           const getInitials = (name: string): string => {
             const words = (name || '').trim().split(/\s+/);
@@ -332,127 +342,35 @@ export default function SantriCardView({
           const hasUploadedPhoto = isCustomPasFoto(s.filePasFoto);
           
           // Address helper
-          const addressParts = [s.desa, s.kecamatan, s.kabupaten].filter(val => val && val.trim() !== '');
-          const addressText = addressParts.length > 0 ? addressParts.join(', ') : (s.alamat || s.asal || '-');
-
-          // Age calculation
-          const refDate = ageFilterConfig?.enabled && ageFilterConfig.refType === 'custom' && ageFilterConfig.customDate
-            ? new Date(ageFilterConfig.customDate)
-            : new Date();
-          const age = calculateAgeOnDate(s.tanggalLahir, refDate);
-          const displayAge = age !== null && age !== undefined ? age : '-';
-
-          // Outer ring border color matching screenshot
-          const ringBorderColor = isPutri
-            ? 'border-rose-400'
-            : isAlumni
-            ? 'border-indigo-400'
-            : 'border-blue-400';
-
-          // Inner background / text color for initials
-          const bgClass = isPutri
-            ? 'bg-slate-100 text-slate-700'
-            : isAlumni
-            ? 'bg-indigo-600 text-white'
-            : 'bg-[#2b6cb0] text-white';
-
-          // Status Keanggotaan badge style
-          const statusKeanggotaanStyle = isAlumni
-            ? 'bg-[#eaf1fb] text-[#2b6cb0]'
-            : s.statusKeanggotaan === 'Meninggal'
-            ? 'bg-rose-50 text-rose-600'
-            : s.statusKeanggotaan === 'Mutasi'
-            ? 'bg-amber-50 text-amber-600'
-            : 'bg-[#e6f8ef] text-[#00a86b]';
-
-          // Second badge text (domisili or alumni condition)
-          const secondBadgeText = isAlumni
-            ? (s.statusDomisili ? s.statusDomisili.toUpperCase() : 'HIDUP')
-            : s.statusKeanggotaan === 'Meninggal'
-            ? 'WAFAT'
-            : (s.statusDomisili ? s.statusDomisili.toUpperCase() : 'MUQIM');
+          const formattedAddress = [s.desa, s.kecamatan, s.kabupaten]
+            .filter(val => val && val.trim() !== '')
+            .join(', ');
+          const addressText = formattedAddress || s.alamat || s.asal || '-';
 
           return (
             <div 
               key={`${s.id}-${index}`} 
               data-drag-id={s.id}
               onClick={(e) => handleCardClick(e, index, s)}
-              className={`group relative flex flex-row items-center justify-between gap-3 sm:gap-4 rounded-2xl border p-3.5 sm:p-4 transition-all duration-200 select-none cursor-pointer ${
+              className={`group relative flex flex-row items-center gap-6 rounded-lg border p-6 transition-all duration-200 select-none ${
                 isSelectionMode
                   ? isSelected
-                    ? 'border-blue-300 bg-blue-50/60 shadow-xs'
-                    : 'border-slate-200/80 bg-white hover:border-slate-300 hover:shadow-xs'
-                  : 'border-slate-200/80 bg-white hover:border-slate-300 hover:shadow-sm'
+                    ? 'border-[#a5d8f3] bg-[#e3f7fc] cursor-pointer shadow-xs'
+                    : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-xs cursor-pointer'
+                  : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-md'
               }`}
             >
-              {/* Left Section: Avatar & Info */}
-              <div className="flex items-center gap-3 sm:gap-3.5 min-w-0 flex-1">
-                {/* Avatar with circular outline and bottom-left Age Badge */}
-                <div className="relative shrink-0">
-                  <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full border-2 ${ringBorderColor} overflow-hidden flex items-center justify-center bg-slate-50 shadow-xs`}>
-                    {hasUploadedPhoto ? (
-                      <img 
-                        src={getApiUrl(s.filePasFoto!)} 
-                        className="w-full h-full object-cover rounded-full" 
-                        alt={s.nama} 
-                        loading="lazy"
-                        decoding="async"
-                        referrerPolicy="no-referrer"
-                      />
-                    ) : (
-                      <div className={`w-full h-full flex items-center justify-center font-sans font-bold text-base sm:text-lg ${bgClass}`}>
-                        {getInitials(s.nama)}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Age Badge in bottom-left corner of profile circle */}
-                  <div 
-                    className="absolute -bottom-0.5 -left-0.5 min-w-[20px] h-[20px] sm:min-w-[22px] sm:h-[22px] px-1 rounded-full bg-[#00a86b] text-white font-bold text-[10px] sm:text-[11px] flex items-center justify-center border-2 border-white shadow-xs select-none"
-                    title={`Umur: ${displayAge} Tahun`}
-                  >
-                    {displayAge}
-                  </div>
-                </div>
-
-                {/* Info Section */}
-                <div className="flex flex-col min-w-0 flex-1 gap-1">
-                  {/* Nama */}
-                  <h3 className="font-bold text-slate-800 text-sm sm:text-base uppercase tracking-tight truncate leading-snug">
-                    {s.nama}
-                  </h3>
-
-                  {/* Badges: Status Keanggotaan & Domisili/Kondisi */}
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {/* Badge 1: Status Keanggotaan */}
-                    <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-bold tracking-wider uppercase ${statusKeanggotaanStyle}`}>
-                      {s.statusKeanggotaan || 'AKTIF'}
-                    </span>
-
-                    {/* Badge 2: Status Domisili / Kondisi */}
-                    <span className="inline-flex items-center justify-center px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-medium tracking-wider uppercase bg-[#f1f4f8] text-[#5c6f84]">
-                      {secondBadgeText}
-                    </span>
-                  </div>
-
-                  {/* Subtitle: NIS . Alamat */}
-                  <p className="text-xs text-slate-400 font-normal truncate" title={`${s.nis || '-'} . ${addressText}`}>
-                    {s.nis || '-'} . {addressText}
-                  </p>
-                </div>
-              </div>
-
-              {/* Right Section: 3-Dots Action / Selection Checkbox */}
+              {/* Selection Checkbox / 3-Dots Menu (Top Right) */}
               {isSelectionMode ? (
                 <div 
-                  className="shrink-0 p-1 cursor-pointer" 
+                  className="absolute top-4 right-4 z-10" 
                   onClick={(e) => {
                     e.stopPropagation();
-                    toggleSingleSelection(s.id, e.shiftKey);
+                    handleCardClick(e, index, s);
                   }}
                 >
                   {isSelected ? (
-                    <div className="w-5 h-5 bg-[#00a86b] rounded flex items-center justify-center text-white shadow-xs cursor-pointer active:scale-90 transition-transform">
+                    <div className="w-5 h-5 bg-[#0d6efd] rounded flex items-center justify-center text-white shadow-xs cursor-pointer active:scale-90 transition-transform">
                       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" className="w-3.5 h-3.5">
                         <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
                       </svg>
@@ -462,20 +380,19 @@ export default function SantriCardView({
                   )}
                 </div>
               ) : (
-                <div className="relative shrink-0">
+                <div className="absolute top-4 right-4 z-20">
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       setActiveSantriDropdownId(activeSantriDropdownId === s.id ? null : s.id);
                     }}
-                    className="dropdown-trigger-btn text-slate-400 hover:text-slate-600 p-2 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer active:scale-90 min-w-[36px] min-h-[36px] flex items-center justify-center"
-                    title="Menu Pilihan"
+                    className="dropdown-trigger-btn text-slate-500 hover:text-slate-800 p-1 rounded-lg transition-colors cursor-pointer active:scale-90"
                   >
-                    <MoreVertical className="w-5 h-5" />
+                    <MoreVertical className="w-5 h-5 text-slate-500" />
                   </button>
 
-                  {/* Dropdown Popover */}
+                  {/* Dropdown Popover matching Image Reference exactly */}
                   <AnimatePresence>
                     {activeSantriDropdownId === s.id && (
                       <>
@@ -491,7 +408,7 @@ export default function SantriCardView({
                           animate={{ opacity: 1, y: 0, scale: 1 }}
                           exit={{ opacity: 0, y: 4, scale: 0.95 }}
                           transition={{ duration: 0.1 }}
-                          className="dropdown-container-box absolute right-0 mt-1 w-28 rounded-lg border border-slate-200 bg-white py-1 shadow-lg z-40 text-slate-700 font-sans"
+                          className="dropdown-container-box absolute right-0 mt-1 w-24 rounded-sm border border-slate-300 bg-white py-1 shadow-md z-40 text-slate-700 font-sans"
                           onClick={(e) => e.stopPropagation()}
                         >
                           <button
@@ -505,60 +422,164 @@ export default function SantriCardView({
                                 setSelectedSantriIds([...selectedSantriIds, s.id]);
                               }
                             }}
-                            className="flex w-full items-center px-4 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+                            className="flex w-full items-center px-4 py-1.5 text-left text-xs font-semibold text-slate-800 hover:bg-slate-50 transition-colors"
                           >
                             Pilih
                           </button>
 
-                          {canWriteForSantri && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveSantriDropdownId(null);
-                                handleStartEditSantri(s);
-                              }}
-                              className="flex w-full items-center px-4 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
-                            >
-                              Edit
-                            </button>
-                          )}
-
+                        {canWriteForSantri && (
                           <button
                             type="button"
                             onClick={() => {
                               setActiveSantriDropdownId(null);
-                              handlePrintClick(s);
+                              handleStartEditSantri(s);
                             }}
-                            className="flex w-full items-center px-4 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+                            className="flex w-full items-center px-4 py-1.5 text-left text-xs font-semibold text-slate-800 hover:bg-slate-50 transition-colors cursor-pointer"
                           >
-                            Print
+                            Edit
                           </button>
+                        )}
 
-                          {canWriteForSantri && (
-                            <>
-                              <div className="my-1 border-t border-slate-100" />
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setActiveSantriDropdownId(null);
-                                  handleDeleteClick(s.id, s.nama);
-                                }}
-                                className="flex w-full items-center px-4 py-2 text-left text-xs font-semibold text-rose-600 hover:bg-rose-50 cursor-pointer transition-colors"
-                              >
-                                Hapus
-                              </button>
-                            </>
-                          )}
-                        </motion.div>
-                      </>
-                    )}
-                  </AnimatePresence>
-                </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveSantriDropdownId(null);
+                            handlePrintClick(s);
+                          }}
+                          className="flex w-full items-center px-4 py-1.5 text-left text-xs font-semibold text-slate-800 hover:bg-slate-50 transition-colors"
+                        >
+                          Print
+                        </button>
+
+                        {canWriteForSantri && (
+                          <>
+                            <div className="my-1 border-t border-slate-200" />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveSantriDropdownId(null);
+                                handleDeleteClick(s.id, s.nama);
+                              }}
+                              className="flex w-full items-center px-4 py-1.5 text-left text-xs font-semibold text-rose-600 hover:bg-rose-50 cursor-pointer font-bold transition-colors"
+                            >
+                              Hapus
+                            </button>
+                          </>
+                        )}
+                      </motion.div>
+                    </>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* Photo Section */}
+            <div className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-full border border-slate-200/80 shadow-xs bg-slate-50 flex-shrink-0 flex items-center justify-center">
+              <div className="w-full h-full rounded-full overflow-hidden flex items-center justify-center">
+                {hasUploadedPhoto ? (
+                  <img 
+                    src={s.filePasFoto} 
+                    className="w-full h-full object-cover" 
+                    alt={s.nama} 
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className={`w-full h-full flex items-center justify-center font-sans font-extrabold text-2xl sm:text-3xl text-white ${genderBgColor}`}>
+                    {getInitials(s.nama)}
+                  </div>
+                )}
+              </div>
+              {/* Selection blue overlay tint matching Image 2 reference exactly */}
+              {isSelectionMode && isSelected && (
+                <div className="absolute inset-0 rounded-full bg-[#00b0f0]/30 mix-blend-multiply pointer-events-none" />
               )}
+
+              {/* Age Label in bottom-left corner of profile photo */}
+              {(() => {
+                const age = calculateAgeOnDate(s.tanggalLahir, new Date());
+                if (age === null || age === undefined) return null;
+                return (
+                  <span className="absolute bottom-0 left-0 bg-slate-900/85 text-white font-extrabold text-[10px] sm:text-xs px-2.5 py-0.5 rounded-full border-2 border-white shadow-md z-10 flex items-center justify-center whitespace-nowrap">
+                    {age} Thn
+                  </span>
+                );
+              })()}
             </div>
-          );
-        })}
-      </div>
+
+            {/* Content Section */}
+            <div className="flex-1 min-w-0 flex flex-col justify-between self-stretch py-1">
+              <div>
+                {/* Pills/Badges exactly like Reference Image */}
+                <div className="flex items-center gap-2 mb-2">
+                  <span className={`inline-flex items-center justify-center rounded-full px-2.5 py-0.5 text-[10px] font-bold tracking-tight ${
+                    s.statusKeanggotaan === 'Alumni' 
+                      ? 'bg-[#e2f0d9] text-[#385723]' 
+                      : s.statusKeanggotaan === 'Meninggal'
+                      ? 'bg-rose-100 text-rose-800'
+                      : 'bg-[#d9f2d5] text-[#2e7d32]'
+                  }`}>
+                    {s.statusKeanggotaan || 'Aktif'}
+                  </span>
+                  {s.statusKeanggotaan === 'Aktif' && (
+                    <span className="inline-flex items-center justify-center rounded-full bg-[#ffeb3b] text-slate-900 px-2.5 py-0.5 text-[10px] font-bold tracking-tight">
+                      {s.statusDomisili || 'Muqim'}
+                    </span>
+                  )}
+                  <span className={`inline-flex items-center justify-center rounded-full ${genderBgColor} text-white px-2.5 py-0.5 text-[10px] font-bold tracking-tight`}>
+                    {s.gender || 'Putra'}
+                  </span>
+                  {ageFilterConfig?.enabled && (
+                    <span className="inline-flex items-center justify-center rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 text-[10px] font-bold tracking-tight">
+                      {(() => {
+                        const refDate = ageFilterConfig.refType === 'custom' && ageFilterConfig.customDate
+                          ? new Date(ageFilterConfig.customDate)
+                          : new Date();
+                        const age = calculateAgeOnDate(s.tanggalLahir, refDate);
+                        const subtext = ageFilterConfig.refType === 'custom' && ageFilterConfig.customDate
+                          ? `Per ${new Date(ageFilterConfig.customDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                          : 'Hari ini';
+                        return age !== null ? `Umur: ${age} Thn (${subtext})` : 'Umur: -';
+                      })()}
+                    </span>
+                  )}
+                </div>
+
+                {/* Name */}
+                <h3 className="font-sans text-lg sm:text-xl font-bold text-[#1a1a1a] tracking-tight leading-tight mb-1 truncate">
+                  {s.nama}
+                </h3>
+
+                {/* ID & Address (NIS, dot spacer, and sub-district/district/province details) */}
+                <p className="text-xs text-slate-500 font-medium font-sans truncate mb-4" title={addressText}>
+                  {s.nis || '-'} <span className="mx-1 text-slate-400 font-bold">·</span> {addressText}
+                </p>
+              </div>
+
+              {/* Red Pill Button 'Lihat Selengkapnya >' */}
+              <div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    if (!isSelectionMode) {
+                      e.stopPropagation();
+                      setSelectedSantri(s);
+                    }
+                  }}
+                  className={`inline-flex items-center justify-center gap-1.5 px-5 py-2 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                    isSelectionMode
+                      ? 'bg-[#b01616]/60 text-white/80'
+                      : 'bg-[#b01616] text-white hover:bg-[#8f1212] active:scale-95 shadow-sm'
+                  }`}
+                >
+                  <span>Lihat Selengkapnya &gt;</span>
+                </button>
+              </div>
+            </div>
+
+          </div>
+        );
+      })}
     </div>
-  );
+  </div>
+);
 }

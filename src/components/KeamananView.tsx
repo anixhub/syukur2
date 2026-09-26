@@ -115,34 +115,23 @@ function RiwayatIzinRow({ rec, santriList }: RiwayatIzinRowProps) {
     seconds: number;
   }>({ isOverdue: false, days: 0, hours: 0, minutes: 0, seconds: 0 });
 
-  const isReturned = rec.status === 'Sudah Kembali' || rec.status === 'Keluar Selesai';
-  const isIlegal = isPerizinanIlegalOrCabut(rec);
+  const isReturned = rec.status === 'Sudah Kembali';
 
   useEffect(() => {
     if (isReturned) return;
 
     const calculateTime = () => {
-      const now = Date.now();
-      let diff = 0;
-      let isOverdue = false;
+      const targetTime = new Date(rec.tanggalSelesai).getTime();
+      const now = new Date().getTime();
+      const diff = targetTime - now;
 
-      if (isIlegal) {
-        const startTime = getPerizinanStartTime(rec);
-        // Durasi sejak keluar ilegal (selalu menghitung maju)
-        diff = Math.max(0, now - startTime);
-        isOverdue = true;
-      } else {
-        const targetTime = getPerizinanEndTime(rec);
-        diff = targetTime - now;
-        isOverdue = diff < 0;
-      }
-
+      const isOverdue = diff < 0;
       const absDiff = Math.abs(diff);
-      const totalSeconds = Math.floor(absDiff / 1000);
-      const seconds = totalSeconds % 60;
-      const minutes = Math.floor(totalSeconds / 60) % 60;
-      const hours = Math.floor(totalSeconds / 3600) % 24;
-      const days = Math.floor(totalSeconds / 86400);
+
+      const seconds = Math.floor((absDiff / 1000) % 60);
+      const minutes = Math.floor((absDiff / 1000 / 60) % 60);
+      const hours = Math.floor((absDiff / (1000 * 60 * 60)) % 24);
+      const days = Math.floor(absDiff / (1000 * 60 * 60 * 24));
 
       setTimeLeft({ isOverdue, days, hours, minutes, seconds });
     };
@@ -150,34 +139,32 @@ function RiwayatIzinRow({ rec, santriList }: RiwayatIzinRowProps) {
     calculateTime();
     const interval = setInterval(calculateTime, 1000);
     return () => clearInterval(interval);
-  }, [rec.tanggalSelesai, rec.tanggalMulai, rec.tanggalCabut, rec.isCabut, rec.status, isReturned, isIlegal]);
+  }, [rec.tanggalSelesai, isReturned]);
 
   const { isOverdue, days, hours, minutes, seconds } = timeLeft;
   const pad = (num: number) => String(num).padStart(2, '0');
-  const formattedTime = isIlegal
-    ? `${days > 0 ? `${days} hari ` : ''}${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
-    : `${days > 0 ? `${days} Hari ` : ''}${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+  const formattedTime = `${days > 0 ? `${days} Hari ` : ''}${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
 
   const sObj = santriList.find(x => rec.santriId ? x.id === rec.santriId : x.nama === rec.namaSantri);
 
   let durationStr = '';
-  if (isReturned && (rec.tanggalKembali || (rec as any).tgl_kembali)) {
-    const startTime = getPerizinanStartTime(rec);
-    const endStr = rec.tanggalKembali || (rec as any).tgl_kembali;
-    const endD = parseSafeDate(endStr);
-    const endTime = endD ? endD.getTime() : (endStr ? new Date(endStr).getTime() : Date.now());
-    const diffMs = Math.max(0, endTime - startTime);
-    
-    const totalSeconds = Math.floor(diffMs / 1000);
-    const minutesCount = Math.floor(totalSeconds / 60) % 60;
-    const hoursCount = Math.floor(totalSeconds / 3600) % 24;
-    const daysCount = Math.floor(totalSeconds / 86400);
+  if (rec.isCabut && rec.tanggalKembali) {
+    const startStr = rec.tanggalCabut || rec.tanggalMulai;
+    if (startStr) {
+      const startTime = new Date(startStr).getTime();
+      const endTime = new Date(rec.tanggalKembali).getTime();
+      const diffMs = Math.max(0, endTime - startTime);
+      
+      const minutesCount = Math.floor((diffMs / 1000 / 60) % 60);
+      const hoursCount = Math.floor((diffMs / (1000 * 60 * 60)) % 24);
+      const daysCount = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-    const durationParts = [];
-    if (daysCount > 0) durationParts.push(`${daysCount} hari`);
-    if (hoursCount > 0) durationParts.push(`${hoursCount} jam`);
-    if (minutesCount > 0 || durationParts.length === 0) durationParts.push(`${minutesCount} menit`);
-    durationStr = durationParts.join(' ');
+      const durationParts = [];
+      if (daysCount > 0) durationParts.push(`${daysCount} hari`);
+      if (hoursCount > 0) durationParts.push(`${hoursCount} jam`);
+      if (minutesCount > 0 || durationParts.length === 0) durationParts.push(`${minutesCount} menit`);
+      durationStr = durationParts.join(' ');
+    }
   }
 
   return (
@@ -399,8 +386,6 @@ interface ActiveSantriIzinCardProps {
 }
 
 function ActiveSantriIzinCard({ rec, santriList, handleReturnToPondok, onExtendDuration, onDeletePerizinan, onRevokeIzin, canWriteCurrent = true }: ActiveSantriIzinCardProps) {
-  const isIlegal = isPerizinanIlegalOrCabut(rec);
-
   const [timeLeft, setTimeLeft] = useState<{
     isOverdue: boolean;
     days: number;
@@ -420,26 +405,25 @@ function ActiveSantriIzinCard({ rec, santriList, handleReturnToPondok, onExtendD
     const calculateTime = () => {
       let diff = 0;
       let isOverdue = false;
-      const now = Date.now();
 
-      if (isIlegal) {
-        const startTime = getPerizinanStartTime(rec);
-        // Durasi sejak santri keluar ilegal (menghitung maju / count up)
-        diff = Math.max(0, now - startTime);
+      if (rec.isCabut && rec.tanggalCabut) {
+        const cabutTime = new Date(rec.tanggalCabut).getTime();
+        const now = new Date().getTime();
+        diff = now - cabutTime; // Count UP since revocation
         isOverdue = true;
       } else {
-        const targetTime = getPerizinanEndTime(rec);
+        const targetTime = new Date(rec.tanggalSelesai).getTime();
+        const now = new Date().getTime();
         diff = targetTime - now;
         isOverdue = diff < 0;
       }
 
       const absDiff = Math.abs(diff);
 
-      const totalSeconds = Math.floor(absDiff / 1000);
-      const seconds = totalSeconds % 60;
-      const minutes = Math.floor(totalSeconds / 60) % 60;
-      const hours = Math.floor(totalSeconds / 3600) % 24;
-      const days = Math.floor(totalSeconds / 86400);
+      const seconds = Math.floor((absDiff / 1000) % 60);
+      const minutes = Math.floor((absDiff / 1000 / 60) % 60);
+      const hours = Math.floor((absDiff / (1000 * 60 * 60)) % 24);
+      const days = Math.floor(absDiff / (1000 * 60 * 60 * 24));
 
       setTimeLeft({ isOverdue, days, hours, minutes, seconds });
     };
@@ -447,14 +431,14 @@ function ActiveSantriIzinCard({ rec, santriList, handleReturnToPondok, onExtendD
     calculateTime();
     const interval = setInterval(calculateTime, 1000);
     return () => clearInterval(interval);
-  }, [rec.tanggalSelesai, rec.isCabut, rec.tanggalCabut, rec.tanggalMulai, (rec as any).tanggal_cabut, (rec as any).tanggal_mulai, (rec as any).is_cabut, isIlegal]);
+  }, [rec.tanggalSelesai, rec.isCabut, rec.tanggalCabut]);
 
   const { isOverdue, days, hours, minutes, seconds } = timeLeft;
 
   const pad = (num: number) => String(num).padStart(2, '0');
 
-  const formattedTime = isIlegal
-    ? `${days > 0 ? `${days} hari ` : ''}${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
+  const formattedTime = rec.isCabut
+    ? `Ilegal ${days} hari ${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
     : `${days > 0 ? `${days} Hari ` : ''}${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
 
   const sObj = santriList.find(x => rec.santriId ? x.id === rec.santriId : x.nama === rec.namaSantri);
@@ -487,7 +471,7 @@ function ActiveSantriIzinCard({ rec, santriList, handleReturnToPondok, onExtendD
   return (
     <div 
       className={`p-4 border rounded-xl flex flex-col justify-between gap-3 shadow-xs transition-all hover:shadow-sm ${
-        isOverdue || isIlegal
+        isOverdue || rec.isCabut
           ? 'bg-rose-50/40 border-rose-200' 
           : 'bg-slate-50/50 border-slate-200'
       }`}
@@ -509,7 +493,7 @@ function ActiveSantriIzinCard({ rec, santriList, handleReturnToPondok, onExtendD
           <div className="flex-1 min-w-0 text-left">
             <div className="flex items-start justify-between gap-2">
               <h4 className="text-xs font-extrabold text-slate-800 truncate">{rec.namaSantri}</h4>
-              {isIlegal ? (
+              {rec.isCabut ? (
                 <span className="text-[10px] font-mono font-black bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full border border-rose-200 flex items-center gap-1 shrink-0 animate-pulse">
                   <AlertTriangle className="h-3.5 w-3.5 text-rose-500 shrink-0" />
                   <span>{formattedTime}</span>
@@ -559,22 +543,10 @@ function ActiveSantriIzinCard({ rec, santriList, handleReturnToPondok, onExtendD
             transition={{ duration: 0.18, ease: "easeInOut" }}
             className="space-y-3 overflow-hidden pt-1"
           >
-            {isIlegal ? (
-              <div className="p-2.5 bg-rose-50/50 border border-rose-200 rounded-lg space-y-1.5 text-left">
-                <p className="text-[9px] text-rose-600 font-extrabold tracking-wider uppercase">Keterangan Keluar Ilegal</p>
-                <p className="text-[11px] text-slate-750 font-bold leading-relaxed">{rec.alasanCabut || rec.keterangan || '-'}</p>
-                <div className="pt-2 border-t border-rose-200/60 grid grid-cols-2 gap-2 text-[10px]">
-                  <div>
-                    <span className="text-[9px] text-slate-400 block font-bold uppercase tracking-wider">Waktu Keluar</span>
-                    <span className="text-slate-700 font-bold">{formatIndonesianDate(rec.tanggalCabut || rec.tanggalMulai)}</span>
-                  </div>
-                  <div>
-                    <span className="text-[9px] text-slate-400 block font-bold uppercase tracking-wider">Durasi di Luar</span>
-                    <span className="text-rose-700 font-bold font-mono">
-                      {days > 0 ? `${days} hari ` : ''}{hours} jam {minutes} menit {seconds} detik
-                    </span>
-                  </div>
-                </div>
+            {rec.isCabut ? (
+              <div className="p-2.5 bg-rose-50/50 border border-rose-200 rounded-lg space-y-1 text-left">
+                <p className="text-[9px] text-rose-600 font-extrabold tracking-wider uppercase">Keterangan</p>
+                <p className="text-[11px] text-slate-755 font-bold leading-relaxed">{rec.alasanCabut || '-'}</p>
               </div>
             ) : (
               <>
@@ -826,124 +798,8 @@ function formatIndonesianDate(dateStr: string): string {
   return formattedDate;
 }
 
-function isPerizinanIlegalOrCabut(rec?: Partial<PerizinanRecord> | any): boolean {
-  if (!rec) return false;
-  return Boolean(
-    rec.isCabut || 
-    rec.is_cabut === 1 || 
-    rec.is_cabut === true || 
-    rec.status === 'Izin Dicabut' ||
-    (rec.keterangan && typeof rec.keterangan === 'string' && rec.keterangan.toLowerCase().includes('ilegal')) ||
-    (rec.alasanCabut && typeof rec.alasanCabut === 'string' && rec.alasanCabut.trim() !== '') ||
-    (rec.alasan_cabut && typeof rec.alasan_cabut === 'string' && rec.alasan_cabut.trim() !== '')
-  );
-}
-
-function parseSafeDate(dateStr?: string | null): Date | null {
-  if (!dateStr || typeof dateStr !== 'string') return null;
-  const trimmed = dateStr.trim();
-  if (!trimmed) return null;
-
-  // Match numeric string timestamps
-  if (/^\d{10,}$/.test(trimmed)) {
-    const d = new Date(parseInt(trimmed, 10));
-    if (!isNaN(d.getTime())) return d;
-  }
-
-  // If it has timezone offset or 'Z' at the end, standard Date parser handles it better
-  if (trimmed.includes('Z') || /[+-]\d{2}:\d{2}$/.test(trimmed)) {
-    const d = new Date(trimmed);
-    if (!isNaN(d.getTime())) return d;
-  }
-
-  // Match YYYY-MM-DDTHH:mm:ss or YYYY-MM-DD HH:mm:ss or YYYY-MM-DD
-  const ymdWithTimeMatch = trimmed.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})(?:[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
-  if (ymdWithTimeMatch) {
-    const year = parseInt(ymdWithTimeMatch[1], 10);
-    const month = parseInt(ymdWithTimeMatch[2], 10) - 1;
-    const day = parseInt(ymdWithTimeMatch[3], 10);
-    const hour = ymdWithTimeMatch[4] !== undefined ? parseInt(ymdWithTimeMatch[4], 10) : 0;
-    const minute = ymdWithTimeMatch[5] !== undefined ? parseInt(ymdWithTimeMatch[5], 10) : 0;
-    const second = ymdWithTimeMatch[6] !== undefined ? parseInt(ymdWithTimeMatch[6], 10) : 0;
-    
-    const d = new Date(year, month, day, hour, minute, second);
-    if (!isNaN(d.getTime())) return d;
-  }
-
-  // Match DD-MM-YYYYTHH:mm:ss or DD-MM-YYYY HH:mm:ss or DD-MM-YYYY
-  const dmyWithTimeMatch = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
-  if (dmyWithTimeMatch) {
-    const day = parseInt(dmyWithTimeMatch[1], 10);
-    const month = parseInt(dmyWithTimeMatch[2], 10) - 1;
-    const year = parseInt(dmyWithTimeMatch[3], 10);
-    const hour = dmyWithTimeMatch[4] !== undefined ? parseInt(dmyWithTimeMatch[4], 10) : 0;
-    const minute = dmyWithTimeMatch[5] !== undefined ? parseInt(dmyWithTimeMatch[5], 10) : 0;
-    const second = dmyWithTimeMatch[6] !== undefined ? parseInt(dmyWithTimeMatch[6], 10) : 0;
-    const d = new Date(year, month, day, hour, minute, second);
-    if (!isNaN(d.getTime())) return d;
-  }
-
-  const d = new Date(trimmed);
-  if (!isNaN(d.getTime())) return d;
-
-  return null;
-}
-
-function getPerizinanStartTime(rec?: Partial<PerizinanRecord> | any): number {
-  if (!rec) return Date.now();
-  const rawStr = rec.tanggalCabut || rec.tanggal_cabut || rec.tanggalMulai || rec.tanggal_mulai || rec.tgl_keluar || rec.createdAt || rec.created_at;
-  if (rawStr) {
-    const d = parseSafeDate(rawStr);
-    if (d && !isNaN(d.getTime()) && d.getTime() > 0) {
-      return d.getTime();
-    }
-  }
-  const numMatch = rec.id ? String(rec.id).match(/\d{10,}/) : null;
-  if (numMatch) {
-    const ts = parseInt(numMatch[0], 10);
-    if (ts > 1000000000000 && ts <= Date.now()) {
-      return ts;
-    }
-  }
-  return Date.now();
-}
-
-function getPerizinanEndTime(rec?: Partial<PerizinanRecord> | any): number {
-  if (!rec) return Date.now();
-  const rawStr = rec.tanggalSelesai || rec.tanggal_selesai || rec.tgl_kembali;
-  if (rawStr) {
-    const d = parseSafeDate(rawStr);
-    if (d && !isNaN(d.getTime()) && d.getTime() > 0) {
-      return d.getTime();
-    }
-  }
-  return getPerizinanStartTime(rec) + (60 * 60 * 1000);
-}
-
-function getDateTimestamp(dateStr?: string | null): number {
-  const d = parseSafeDate(dateStr);
-  return d ? d.getTime() : 0;
-}
-
-function getNormalizedDateKey(dateStr?: string | null): string {
-  const d = parseSafeDate(dateStr);
-  if (d) {
-    return getYYYYMMDD(d);
-  }
-  if (!dateStr) return '';
-  return dateStr.split('T')[0].split(' ')[0];
-}
-
 function formatIndonesianDateOnly(dateStr: string): string {
   if (!dateStr) return '';
-  const d = parseSafeDate(dateStr);
-  if (d) {
-    const months = [
-      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-    ];
-    return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
-  }
   let partsT = dateStr.split('T');
   let actualDateStr = partsT[0];
   if (actualDateStr.includes(' ')) {
@@ -1045,21 +901,6 @@ function DateTimePicker({
       setYear(y);
       setHour(h);
       setMinute(minPart);
-    } else if (value && /^\d{4}-\d{2}-\d{2}/.test(value)) {
-      const parts = value.split(/[T\s]/);
-      const [y, m, d] = parts[0].split('-');
-      setDay(d);
-      setMonth(m);
-      setYear(y);
-      if (parts[1]) {
-        const [h, minPart] = parts[1].split(':');
-        setHour(h || '00');
-        setMinute(minPart || '00');
-      } else {
-        const now = new Date();
-        setHour(String(now.getHours()).padStart(2, '0'));
-        setMinute(String(now.getMinutes()).padStart(2, '0'));
-      }
     } else if (!value) {
       setDay('dd');
       setMonth('mm');
@@ -2035,19 +1876,14 @@ export default function KeamananView({
       return;
     }
 
-    const now = new Date();
-    const nowStr = getYYYYMMDDTHHMM(now);
-    const effectiveTanggalMulai = tanggalMulaiIzin || nowStr;
-    const effectiveTanggalCabut = isIlegal ? effectiveTanggalMulai : undefined;
-
     const newRecord: PerizinanRecord = {
       id: 'P-' + Math.random().toString(36).substr(2, 9).toUpperCase(),
       namaSantri: targetSantri.nama,
       kelas: targetSantri.kelas || 'Umum',
       kamar: targetSantri.kamar || 'Belum diatur',
       jenisIzin: isIlegal ? 'Lainnya' : (jenisIzin as any),
-      tanggalMulai: effectiveTanggalMulai,
-      tanggalSelesai: isIlegal ? effectiveTanggalMulai : (tanggalSelesaiIzin || effectiveTanggalMulai),
+      tanggalMulai: tanggalMulaiIzin,
+      tanggalSelesai: isIlegal ? tanggalMulaiIzin : tanggalSelesaiIzin,
       keterangan: isIlegal 
         ? (keteranganIzin.trim() || 'Keluar Ilegal / Kabur')
         : (jenisIzin.trim().toLowerCase().startsWith('izin') ? jenisIzin.trim() : 'Izin ' + jenisIzin.trim()),
@@ -2055,7 +1891,7 @@ export default function KeamananView({
       gender: targetSantri.gender,
       isCabut: isIlegal ? true : undefined,
       alasanCabut: isIlegal ? (keteranganIzin.trim() || 'Keluar Ilegal / Kabur') : undefined,
-      tanggalCabut: effectiveTanggalCabut,
+      tanggalCabut: isIlegal ? tanggalMulaiIzin : undefined,
       santriId: targetSantri.id,
       nis: targetSantri.nis
     };
@@ -2067,10 +1903,6 @@ export default function KeamananView({
       setSelectedSantriIdForIzin('');
       setKeteranganIzin('');
       setSearchSantriForIzin('');
-      const resetNow = new Date();
-      setTanggalMulaiIzin(getYYYYMMDDTHHMM(resetNow));
-      const resetOneHour = new Date(resetNow.getTime() + 60 * 60 * 1000);
-      setTanggalSelesaiIzin(getYYYYMMDDTHHMM(resetOneHour));
     } catch (err: any) {
       alert(`Gagal menyimpan data perizinan ke database: ${err.message}`);
     }
@@ -2084,16 +1916,15 @@ export default function KeamananView({
     let returnKeterangan = `Kembali ke Pondok dari Izin ${originalRec.jenisIzin}`;
     let returnExtra: Partial<PerizinanRecord> = {};
 
-    const isIlegal = isPerizinanIlegalOrCabut(originalRec);
-    if (isIlegal) {
-      const startTime = getPerizinanStartTime(originalRec);
-      const endTime = Date.now();
+    if (originalRec.isCabut) {
+      const startTime = new Date(originalRec.tanggalCabut || originalRec.tanggalMulai).getTime();
+      const endTime = new Date().getTime();
       const diffMs = Math.max(0, endTime - startTime);
       
-      const totalSeconds = Math.floor(diffMs / 1000);
-      const minutes = Math.floor(totalSeconds / 60) % 60;
-      const hours = Math.floor(totalSeconds / 3600) % 24;
-      const days = Math.floor(totalSeconds / 86400);
+      const seconds = Math.floor((diffMs / 1000) % 60);
+      const minutes = Math.floor((diffMs / 1000 / 60) % 60);
+      const hours = Math.floor((diffMs / (1000 * 60 * 60)) % 24);
+      const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
       const durationParts = [];
       if (days > 0) durationParts.push(`${days} hari`);
@@ -2104,8 +1935,8 @@ export default function KeamananView({
       returnKeterangan = `Kembali ke Pondok (Keterangan: Keluar ilegal selama ${durationStr})`;
       returnExtra = {
         isCabut: true,
-        alasanCabut: originalRec.alasanCabut || originalRec.keterangan,
-        tanggalCabut: originalRec.tanggalCabut || originalRec.tanggalMulai
+        alasanCabut: originalRec.alasanCabut,
+        tanggalCabut: originalRec.tanggalCabut
       };
     }
     
@@ -2726,16 +2557,16 @@ export default function KeamananView({
       'Nama Santri',
       'NIS',
       'Alamat',
-      'Status',
-      'Jumlah Kasus',
+      'Status Keaktifan',
+      'Jumlah Pelanggaran',
       'Total Poin Sanksi',
-      'Kedisiplinan'
+      'Indikator Kedisiplinan'
     ];
 
     const rows = sortedSantriList.map((student, idx) => {
       const stats = getStudentStats(student.nama, student.id);
       const ind = getDisciplineIndicator(stats.points);
-      const alamatStr = formatAlamatFormatUser(student);
+      const alamatStr = [student.desa, student.kecamatan, student.kabupaten].filter(Boolean).join(', ') || '-';
       
       return [
         String(idx + 1),
@@ -3033,9 +2864,9 @@ export default function KeamananView({
    </Row>
    <Row ss:Height="20"/>
 
-   <!-- Section 2: Top 10 Santri Paling Melanggar -->
+   <!-- Section 2: Top 5 Santri Paling Melanggar -->
    <Row ss:Height="24">
-    <Cell ss:MergeAcross="6" ss:StyleID="SectionHeader"><Data ss:Type="String">II. TOP 10 SANTRI DENGAN PELANGGARAN TERTINGGI</Data></Cell>
+    <Cell ss:MergeAcross="6" ss:StyleID="SectionHeader"><Data ss:Type="String">II. TOP 5 SANTRI DENGAN PELANGGARAN TERTINGGI</Data></Cell>
    </Row>
    <Row ss:Height="26">
     <Cell ss:StyleID="Header"><Data ss:Type="String">Rank</Data></Cell>
@@ -3190,7 +3021,7 @@ export default function KeamananView({
     let reportContentHTML = '';
 
     if (displayTab === 'overview') {
-      // Top 10 violators rows
+      // Top 5 violators rows
       let violatorsRowsHTML = '';
       if (topViolators.length === 0) {
         violatorsRowsHTML = `
@@ -3265,9 +3096,9 @@ export default function KeamananView({
             </div>
           </div>
 
-          <!-- Section 2: Top 10 Violators -->
+          <!-- Section 2: Top 5 Violators -->
           <div class="space-y-3" style="margin-bottom: 24px;">
-            <h3 class="text-sm font-extrabold uppercase text-slate-800 border-b pb-1" style="font-size: 14px; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; margin-bottom: 12px;">II. TOP 10 SANTRI DENGAN PELANGGARAN TERTINGGI</h3>
+            <h3 class="text-sm font-extrabold uppercase text-slate-800 border-b pb-1" style="font-size: 14px; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; margin-bottom: 12px;">II. TOP 5 SANTRI DENGAN PELANGGARAN TERTINGGI</h3>
             <table class="w-full border-collapse border border-slate-300 text-left text-xs" style="width: 100%; border-collapse: collapse; border: 1px solid #cbd5e1; font-size: 12px;">
               <thead>
                 <tr class="bg-slate-100 font-bold text-slate-700" style="background-color: #f1f5f9; color: #334155;">
@@ -3310,7 +3141,7 @@ export default function KeamananView({
         sortedSantriList.forEach((student, idx) => {
           const stats = getStudentStats(student.nama, student.id);
           const ind = getDisciplineIndicator(stats.points);
-          const alamatStr = formatAlamatFormatUser(student);
+          const alamatStr = [student.desa, student.kecamatan, student.kabupaten].filter(Boolean).join(', ') || '-';
           santriRowsHTML += `
             <tr>
               <td class="p-1-5 text-center font-mono" style="border: 1px solid #cbd5e1; padding: 6px; text-align: center; font-family: monospace;">${idx + 1}</td>
@@ -4969,12 +4800,10 @@ export default function KeamananView({
         }
       )
       .sort((a, b) => {
-        const timeA = getDateTimestamp(a.tanggal);
-        const timeB = getDateTimestamp(b.tanggal);
-        if (timeA !== timeB) {
-          return timeA - timeB;
+        if (a.tanggal !== b.tanggal) {
+          return a.tanggal.localeCompare(b.tanggal);
         }
-        return (a.id || '').localeCompare(b.id || '');
+        return a.id.localeCompare(b.id);
       });
       
     const idx = studentRecs.findIndex(r => r.id === rec.id);
@@ -4985,29 +4814,17 @@ export default function KeamananView({
   };
 
   const groupedRiwayatByDate = useMemo(() => {
-    const groups: { date: string; dateTimestamp: number; records: KeamananRecord[] }[] = [];
-    const sorted = [...filteredRiwayat].sort((a, b) => {
-      const timeA = getDateTimestamp(a.tanggal);
-      const timeB = getDateTimestamp(b.tanggal);
-      if (timeB !== timeA) {
-        return timeB - timeA; // Newest first (tanggal terbaru ke terlama)
-      }
-      return (b.id || '').localeCompare(a.id || '');
-    });
-
+    const groups: { date: string; records: KeamananRecord[] }[] = [];
+    const sorted = [...filteredRiwayat].sort((a, b) => b.tanggal.localeCompare(a.tanggal));
     sorted.forEach(rec => {
-      const datePart = getNormalizedDateKey(rec.tanggal);
-      const timestamp = getDateTimestamp(rec.tanggal);
+      const datePart = rec.tanggal.split('T')[0].split(' ')[0];
       let group = groups.find(g => g.date === datePart);
       if (!group) {
-        group = { date: datePart, dateTimestamp: timestamp, records: [] };
+        group = { date: datePart, records: [] };
         groups.push(group);
       }
       group.records.push(rec);
     });
-
-    groups.sort((a, b) => b.dateTimestamp - a.dateTimestamp);
-
     return groups;
   }, [filteredRiwayat, periodes, selectedPeriode]);
 
@@ -5038,7 +4855,7 @@ export default function KeamananView({
         return !item.santri || item.santri.gender === filterGender;
       })
       .sort((a, b) => b.count - a.count || b.points - a.points)
-      .slice(0, 10);
+      .slice(0, 5);
   }, [activeKeamananList, santriList, filterGender]);
 
   const violationsChartData = useMemo(() => {
@@ -5056,7 +4873,7 @@ export default function KeamananView({
     
     return Object.values(counts)
       .sort((a, b) => b.count - a.count)
-      .slice(0, 10);
+      .slice(0, 8);
   }, [activeKeamananList, santriList, filterGender]);
 
   return (
@@ -5301,12 +5118,12 @@ export default function KeamananView({
 
             {/* Main Content Area */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Top 10 violators list */}
+              {/* Top 5 violators list */}
               <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col h-full justify-between">
                 <div>
                   <div className="flex items-center justify-between mb-5">
                     <div>
-                      <h3 className="font-display text-lg font-extrabold text-slate-800">Top 10 Santri Paling Melanggar</h3>
+                      <h3 className="font-display text-lg font-extrabold text-slate-800">Top 5 Santri Paling Melanggar</h3>
                       <p className="text-xs text-slate-400">Santri aktif dengan intensitas pelanggaran tertinggi</p>
                     </div>
                     <span className="text-xs px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 font-bold">
@@ -5409,7 +5226,7 @@ export default function KeamananView({
               {/* Chart of most frequent violations */}
               <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col h-full">
                 <div className="mb-5">
-                  <h3 className="font-display text-lg font-extrabold text-slate-800">Top 10 Pelanggaran Paling Sering</h3>
+                  <h3 className="font-display text-lg font-extrabold text-slate-800">Diagram Pelanggaran Paling Sering</h3>
                 </div>
 
                 <div className="flex-1 min-h-[160px] flex items-center justify-center">
@@ -6526,10 +6343,6 @@ export default function KeamananView({
                   setSelectedSantriIdForIzin('');
                   setJenisIzin('');
                   setKeteranganIzin('');
-                  const now = new Date();
-                  setTanggalMulaiIzin(getYYYYMMDDTHHMM(now));
-                  const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
-                  setTanggalSelesaiIzin(getYYYYMMDDTHHMM(oneHourLater));
                 }}
                 className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                   perizinanMode === 'resmi'
@@ -6546,8 +6359,6 @@ export default function KeamananView({
                   setSelectedSantriIdForIzin('');
                   setJenisIzin('');
                   setKeteranganIzin('');
-                  const now = new Date();
-                  setTanggalMulaiIzin(getYYYYMMDDTHHMM(now));
                 }}
                 className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                   perizinanMode === 'ilegal'
@@ -6920,33 +6731,24 @@ export default function KeamananView({
 
                 {/* List of historical permissions */}
                 {(() => {
-                  const filteredHist = perizinanList
-                    .filter(rec => {
-                      const matchesGender = rec.gender === filterGender;
-                      const matchesType = perizinanMode === 'resmi' ? !rec.isCabut : rec.isCabut;
-                      const matchesSearch = !searchIzin.trim() || 
-                        (rec.namaSantri || '').toLowerCase().includes(searchIzin.toLowerCase()) ||
-                        (rec.keterangan || '').toLowerCase().includes(searchIzin.toLowerCase()) ||
-                        (rec.jenisIzin || '').toLowerCase().includes(searchIzin.toLowerCase());
-                      
-                      let matchesStatus = true;
-                      const isReturned = rec.status === 'Sudah Kembali';
-                      if (historyFilterStatus === 'keluar') {
-                        matchesStatus = !isReturned;
-                      } else if (historyFilterStatus === 'masuk') {
-                        matchesStatus = isReturned;
-                      }
-                      
-                      return matchesGender && matchesType && matchesSearch && matchesStatus;
-                    })
-                    .sort((a, b) => {
-                      const dateValA = a.isCabut ? (a.tanggalCabut || a.tanggalMulai) : a.tanggalMulai;
-                      const dateValB = b.isCabut ? (b.tanggalCabut || b.tanggalMulai) : b.tanggalMulai;
-                      const timeA = getDateTimestamp(dateValA);
-                      const timeB = getDateTimestamp(dateValB);
-                      if (timeB !== timeA) return timeB - timeA; // Newest first
-                      return (b.id || '').localeCompare(a.id || '');
-                    });
+                  const filteredHist = perizinanList.filter(rec => {
+                    const matchesGender = rec.gender === filterGender;
+                    const matchesType = perizinanMode === 'resmi' ? !rec.isCabut : rec.isCabut;
+                    const matchesSearch = !searchIzin.trim() || 
+                      (rec.namaSantri || '').toLowerCase().includes(searchIzin.toLowerCase()) ||
+                      (rec.keterangan || '').toLowerCase().includes(searchIzin.toLowerCase()) ||
+                      (rec.jenisIzin || '').toLowerCase().includes(searchIzin.toLowerCase());
+                    
+                    let matchesStatus = true;
+                    const isReturned = rec.status === 'Sudah Kembali';
+                    if (historyFilterStatus === 'keluar') {
+                      matchesStatus = !isReturned;
+                    } else if (historyFilterStatus === 'masuk') {
+                      matchesStatus = isReturned;
+                    }
+                    
+                    return matchesGender && matchesType && matchesSearch && matchesStatus;
+                  });
 
                   if (filteredHist.length === 0) {
                     return (
@@ -6962,25 +6764,22 @@ export default function KeamananView({
                     );
                   }
 
-                  // Grouping filteredHist by normalized date portion
-                  const groups: { dateLabel: string; dateKey: string; dateTimestamp: number; items: PerizinanRecord[] }[] = [];
+                  // Grouping filteredHist by date portion
+                  const groups: { dateLabel: string; dateKey: string; items: PerizinanRecord[] }[] = [];
                   filteredHist.forEach(rec => {
                     const dateVal = rec.isCabut 
                       ? (rec.tanggalCabut || rec.tanggalMulai) 
                       : rec.tanggalMulai;
                     const dateLabel = formatIndonesianDateOnly(dateVal);
-                    const dateKey = getNormalizedDateKey(dateVal);
-                    const timestamp = getDateTimestamp(dateVal);
+                    const dateKey = dateVal ? dateVal.substring(0, 10) : '';
                     
-                    let group = groups.find(g => g.dateKey === dateKey);
-                    if (!group) {
-                      group = { dateLabel, dateKey, dateTimestamp: timestamp, items: [] };
-                      groups.push(group);
+                    const lastGroup = groups[groups.length - 1];
+                    if (lastGroup && lastGroup.dateLabel === dateLabel) {
+                      lastGroup.items.push(rec);
+                    } else {
+                      groups.push({ dateLabel, dateKey, items: [rec] });
                     }
-                    group.items.push(rec);
                   });
-
-                  groups.sort((a, b) => b.dateTimestamp - a.dateTimestamp);
 
                   return (
                     <div id="history-scroll-container" className="h-[500px] overflow-y-auto bg-slate-50/40 space-y-3.5 p-2.5">
@@ -7039,23 +6838,14 @@ export default function KeamananView({
 
                 {/* Active out-of-pondok student list */}
                 {(() => {
-                  const activePermits = perizinanList
-                    .filter(rec => {
-                      const matchesGender = rec.gender === filterGender;
-                      const matchesType = perizinanMode === 'resmi' ? !rec.isCabut : rec.isCabut;
-                      const isActive = rec.status === 'Izin Aktif' && matchesType;
-                      const matchesSearch = !searchActiveIzin.trim() || 
-                        (rec.namaSantri || '').toLowerCase().includes(searchActiveIzin.toLowerCase());
-                      return matchesGender && isActive && matchesSearch;
-                    })
-                    .sort((a, b) => {
-                      const dateValA = a.isCabut ? (a.tanggalCabut || a.tanggalMulai) : a.tanggalMulai;
-                      const dateValB = b.isCabut ? (b.tanggalCabut || b.tanggalMulai) : b.tanggalMulai;
-                      const timeA = getDateTimestamp(dateValA);
-                      const timeB = getDateTimestamp(dateValB);
-                      if (timeB !== timeA) return timeB - timeA; // Newest first
-                      return (b.id || '').localeCompare(a.id || '');
-                    });
+                  const activePermits = perizinanList.filter(rec => {
+                    const matchesGender = rec.gender === filterGender;
+                    const matchesType = perizinanMode === 'resmi' ? !rec.isCabut : rec.isCabut;
+                    const isActive = rec.status === 'Izin Aktif' && matchesType;
+                    const matchesSearch = !searchActiveIzin.trim() || 
+                      (rec.namaSantri || '').toLowerCase().includes(searchActiveIzin.toLowerCase());
+                    return matchesGender && isActive && matchesSearch;
+                  });
 
                   if (activePermits.length === 0) {
                     return (
@@ -8546,9 +8336,9 @@ export default function KeamananView({
                 </div>
               </div>
 
-              {/* Overview Section 2: Top 10 Violators */}
+              {/* Overview Section 2: Top 5 Violators */}
               <div className="space-y-3">
-                <h3 className="text-sm font-extrabold uppercase text-slate-800 border-b border-slate-200 pb-1">II. TOP 10 SANTRI DENGAN PELANGGARAN TERTINGGI</h3>
+                <h3 className="text-sm font-extrabold uppercase text-slate-800 border-b border-slate-200 pb-1">II. TOP 5 SANTRI DENGAN PELANGGARAN TERTINGGI</h3>
                 <table className="w-full border-collapse border border-slate-300 text-left text-xs">
                   <thead>
                     <tr className="bg-slate-100 font-extrabold text-slate-700">
@@ -9043,14 +8833,7 @@ export default function KeamananView({
         {viewingHistorySantri && (() => {
           const student = viewingHistorySantri;
           const violations = keamananList.filter(rec => isRecordForStudent(rec, student))
-            .sort((a, b) => {
-              const timeA = getDateTimestamp(a.tanggal);
-              const timeB = getDateTimestamp(b.tanggal);
-              if (timeB !== timeA) {
-                return timeB - timeA; // Newest first
-              }
-              return (b.id || '').localeCompare(a.id || '');
-            });
+            .sort((a, b) => b.tanggal.localeCompare(a.tanggal));
           const stats = getStudentStats(student.nama, student.id);
 
           const getIcon = (title: string) => {

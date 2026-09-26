@@ -1,19 +1,23 @@
--- ==============================================================================
--- SKEMA TERKINI DATABASE SMART SANTRI (HOSTINGER / MySQL / MariaDB / phpMyAdmin)
--- Terakhir Diperbarui: 2026-09-14
--- Ringkasan Perubahan:
--- * Format 100% MySQL / MariaDB murni untuk Hostinger phpMyAdmin (bebas syntax error PostgreSQL).
--- * Tabel lengkap: santri, lembaga, kelas, kompleks, kamar, rombel, akun (app_credentials),
---   profil pondok (pesantren_profile), surat, bendahara, keamanan, perizinan, chat, tugas.
--- * Idempotent: Aman dijalankan berulang kali (CREATE TABLE IF NOT EXISTS / ON DUPLICATE KEY UPDATE).
+-- ===================================================
+-- SMART SANTRI DATABASE SCHEMA FOR HOSTINGER (MySQL / MariaDB)
+-- Siap di-import di cPanel phpMyAdmin Hostinger
+-- ===================================================
+-- 
+-- BAGIAN 1: QUERY UPDATE / MIGRASI (Jika Database Sudah Ada di phpMyAdmin)
+-- Jika tabel 'santri' sudah ada di phpMyAdmin dan Anda ingin menambah
+-- kolom Induk MHD, Induk Wustho, dan Induk Ulya tanpa menghapus data:
 --
--- CARA PENGGUNAAN DI HOSTINGER:
--- 1. Buka cPanel / hPanel Hostinger -> Masuk ke phpMyAdmin.
--- 2. Pilih database Smart Santri Anda di bilah kiri.
--- 3. Klik tab 'SQL' di menu atas.
--- 4. Salin SEMUA isi file ini (Ctrl+A lalu Ctrl+C).
--- 5. Tempel (Paste) ke kotak SQL phpMyAdmin, lalu klik tombol 'Kirim' (Go).
--- ==============================================================================
+-- ALTER TABLE `santri` ADD COLUMN `induk_mhd` VARCHAR(30) NULL AFTER `nisn`;
+-- ALTER TABLE `santri` ADD COLUMN `induk_wustho` VARCHAR(30) NULL AFTER `induk_mhd`;
+-- ALTER TABLE `santri` ADD COLUMN `induk_ulya` VARCHAR(30) NULL AFTER `induk_wustho`;
+--
+-- Jika sebelumnya sempat membuat kolom camelCase (indukMhd, indukWustho, indukUlya),
+-- hapus kolom duplikat tersebut dengan:
+-- ALTER TABLE `santri` 
+--   DROP COLUMN `indukMhd`, 
+--   DROP COLUMN `indukWustho`, 
+--   DROP COLUMN `indukUlya`;
+-- ===================================================
 
 SET FOREIGN_KEY_CHECKS = 0;
 
@@ -21,7 +25,6 @@ SET FOREIGN_KEY_CHECKS = 0;
 CREATE TABLE IF NOT EXISTS `santri` (
   `id` VARCHAR(50) NOT NULL PRIMARY KEY,
   `nis` VARCHAR(20) UNIQUE,
-  `nism` VARCHAR(30),
   `nama` VARCHAR(100) NOT NULL,
   `kelas` TEXT,
   `kamar` TEXT,
@@ -32,9 +35,6 @@ CREATE TABLE IF NOT EXISTS `santri` (
   `induk_mhd` VARCHAR(30),
   `induk_wustho` VARCHAR(30),
   `induk_ulya` VARCHAR(30),
-  `kelas_mhd` VARCHAR(50),
-  `semester` VARCHAR(20) DEFAULT 'Semester 1',
-  `tahun_lulus` VARCHAR(20),
   `nik` CHAR(16),
   `no_kk` CHAR(16),
   `tempat_lahir` VARCHAR(50),
@@ -74,8 +74,7 @@ CREATE TABLE IF NOT EXISTS `santri` (
   `pendidikan_formal` TEXT,
   `pendidikan_internal` TEXT,
   `kelas_id` VARCHAR(50),
-  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 2. TABEL LEMBAGA
@@ -87,8 +86,6 @@ CREATE TABLE IF NOT EXISTS `lembaga` (
   `gender` VARCHAR(10) DEFAULT 'Putra',
   `jenis` VARCHAR(20) DEFAULT 'Internal',
   `logo` TEXT,
-  `nomor_statistik` VARCHAR(50),
-  `npsn` VARCHAR(50),
   `ta_mulai_tanggal` INT DEFAULT 1,
   `ta_mulai_bulan` INT DEFAULT 7,
   `ta_selesai_tanggal` INT DEFAULT 30,
@@ -148,6 +145,18 @@ CREATE TABLE IF NOT EXISTS `kelompok_rombel` (
   `kuota` INT DEFAULT 20,
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (`kategori_id`) REFERENCES `kategori_rombel`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `rombel_assignment` (
+  `id` VARCHAR(100) NOT NULL PRIMARY KEY,
+  `santri_id` VARCHAR(50),
+  `kategori_id` VARCHAR(50),
+  `kelompok_id` VARCHAR(50),
+  `assigned_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY `santri_kategori_unique` (`santri_id`, `kategori_id`),
+  FOREIGN KEY (`santri_id`) REFERENCES `santri`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`kategori_id`) REFERENCES `kategori_rombel`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`kelompok_id`) REFERENCES `kelompok_rombel`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 6. TABEL SURAT, BENDAHARA, KEAMANAN, PERIODE, PERIZINAN
@@ -226,7 +235,7 @@ CREATE TABLE IF NOT EXISTS `katalog_pelanggaran` (
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 7. TABEL AKUN / KREDENSIAL (APP_CREDENTIALS)
+-- 7. TABEL AKUN / KREDENSIAL
 CREATE TABLE IF NOT EXISTS `app_credentials` (
   `id` VARCHAR(50) NOT NULL PRIMARY KEY DEFAULT 'superadmin',
   `username` VARCHAR(150) NOT NULL UNIQUE,
@@ -239,8 +248,8 @@ CREATE TABLE IF NOT EXISTS `app_credentials` (
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-INSERT INTO `app_credentials` (`id`, `username`, `password`, `role`, `status`, `display_name`)
-VALUES ('superadmin', 'superadmin@attaroqqy.com', '1234', 'superadmin', 'approved', 'Super Admin')
+INSERT INTO `app_credentials` (`id`, `username`, `password`, `role`, `status`)
+VALUES ('superadmin', 'superadmin@attaroqqy.com', '1234', 'superadmin', 'approved')
 ON DUPLICATE KEY UPDATE `id`=`id`;
 
 -- 8. TABEL PROFIL PESANTREN
@@ -267,7 +276,6 @@ CREATE TABLE IF NOT EXISTS `pesantren_profile` (
   `nama_bendahara` VARCHAR(100),
   `nama_ketua_keamanan` VARCHAR(100),
   `nama_ketua_pendidikan` VARCHAR(100),
-  `nama_ketua_humasy` VARCHAR(100),
   `kota_tanda_tangan` VARCHAR(50),
   `logo_style` VARCHAR(50) DEFAULT 'classic',
   `logo_url` TEXT,

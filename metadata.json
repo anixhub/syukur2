@@ -1,6 +1,6 @@
 {
   "name": "Go AttarOkey",
-  "description": "Go AttarOkey - Portal Manajemen Pesantren",
+  "description": "Imported from GitHub: anixhub/syukur2 - Portal Manajemen Pesantren Terpadu",
   "requestFramePermissions": [
     "camera"
   ],

@@ -23,19 +23,18 @@ import {
   School,
   Filter
 } from 'lucide-react';
-import { Santri, Lembaga, Kelas, isGenderMatch, isCalonClass } from '../../../types';
-import { PENDIDIKAN_OPTIONS, normalizePendidikan, formatDateDDMMYYYY, parseCatatanInvalid, formatCatatanWithInvalid, parseCatatanInvalidParts, formatCatatanParts, getSantriFormalEducationInfo, getLembagaJenis, getDefaultCalonClassName } from '../../../lib/utils';
+import { Santri, Lembaga, Kelas, isGenderMatch } from '../../../types';
+import { demoteSantriToCalonPesertaDidik, PENDIDIKAN_OPTIONS, normalizePendidikan, formatDateDDMMYYYY, parseCatatanInvalid, formatCatatanWithInvalid, parseCatatanInvalidParts, formatCatatanParts } from '../../../lib/utils';
 import { renderSantriAvatar, getFormalKelasDisplay } from '../../SekretarisHelper';
 import { MembershipBadge } from '../components/HelperComponents';
 import { AgeFilterConfig, calculateAgeOnDate } from '../AgeFilterModal';
 import { fetchTableData } from '../../../lib/api';
 import { DEFAULT_WAJIB_KEYS } from '../../../constants/monitoringColumns';
-import { ExcelFilterPopover, getColumnLabel, getColumnValueString } from '../ExcelColumnFilter';
+import { ExcelFilterPopover, getColumnLabel } from '../ExcelColumnFilter';
 
 interface SantriTableViewProps {
   paginatedSantri: Santri[];
   allSantri?: Santri[];
-  unfilteredSantriList?: Santri[];
   startIndex: number;
   isSelectionMode: boolean;
   selectedSantriIds: string[];
@@ -63,8 +62,6 @@ interface SantriTableViewProps {
   mandatoryKeys?: (keyof Santri)[];
   excelColumnFilters?: Record<string, string[]>;
   onApplyExcelFilter?: (colKey: string, selectedValues: string[] | undefined) => void;
-  lembagasList?: Lembaga[];
-  kelasList?: Kelas[];
 }
 
 const isSantriDataComplete = (s: Santri): boolean => {
@@ -216,11 +213,8 @@ export default function SantriTableView({
   monitoringActiveTab = 'wajib',
   mandatoryKeys = [],
   allSantri,
-  unfilteredSantriList,
   excelColumnFilters,
-  onApplyExcelFilter,
-  lembagasList: propLembagas,
-  kelasList: propKelas
+  onApplyExcelFilter
 }: SantriTableViewProps) {
   const shouldShowColumn = (colKey: string): boolean => {
     if (colKey === 'nama') return true;
@@ -288,7 +282,7 @@ export default function SantriTableView({
   // Pending selection states for column dropdowns
   const [pendingDomisili, setPendingDomisili] = React.useState<{ [santriId: string]: string }>({});
   const [pendingStatusKeanggotaan, setPendingStatusKeanggotaan] = React.useState<{ [santriId: string]: 'Aktif' | 'Alumni' | 'Meninggal' }>({});
-  const [pendingEmis, setPendingEmis] = React.useState<{ [santriId: string]: 'Terdaftar' | 'Invalid' | 'Belum' | 'Keluar' | 'Lulus' }>({});
+  const [pendingEmis, setPendingEmis] = React.useState<{ [santriId: string]: 'Terdaftar' | 'Invalid' | 'Belum' }>({});
   const [invalidEmisModal, setInvalidEmisModal] = React.useState<{ santri: Santri; note: string } | null>(null);
   const [pendingFormalKelas, setPendingFormalKelas] = React.useState<{ [santriId: string]: { lem: Lembaga | null; cls: Kelas | null } }>({});
 
@@ -296,7 +290,6 @@ export default function SantriTableView({
   const [editingError, setEditingError] = React.useState<string | null>(null);
 
   const [lembagasList, setLembagasList] = React.useState<Lembaga[]>(() => {
-    if (propLembagas && propLembagas.length > 0) return propLembagas;
     try {
       const local = localStorage.getItem('smartsantri_lembagas');
       return local ? JSON.parse(local) : [];
@@ -306,7 +299,6 @@ export default function SantriTableView({
   });
 
   const [kelasList, setKelasList] = React.useState<Kelas[]>(() => {
-    if (propKelas && propKelas.length > 0) return propKelas;
     try {
       const local = localStorage.getItem('smartsantri_kelas');
       return local ? JSON.parse(local) : [];
@@ -316,41 +308,15 @@ export default function SantriTableView({
   });
 
   React.useEffect(() => {
-    if (propLembagas && propLembagas.length > 0) {
-      setLembagasList(propLembagas);
-    }
-  }, [propLembagas]);
-
-  React.useEffect(() => {
-    if (propKelas && propKelas.length > 0) {
-      setKelasList(propKelas);
-    }
-  }, [propKelas]);
-
-  React.useEffect(() => {
     const loadEducationData = async () => {
       try {
-        const [lems, kls] = await Promise.all([
-          fetchTableData<Lembaga>('lembaga', 'smartsantri_lembagas', []),
-          fetchTableData<Kelas>('kelas', 'smartsantri_kelas', [])
-        ]);
+        const lems = await fetchTableData<Lembaga>('lembaga', 'smartsantri_lembagas', []);
+        const kls = await fetchTableData<Kelas>('kelas', 'smartsantri_kelas', []);
         if (lems && lems.length > 0) setLembagasList(lems);
         if (kls && kls.length > 0) setKelasList(kls);
       } catch {}
     };
     loadEducationData();
-
-    const handleEduSync = () => {
-      try {
-        const lStr = localStorage.getItem('smartsantri_lembagas');
-        if (lStr) setLembagasList(JSON.parse(lStr));
-        const kStr = localStorage.getItem('smartsantri_kelas');
-        if (kStr) setKelasList(JSON.parse(kStr));
-      } catch {}
-    };
-
-    window.addEventListener('smartsantri_education_updated', handleEduSync);
-    window.addEventListener('storage', handleEduSync);
 
     const handleCloseDropdowns = (e?: Event) => {
       if (e && e.target) {
@@ -373,33 +339,10 @@ export default function SantriTableView({
     window.addEventListener('click', handleCloseDropdowns, true);
     window.addEventListener('scroll', handleCloseDropdowns, true);
     return () => {
-      window.removeEventListener('smartsantri_education_updated', handleEduSync);
-      window.removeEventListener('storage', handleEduSync);
       window.removeEventListener('click', handleCloseDropdowns, true);
       window.removeEventListener('scroll', handleCloseDropdowns, true);
     };
   }, [setActiveDesktopDropdownId, setActiveSantriDropdownId]);
-
-  // Compute population for active Excel header popover (excluding active column's own filter so options don't vanish)
-  const popoverSantriList = React.useMemo(() => {
-    if (!activeHeaderFilterKey) return allSantri && allSantri.length > 0 ? allSantri : paginatedSantri;
-    const baseSource = unfilteredSantriList && unfilteredSantriList.length > 0
-      ? unfilteredSantriList
-      : (allSantri && allSantri.length > 0 ? allSantri : paginatedSantri);
-
-    return baseSource.filter(s => {
-      for (const [colKey, allowedVals] of Object.entries(excelColumnFilters || {})) {
-        if (colKey !== activeHeaderFilterKey && allowedVals && allowedVals.length > 0) {
-          const val = getColumnValueString(s, colKey, ageFilterConfig, lembagasList, kelasList);
-          const isMatch = allowedVals.includes(val) || (colKey === 'pendidikanFormal' && allowedVals.some(av => val.endsWith(` - ${av}`) || val === av));
-          if (!isMatch) {
-            return false;
-          }
-        }
-      }
-      return true;
-    });
-  }, [activeHeaderFilterKey, unfilteredSantriList, allSantri, paginatedSantri, excelColumnFilters, ageFilterConfig, lembagasList, kelasList]);
 
   React.useEffect(() => {
     if (!editingCell) return;
@@ -454,7 +397,8 @@ export default function SantriTableView({
     currentClasses = currentClasses.filter(clsName => {
       const lowerCls = clsName.trim().toLowerCase();
       if (
-        isCalonClass(lowerCls) ||
+        lowerCls === 'calon pelajar' ||
+        lowerCls === 'calon peserta didik' ||
         lowerCls === 'tanpa kelas' ||
         lowerCls === 'tidak mengikuti' ||
         lowerCls === 'belum' ||
@@ -480,9 +424,8 @@ export default function SantriTableView({
         currentClasses.push(targetClass.nama.trim());
         formalStr = `${targetLembaga.nama} - ${targetClass.nama.trim()}`;
       } else {
-        const calonName = getDefaultCalonClassName(targetLembaga, s.gender);
-        currentClasses.push(calonName);
-        formalStr = `${targetLembaga.nama} - ${calonName}`;
+        currentClasses.push('Calon Peserta Didik');
+        formalStr = `${targetLembaga.nama} - Calon Peserta Didik`;
       }
     }
 
@@ -1092,7 +1035,7 @@ export default function SantriTableView({
   const renderSortHeader = (key: string, label: string, isSticky: boolean = false, widthClass: string = '', subtext?: string, styleOverride?: React.CSSProperties) => {
     const isSorted = sortKey === key;
     const stickyLeftClass = key === 'nama'
-      ? (isSelectionMode ? 'left-auto sm:left-[112px]' : 'left-auto sm:left-[64px]')
+      ? (isSelectionMode ? 'sm:left-[112px] left-[112px]' : 'sm:left-[64px] left-[64px]')
       : '';
     const complete = isColumnComplete(key);
     const colStats = getColumnStats(key);
@@ -1176,6 +1119,21 @@ export default function SantriTableView({
           )}
         </div>
 
+        {/* Scroll Left Button placed exactly in the middle of the right side of 'nama' header column */}
+        {key === 'nama' && canScrollLeft && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              scrollTable('left');
+            }}
+            className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-[40] flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-md transition-all duration-200 hover:bg-slate-50 hover:scale-105 active:scale-95 cursor-pointer opacity-100"
+            title="Gulir Kiri"
+          >
+            <ChevronLeft className="h-4 w-4 stroke-[2.5] -translate-x-[0.5px]" />
+          </button>
+        )}
+
         {/* Header completeness bar for Monitoring Mode */}
         {isMonitoringMode && (
           <div
@@ -1201,7 +1159,7 @@ export default function SantriTableView({
     return (
       <tr>
         {isSelectionMode && (
-          <th style={getStyle()} className={`px-3 py-4 text-center sticky top-0 left-auto sm:left-0 z-35 border-r border-slate-100 w-12 min-w-[48px] transition-all duration-300 relative ${headerClass}`}>
+          <th style={getStyle()} className={`px-3 py-4 text-center sticky top-0 left-0 z-35 border-r border-slate-100 w-12 min-w-[48px] transition-all duration-300 relative ${headerClass}`}>
             <div className="flex items-center justify-center">
               <input
                 type="checkbox"
@@ -1229,7 +1187,7 @@ export default function SantriTableView({
           </th>
         )}
         {/* Nomor Column (Sticky Left) */}
-        <th style={getStyle()} className={`px-2 py-4 sticky top-0 ${isSelectionMode ? 'left-auto sm:left-[48px]' : 'left-auto sm:left-0'} z-35 w-16 min-w-[64px] font-display text-xs font-bold uppercase tracking-wider border-r border-slate-100 text-center transition-all duration-300 relative ${headerClass}`}>
+        <th style={getStyle()} className={`px-2 py-4 sticky top-0 ${isSelectionMode ? 'sm:left-[48px] left-[48px]' : 'sm:left-0 left-0'} z-35 w-16 min-w-[64px] font-display text-xs font-bold uppercase tracking-wider border-r border-slate-100 text-center transition-all duration-300 relative ${headerClass}`}>
           No.
           {isMonitoringMode && (
             <div
@@ -1294,47 +1252,27 @@ export default function SantriTableView({
   };
 
   const renderScrollButtons = (isFloating: boolean) => {
+    if (!canScrollRight) return null;
     if (isScrolled && !isFloating) return null;
     if (!isScrolled && isFloating) return null;
-    if (!canScrollLeft && !canScrollRight) return null;
 
     return (
       <>
-        {/* Scroll Left Button placed on the left side - Muncul saat canScrollLeft = true (hanya di tablet/desktop, tersembunyi di mode hp) */}
-        {canScrollLeft && (
-          <button
-            id={isFloating ? "table-scroll-left-btn-floating" : "table-scroll-left-btn"}
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              scrollTable('left');
-            }}
-            className={`absolute left-0 -translate-x-1/2 ${
-              isFloating ? 'top-1/2 -translate-y-1/2' : 'top-[26px] -translate-y-1/2'
-            } z-[46] hidden sm:flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-md transition-all duration-200 hover:bg-slate-50 hover:scale-105 active:scale-95 cursor-pointer opacity-100`}
-            title="Gulir Kiri"
-          >
-            <ChevronLeft className="h-4 w-4 stroke-[2.5] -translate-x-[0.5px]" />
-          </button>
-        )}
-
-        {/* Scroll Right Button placed exactly in the middle of the right side/edge line of the header (hanya di tablet/desktop, tersembunyi di mode hp) */}
-        {canScrollRight && (
-          <button
-            id={isFloating ? "table-scroll-right-btn-floating" : "table-scroll-right-btn"}
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              scrollTable('right');
-            }}
-            className={`absolute right-0 translate-x-1/2 ${
-              isFloating ? 'top-1/2 -translate-y-1/2' : 'top-[26px] -translate-y-1/2'
-            } z-[46] hidden sm:flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-md transition-all duration-200 hover:bg-slate-50 hover:scale-105 active:scale-95 cursor-pointer opacity-100`}
-            title="Gulir Kanan"
-          >
-            <ChevronRight className="h-4 w-4 stroke-[2.5] translate-x-[0.5px]" />
-          </button>
-        )}
+        {/* Scroll Right Button placed exactly in the middle of the right side/edge line of the header */}
+        <button
+          id={isFloating ? "table-scroll-right-btn-floating" : "table-scroll-right-btn"}
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            scrollTable('right');
+          }}
+          className={`absolute right-0 translate-x-1/2 ${
+            isFloating ? 'top-1/2 -translate-y-1/2' : 'top-[26px] -translate-y-1/2'
+          } z-40 flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-md transition-all duration-200 hover:bg-slate-50 hover:scale-105 active:scale-95 cursor-pointer opacity-100`}
+          title="Gulir Kanan"
+        >
+          <ChevronRight className="h-4 w-4 stroke-[2.5] translate-x-[0.5px]" />
+        </button>
       </>
     );
   };
@@ -1392,7 +1330,7 @@ export default function SantriTableView({
                       e.stopPropagation();
                       toggleSingleSelection(s.id, e.shiftKey);
                     }}
-                    className={`px-3 py-4 text-center static sm:sticky sm:left-0 transition-colors z-10 border-r border-slate-100 w-12 min-w-[48px] max-w-[48px] cursor-pointer ${
+                    className={`px-3 py-4 text-center sticky left-0 transition-colors z-10 border-r border-slate-100 w-12 min-w-[48px] max-w-[48px] cursor-pointer ${
                       isSelected ? 'bg-emerald-50' : 'bg-white group-hover:bg-slate-50'
                     }`}
                   >
@@ -1407,7 +1345,7 @@ export default function SantriTableView({
                   </td>
                 )}
                 {/* Nomor Column (Sticky Left) */}
-                <td className={`px-2 py-4 static sm:sticky ${isSelectionMode ? 'sm:left-[48px]' : 'sm:left-0'} transition-colors z-10 border-r border-slate-100 w-16 min-w-[64px] max-w-[64px] text-center font-mono text-xs font-semibold ${
+                <td className={`px-2 py-4 static sm:sticky ${isSelectionMode ? 'sm:left-[48px] left-[48px]' : 'sm:left-0 left-0'} transition-colors z-10 border-r border-slate-100 w-16 min-w-[64px] max-w-[64px] text-center font-mono text-xs font-semibold ${
                   isSelectionMode && isSelected
                     ? 'bg-emerald-50 text-emerald-800 font-bold'
                     : 'bg-white text-slate-500 group-hover:bg-slate-50'
@@ -1434,7 +1372,7 @@ export default function SantriTableView({
                   </div>
                 </td>
                 {/* Name sticky column (Nama Lengkap) - Sticky on Desktop only */}
-                <td className={`px-4 py-4 font-medium static sm:sticky ${isSelectionMode ? 'sm:left-[112px]' : 'sm:left-[64px]'} transition-colors z-10 sm:shadow-[2px_0_5px_rgba(0,0,0,0.02)] border-r border-slate-100 md:w-[272px] w-[200px] md:min-w-[272px] min-w-[200px] md:max-w-[272px] max-w-[200px] ${
+                <td className={`px-4 py-4 font-medium static sm:sticky ${isSelectionMode ? 'sm:left-[112px] left-[112px]' : 'sm:left-[64px] left-[64px]'} transition-colors z-10 sm:shadow-[2px_0_5px_rgba(0,0,0,0.02)] border-r border-slate-100 md:w-[272px] w-[200px] md:min-w-[272px] min-w-[200px] md:max-w-[272px] max-w-[200px] ${
                   isMonitoringMode && isCellEmpty(s, 'nama')
                     ? '!bg-rose-100/90 !text-rose-800'
                     : isSelectionMode && isSelected
@@ -1491,33 +1429,24 @@ export default function SantriTableView({
 
                 {/* Toggable / Monitoring */}
                 {shouldShowColumn('indukMhd') && (
-                  <td 
-                    title="Nomor Induk MHD dikelola di Modul Pendidikan"
-                    className={`px-3 py-4 whitespace-nowrap text-xs text-slate-700 font-mono w-[120px] min-w-[120px] ${
-                      isMonitoringMode && isCellEmpty(s, 'indukMhd') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
-                    }`}
-                  >
-                    {s.indukMhd || '-'}
+                  <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-500 w-[120px] min-w-[120px] ${
+                    isMonitoringMode && isCellEmpty(s, 'indukMhd') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
+                  }`}>
+                    {renderEditableCell(s, 'indukMhd', s.indukMhd || '-', { className: 'font-mono' })}
                   </td>
                 )}
                 {shouldShowColumn('indukWustho') && (
-                  <td 
-                    title="Nomor Induk Wustho dikelola di Modul Pendidikan"
-                    className={`px-3 py-4 whitespace-nowrap text-xs text-slate-700 font-mono w-[135px] min-w-[135px] ${
-                      isMonitoringMode && isCellEmpty(s, 'indukWustho') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
-                    }`}
-                  >
-                    {s.indukWustho || '-'}
+                  <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-500 w-[135px] min-w-[135px] ${
+                    isMonitoringMode && isCellEmpty(s, 'indukWustho') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
+                  }`}>
+                    {renderEditableCell(s, 'indukWustho', s.indukWustho || '-', { className: 'font-mono' })}
                   </td>
                 )}
                 {shouldShowColumn('indukUlya') && (
-                  <td 
-                    title="Nomor Induk Ulya dikelola di Modul Pendidikan"
-                    className={`px-3 py-4 whitespace-nowrap text-xs text-slate-700 font-mono w-[120px] min-w-[120px] ${
-                      isMonitoringMode && isCellEmpty(s, 'indukUlya') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
-                    }`}
-                  >
-                    {s.indukUlya || '-'}
+                  <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-500 w-[120px] min-w-[120px] ${
+                    isMonitoringMode && isCellEmpty(s, 'indukUlya') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
+                  }`}>
+                    {renderEditableCell(s, 'indukUlya', s.indukUlya || '-', { className: 'font-mono' })}
                   </td>
                 )}
                 {shouldShowColumn('noKk') && (
@@ -1577,13 +1506,79 @@ export default function SantriTableView({
                       const canWrite = s.gender === 'Putri' ? canWritePutri : canWritePutra;
                       const isEmis = (s.statusEmis || 'Belum').toLowerCase() === 'terdaftar';
                       
-                      const formalInfo = getSantriFormalEducationInfo(s, lembagasList, kelasList);
-                      const currentDisplay = formalInfo.filterDisplay || (formalInfo.isFormal && formalInfo.lembaga 
-                        ? `${(formalInfo.lembaga.kode?.trim() || formalInfo.lembaga.nama.trim())} - ${formalInfo.display}` 
-                        : formalInfo.display);
-                      const currentFormalLembaga = formalInfo.lembaga;
-                      const currentFormalClass = formalInfo.kelas;
+                      const getLembagaJenis = (l: Lembaga): 'Formal' | 'Internal' => {
+                        if (l.jenis && (l.jenis === 'Formal' || l.jenis === 'Internal')) return l.jenis;
+                        const lower = (l.nama || '').toLowerCase();
+                        if (
+                          lower.includes('madin') || lower.includes('diniyah') || lower.includes('tpq') ||
+                          lower.includes('tahfidz') || lower.includes('pondok') || lower.includes('kitab') ||
+                          lower.includes('internal') || (l.kode && l.kode.toLowerCase().includes('madin'))
+                        ) {
+                          return 'Internal';
+                        }
+                        return 'Formal';
+                      };
+
                       const formalLembagas = lembagasList.filter(l => getLembagaJenis(l) === 'Formal');
+                      
+                      // Compute current formal display label
+                      let currentDisplay = 'TIDAK TERDAFTAR';
+                      let currentFormalLembaga: Lembaga | null = null;
+                      let currentFormalClass: Kelas | null = null;
+
+                      const sClasses = s.kelas ? s.kelas.split(',').map(x => x.trim()) : [];
+
+                      // 1. Check s.pendidikanFormal FIRST (exact institution & class)
+                      if (s.pendidikanFormal && s.pendidikanFormal.trim() !== '' && s.pendidikanFormal !== 'TIDAK TERDAFTAR') {
+                        const parts = s.pendidikanFormal.split(' - ');
+                        const lemName = parts[0]?.trim();
+                        const clsName = parts.length > 1 ? parts.slice(1).join(' - ').trim() : '';
+
+                        if (lemName) {
+                          const matchLem = formalLembagas.find(fl => 
+                            fl.nama.toLowerCase() === lemName.toLowerCase() ||
+                            (fl.kode && fl.kode.toLowerCase() === lemName.toLowerCase()) ||
+                            s.pendidikanFormal!.toLowerCase().includes(fl.nama.toLowerCase()) ||
+                            (fl.kode && s.pendidikanFormal!.toLowerCase().includes(fl.kode.toLowerCase()))
+                          );
+                          if (matchLem) {
+                            currentFormalLembaga = matchLem;
+                            const classesOfFl = kelasList.filter(k => String(k.lembagaId || (k as any).lembaga_id) === String(matchLem.id));
+                            const matchCls = classesOfFl.find(k => k.nama && k.nama.trim().toLowerCase() === clsName.toLowerCase());
+                            if (matchCls) {
+                              currentFormalClass = matchCls;
+                              currentDisplay = matchCls.nama;
+                            } else {
+                              currentDisplay = clsName || "Calon Peserta Didik";
+                            }
+                          }
+                        }
+                      }
+
+                      // 2. Fallback: Check if any class in s.kelas matches a formal class
+                      if (!currentFormalLembaga && sClasses.length > 0) {
+                        for (const fl of formalLembagas) {
+                          const classesOfFl = kelasList.filter(k => String(k.lembagaId || (k as any).lembaga_id) === String(fl.id));
+                          const matchedClass = classesOfFl.find(k => k.nama && sClasses.some(sc => sc.toLowerCase() === k.nama.trim().toLowerCase()));
+                          if (matchedClass) {
+                            currentFormalLembaga = fl;
+                            currentFormalClass = matchedClass;
+                            currentDisplay = matchedClass.nama;
+                            break;
+                          }
+                        }
+                      }
+
+                      // 3. Secondary fallback: Check if s.kelas contains institution name/code
+                      if (!currentFormalLembaga && sClasses.length > 0) {
+                        for (const fl of formalLembagas) {
+                          if (sClasses.some(sc => sc.toLowerCase().includes(fl.nama.toLowerCase()) || (fl.kode && sc.toLowerCase().includes(fl.kode.toLowerCase())))) {
+                            currentFormalLembaga = fl;
+                            currentDisplay = "Calon Peserta Didik";
+                            break;
+                          }
+                        }
+                      }
 
                       const isOpen = activeFormalKelasDropdownId === s.id;
 
@@ -1919,8 +1914,6 @@ export default function SantriTableView({
                     const canWrite = s.gender === 'Putri' ? canWritePutri : canWritePutra;
                     const isTerdaftar = (s.statusEmis || 'Belum').toLowerCase() === 'terdaftar';
                     const isInvalid = (s.statusEmis || '').toLowerCase() === 'invalid';
-                    const isKeluar = (s.statusEmis || '').toLowerCase() === 'keluar';
-                    const isLulus = (s.statusEmis || '').toLowerCase() === 'lulus';
                     
                     return (
                       <div className="relative inline-block text-left">
@@ -1936,7 +1929,7 @@ export default function SantriTableView({
                             } else {
                               const rect = e.currentTarget.getBoundingClientRect();
                               const spaceBelow = window.innerHeight - rect.bottom;
-                              const isUpward = spaceBelow < 220;
+                              const isUpward = spaceBelow < 150;
                               setEmisDropdownPos({
                                 top: isUpward ? rect.top - 6 : rect.bottom + 6,
                                 left: Math.max(12, rect.left),
@@ -1956,11 +1949,7 @@ export default function SantriTableView({
                                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300'
                                 : isInvalid
                                   ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 hover:border-rose-300 font-extrabold'
-                                  : isKeluar
-                                    ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 hover:border-amber-300 font-bold'
-                                    : isLulus
-                                      ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:border-blue-300 font-bold'
-                                      : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 hover:border-slate-300'
+                                  : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 hover:border-slate-300'
                           } ${canWrite && !isSelectionMode ? 'cursor-pointer shadow-2xs hover:shadow-xs' : 'cursor-default'}`}
                           title={canWrite && !isSelectionMode ? "Klik untuk mengubah Status EMIS" : undefined}
                         >
@@ -2387,6 +2376,9 @@ export default function SantriTableView({
                               statusEmis: valToApply as any,
                               catatan: s.statusEmis === 'Invalid' ? extraNote : s.catatan
                             };
+                            if (valToApply === 'Belum') {
+                              updated = demoteSantriToCalonPesertaDidik(updated, lembagasList, kelasList);
+                            }
                             onUpdateSantri?.(updated);
                           }
                           setActiveEmisDropdownId(null);
@@ -2422,7 +2414,7 @@ export default function SantriTableView({
                     </div>
                   )}
 
-                  {(['Terdaftar', 'Invalid', 'Belum', 'Keluar', 'Lulus'] as const).map((emisOption) => {
+                  {(['Terdaftar', 'Invalid', 'Belum'] as const).map((emisOption) => {
                     const activeVal = pendingEmis[s.id] || currentEmis;
                     const isCurrent = activeVal === emisOption;
                     return (
@@ -2446,32 +2438,12 @@ export default function SantriTableView({
                         }}
                         className={`w-full text-left px-3 py-1.5 transition-colors flex items-center justify-between cursor-pointer ${
                           isCurrent 
-                            ? (emisOption === 'Invalid' 
-                                ? 'bg-rose-50 text-rose-700 font-bold' 
-                                : emisOption === 'Keluar'
-                                  ? 'bg-amber-50 text-amber-700 font-bold'
-                                  : emisOption === 'Lulus'
-                                    ? 'bg-blue-50 text-blue-700 font-bold'
-                                    : emisOption === 'Terdaftar'
-                                      ? 'bg-emerald-50 text-emerald-700 font-bold'
-                                      : 'bg-slate-100 text-slate-700 font-bold') 
+                            ? (emisOption === 'Invalid' ? 'bg-rose-50 text-rose-700 font-bold' : 'bg-emerald-50 text-emerald-700 font-bold') 
                             : 'hover:bg-slate-50 text-slate-600'
                         }`}
                       >
-                        <span className={
-                          emisOption === 'Invalid' ? 'text-rose-600 font-bold' :
-                          emisOption === 'Keluar' ? 'text-amber-700 font-bold' :
-                          emisOption === 'Lulus' ? 'text-blue-700 font-bold' :
-                          emisOption === 'Terdaftar' ? 'text-emerald-700 font-bold' : ''
-                        }>{emisOption}</span>
-                        {isCurrent && (
-                          <span className={`h-1.5 w-1.5 rounded-full ${
-                            emisOption === 'Invalid' ? 'bg-rose-600' :
-                            emisOption === 'Keluar' ? 'bg-amber-600' :
-                            emisOption === 'Lulus' ? 'bg-blue-600' :
-                            emisOption === 'Terdaftar' ? 'bg-emerald-600' : 'bg-slate-600'
-                          }`} />
-                        )}
+                        <span className={emisOption === 'Invalid' ? 'text-rose-600 font-bold' : ''}>{emisOption}</span>
+                        {isCurrent && <span className={`h-1.5 w-1.5 rounded-full ${emisOption === 'Invalid' ? 'bg-rose-600' : 'bg-emerald-600'}`} />}
                       </button>
                     );
                   })}
@@ -2673,11 +2645,72 @@ export default function SantriTableView({
             {(() => {
               const s = paginatedSantri.find(item => item.id === activeFormalKelasDropdownId);
               if (!s) return null;
-              const formalInfo = getSantriFormalEducationInfo(s, lembagasList, kelasList);
-              const currentFormalLembaga = formalInfo.lembaga;
-              const currentFormalClass = formalInfo.kelas;
+              const getLembagaJenis = (l: Lembaga): 'Formal' | 'Internal' => {
+                if (l.jenis && (l.jenis === 'Formal' || l.jenis === 'Internal')) return l.jenis;
+                const lower = (l.nama || '').toLowerCase();
+                if (
+                  lower.includes('madin') || lower.includes('diniyah') || lower.includes('tpq') ||
+                  lower.includes('tahfidz') || lower.includes('pondok') || lower.includes('kitab') ||
+                  lower.includes('internal') || (l.kode && l.kode.toLowerCase().includes('madin'))
+                ) {
+                  return 'Internal';
+                }
+                return 'Formal';
+              };
+
               const formalLembagas = lembagasList.filter(l => getLembagaJenis(l) === 'Formal');
               const isEmis = (s.statusEmis || 'Belum').toLowerCase() === 'terdaftar';
+              
+              let currentFormalLembaga: Lembaga | null = null;
+              let currentFormalClass: Kelas | null = null;
+              const sClasses = s.kelas ? s.kelas.split(',').map(x => x.trim()) : [];
+
+              // 1. Check s.pendidikanFormal FIRST (exact institution & class)
+              if (s.pendidikanFormal && s.pendidikanFormal.trim() !== '' && s.pendidikanFormal !== 'TIDAK TERDAFTAR') {
+                const parts = s.pendidikanFormal.split(' - ');
+                const lemName = parts[0]?.trim();
+                const clsName = parts.length > 1 ? parts.slice(1).join(' - ').trim() : '';
+
+                if (lemName) {
+                  const matchLem = formalLembagas.find(fl => 
+                    fl.nama.toLowerCase() === lemName.toLowerCase() ||
+                    (fl.kode && fl.kode.toLowerCase() === lemName.toLowerCase()) ||
+                    s.pendidikanFormal!.toLowerCase().includes(fl.nama.toLowerCase()) ||
+                    (fl.kode && s.pendidikanFormal!.toLowerCase().includes(fl.kode.toLowerCase()))
+                  );
+                  if (matchLem) {
+                    currentFormalLembaga = matchLem;
+                    const classesOfFl = kelasList.filter(k => String(k.lembagaId || (k as any).lembaga_id) === String(matchLem.id));
+                    const matchCls = classesOfFl.find(k => k.nama && k.nama.trim().toLowerCase() === clsName.toLowerCase());
+                    if (matchCls) {
+                      currentFormalClass = matchCls;
+                    }
+                  }
+                }
+              }
+
+              // 2. Fallback: Check if any class in s.kelas matches a formal class
+              if (!currentFormalLembaga && sClasses.length > 0) {
+                for (const fl of formalLembagas) {
+                  const classesOfFl = kelasList.filter(k => String(k.lembagaId || (k as any).lembaga_id) === String(fl.id));
+                  const matchedClass = classesOfFl.find(k => k.nama && sClasses.some(sc => sc.toLowerCase() === k.nama.trim().toLowerCase()));
+                  if (matchedClass) {
+                    currentFormalLembaga = fl;
+                    currentFormalClass = matchedClass;
+                    break;
+                  }
+                }
+              }
+
+              // 3. Secondary fallback: Check if s.kelas contains institution name/code
+              if (!currentFormalLembaga && sClasses.length > 0) {
+                for (const fl of formalLembagas) {
+                  if (sClasses.some(sc => sc.toLowerCase().includes(fl.nama.toLowerCase()) || (fl.kode && sc.toLowerCase().includes(fl.kode.toLowerCase())))) {
+                    currentFormalLembaga = fl;
+                    break;
+                  }
+                }
+              }
 
               const pendingState = pendingFormalKelas[s.id] || {
                 lem: currentFormalLembaga,
@@ -2739,11 +2772,11 @@ export default function SantriTableView({
                     </label>
                     <select
                       disabled={!pendingState.lem}
-                      value={pendingState.cls ? String(pendingState.cls.id) : 'calon'}
+                      value={pendingState.cls && isEmis ? String(pendingState.cls.id) : 'calon'}
                       onChange={(e) => {
                         const chosenClassId = e.target.value;
                         let selectedCls: Kelas | null = null;
-                        if (pendingState.lem && chosenClassId !== 'calon') {
+                        if (pendingState.lem && chosenClassId !== 'calon' && isEmis) {
                           selectedCls = kelasList.find(k => String(k.id) === chosenClassId) || null;
                         }
                         setPendingFormalKelas(prev => ({
@@ -2764,18 +2797,21 @@ export default function SantriTableView({
                         <option value="">Pilih Lembaga Terlebih Dahulu</option>
                       ) : (
                         <>
-                          <option value="calon">{getDefaultCalonClassName(pendingState.lem, s.gender)}</option>
+                          <option value="calon">Calon Peserta Didik</option>
                           {kelasList
                             .filter(k => 
                               String(k.lembagaId || (k as any).lembaga_id) === String(pendingState.lem?.id) &&
-                              !isCalonClass(k.nama.trim().toLowerCase())
+                              k.nama.trim().toLowerCase() !== 'calon peserta didik' &&
+                              k.nama.trim().toLowerCase() !== 'calon pelajar'
                             )
                             .map((k) => (
                               <option
                                 key={k.id}
                                 value={String(k.id)}
+                                disabled={!isEmis}
+                                className={!isEmis ? 'text-slate-400 bg-slate-100' : ''}
                               >
-                                {k.nama}
+                                {k.nama} {!isEmis ? ' (Perlu EMIS)' : ''}
                               </option>
                             ))
                           }
@@ -2783,6 +2819,14 @@ export default function SantriTableView({
                       )}
                     </select>
                   </div>
+
+                  {/* Info box for EMIS */}
+                  {!isEmis && (
+                    <div className="mb-3 p-2.5 rounded-xl bg-amber-50 border border-amber-200/80 text-[10.5px] text-amber-900 font-medium leading-snug flex items-center justify-center text-center gap-1.5 shadow-2xs">
+                      <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                      <span>Santri belum EMIS.</span>
+                    </div>
+                  )}
 
                   {/* Action buttons */}
                   <div className="flex items-center justify-end gap-2 pt-2.5 border-t border-slate-100">
@@ -3010,7 +3054,7 @@ export default function SantriTableView({
         <ExcelFilterPopover
           colKey={activeHeaderFilterKey}
           colLabel={getColumnLabel(activeHeaderFilterKey)}
-          santriList={popoverSantriList}
+          santriList={allSantri && allSantri.length > 0 ? allSantri : paginatedSantri}
           selectedValues={excelColumnFilters?.[activeHeaderFilterKey]}
           onApplyFilter={(colKey, vals) => {
             onApplyExcelFilter?.(colKey, vals);
@@ -3027,8 +3071,6 @@ export default function SantriTableView({
           }}
           anchorRect={headerFilterAnchor}
           ageFilterConfig={ageFilterConfig}
-          lembagasList={lembagasList}
-          kelasList={kelasList}
         />
       )}
     </div>

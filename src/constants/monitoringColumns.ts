@@ -8,12 +8,9 @@ export interface ColumnConfig {
 
 export const ALL_COLUMNS: ColumnConfig[] = [
   { key: 'nis', label: 'NIS', description: 'Nomor Induk Santri' },
-  { key: 'nism', label: 'NISM', description: 'Nomor Induk Siswa Madrasah' },
-  { key: 'tahunMasuk', label: 'Tahun Masuk', description: 'Tahun Masuk / Didaftarkan' },
   { key: 'gender', label: 'Gender', description: 'Jenis Kelamin' },
   { key: 'nik', label: 'NIK', description: 'Nomor Induk Kependudukan' },
   { key: 'nisn', label: 'NISN', description: 'Nomor Induk Siswa Nasional' },
-  { key: 'kelasMhd', label: 'Kelas MHD', description: 'Kelas Madrasah Hidayatul Mubtadi-in' },
   { key: 'indukMhd', label: 'Induk MHD', description: 'Nomor Induk Madrasah Hidayatul Mubtadi-in (MHD)' },
   { key: 'indukWustho', label: 'Induk Wustho', description: 'Nomor Induk Madrasah Wustho' },
   { key: 'indukUlya', label: 'Induk Ulya', description: 'Nomor Induk Madrasah Ulya' },

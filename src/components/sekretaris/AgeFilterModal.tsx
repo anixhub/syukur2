@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Calendar, Clock, Check, RotateCcw } from 'lucide-react';
 
@@ -86,12 +85,11 @@ export default function AgeFilterModal({
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
     }
     return () => {
-      // If bottom sheet or other modal is still active, preserve hidden
-      if (!document.getElementById('filter-bottom-sheet-container')) {
-        document.body.style.overflow = '';
-      }
+      document.body.style.overflow = '';
     };
   }, [isOpen]);
 
@@ -106,6 +104,8 @@ export default function AgeFilterModal({
       setCustomDate(config.customDate || new Date().toISOString().split('T')[0]);
     }
   }, [isOpen, config]);
+
+  if (!isOpen) return null;
 
   const handleApply = () => {
     onApply({
@@ -175,29 +175,26 @@ export default function AgeFilterModal({
     return '';
   };
 
-  if (typeof document === 'undefined') return null;
-
-  return createPortal(
+  return (
     <AnimatePresence>
-      {isOpen && (
-        <div className="fixed inset-0 z-[10010] flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
-          {/* Backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs transition-opacity cursor-pointer"
-          />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+        {/* Backdrop */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={onClose}
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
+        />
 
-          {/* Modal Container */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.96, y: 12 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 12 }}
-            transition={{ duration: 0.15, ease: 'easeOut' }}
-            className="relative w-full max-w-lg overflow-hidden rounded-3xl bg-white shadow-2xl border border-slate-100 my-auto text-slate-800 font-sans z-[10011]"
-          >
+        {/* Modal Container */}
+        <motion.div
+          initial={{ opacity: 0, scale: 0.96, y: 12 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.96, y: 12 }}
+          transition={{ duration: 0.15, ease: 'easeOut' }}
+          className="relative w-full max-w-lg overflow-hidden rounded-3xl bg-white shadow-2xl border border-slate-100 my-auto text-slate-800 font-sans z-10"
+        >
           {/* Modal Header */}
           <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/80 px-6 py-4.5">
             <h3 className="font-display text-base font-extrabold text-slate-900 tracking-tight">
@@ -254,7 +251,7 @@ export default function AgeFilterModal({
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Minimal Umur
+                      Minimal Umur (Tahun)
                     </label>
                     <input
                       type="number"
@@ -268,7 +265,7 @@ export default function AgeFilterModal({
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Maksimal Umur
+                      Maksimal Umur (Tahun)
                     </label>
                     <input
                       type="number"
@@ -286,7 +283,7 @@ export default function AgeFilterModal({
               {localMode === 'exact' && (
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Sama Dengan Umur
+                    Sama Dengan Umur (Tahun)
                   </label>
                   <input
                     type="number"
@@ -303,7 +300,7 @@ export default function AgeFilterModal({
               {localMode === 'min' && (
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Minimal Umur
+                    Minimal Umur (Tahun)
                   </label>
                   <input
                     type="number"
@@ -320,7 +317,7 @@ export default function AgeFilterModal({
               {localMode === 'max' && (
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Maksimal Umur
+                    Maksimal Umur (Tahun)
                   </label>
                   <input
                     type="number"
@@ -352,7 +349,7 @@ export default function AgeFilterModal({
                   }`}
                 >
                   <Clock className="h-4 w-4" />
-                  <span>Hari Ini</span>
+                  <span>Saat Ini (Hari Ini)</span>
                 </button>
 
                 <button
@@ -365,7 +362,7 @@ export default function AgeFilterModal({
                   }`}
                 >
                   <Calendar className="h-4 w-4" />
-                  <span>Spesifik</span>
+                  <span>Tanggal Spesifik</span>
                 </button>
               </div>
 
@@ -401,7 +398,7 @@ export default function AgeFilterModal({
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 transition-all cursor-pointer"
             >
               <RotateCcw className="h-3.5 w-3.5" />
-              <span>Reset</span>
+              <span>Reset Filter</span>
             </button>
 
             <div className="flex items-center gap-2">
@@ -418,14 +415,12 @@ export default function AgeFilterModal({
                 onClick={handleApply}
                 className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-emerald-700 text-white text-xs font-bold shadow-sm hover:bg-emerald-800 active:scale-95 transition-all cursor-pointer"
               >
-                <span>Terapkan</span>
+                <span>Terapkan Filter</span>
               </button>
             </div>
           </div>
         </motion.div>
-        </div>
-      )}
-    </AnimatePresence>,
-    document.body
+      </div>
+    </AnimatePresence>
   );
 }
