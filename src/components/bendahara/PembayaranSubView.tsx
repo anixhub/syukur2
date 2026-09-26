@@ -226,6 +226,59 @@ export default function PembayaranSubView({
     return {};
   });
 
+  // Data rincian cicilan per sub-periode santri (nominal terbayar & total tagihan)
+  const [installmentsMap, setInstallmentsMap] = useState<Record<string, { paidAmount: number; totalAmount: number; lastPaymentDate?: string }>>(() => {
+    try {
+      const saved = localStorage.getItem('smartsantri_subperiod_installments');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return {};
+  });
+
+  // State pilihan sub-periode dan konfigurasi pembayaran per item kasir
+  const [itemSelections, setItemSelections] = useState<Record<string, {
+    selectedPeriodIds: string[];
+    isCicil: boolean;
+    customAmount?: number;
+  }>>({});
+
+  // Peringatan saat mencoba membayar periode berikutnya sementara periode cicilan sebelumnya belum lunas
+  const [blockedNotice, setBlockedNotice] = useState<string | null>(null);
+
+  // Helper cek apakah suatu sub-periode sudah lewat jatuh tempo (menunggak)
+  const isSubPeriodPastDue = (subPeriod: PaymentSubPeriod): boolean => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1; // 1 - 12 (Contoh: September = 9)
+
+    const pYear = subPeriod.endYear || subPeriod.periodYear;
+    const pMonth = subPeriod.endMonth || subPeriod.periodMonth;
+
+    if (!pYear) return false;
+    if (pYear < currentYear) return true;
+    if (pYear === currentYear && pMonth !== undefined && pMonth < currentMonth) return true;
+    return false;
+  };
+
+  // Helper mendapatkan info cicilan sub-periode
+  const getInstallmentInfo = (
+    santriId: string,
+    itemId: string,
+    subPeriodId: string,
+    defaultTotal: number
+  ) => {
+    const key = `${santriId}_${itemId}_${subPeriodId}`;
+    if (installmentsMap[key]) {
+      return installmentsMap[key];
+    }
+    // Jika berstatus cicil tetapi belum pernah disimpan, sediakan nominal default 40%
+    const defaultPaid = Math.round(defaultTotal * 0.4);
+    return {
+      paidAmount: defaultPaid,
+      totalAmount: defaultTotal
+    };
+  };
+
   // Helper mendapatkan status sub-periode santri
   const getSubPeriodStatus = (
     santri: Santri,
@@ -270,18 +323,267 @@ export default function PembayaranSubView({
     return 'belum';
   };
 
-  // Ubah status sub-periode secara interaktif
-  const handleToggleSubPeriodStatus = (santriId: string, itemId: string, subPeriodId: string) => {
-    setSubPeriodStatusMap(prev => {
-      const key = `${santriId}_${itemId}_${subPeriodId}`;
-      const current = prev[key] || 'belum';
-      const nextStatus: 'lunas' | 'cicil' | 'belum' = 
-        current === 'belum' ? 'cicil' : current === 'cicil' ? 'lunas' : 'belum';
-      const updated = { ...prev, [key]: nextStatus };
-      try {
-        localStorage.setItem('smartsantri_subperiod_status', JSON.stringify(updated));
-      } catch (e) {}
-      return updated;
+  // Cek apakah ada periode sebelum targetIndex yang masih berstatus cicilan belum lunas
+  const getUnfinishedInstallmentBefore = (
+    santri: Santri,
+    item: SantriPaymentItem,
+    targetIndex: number
+  ): { period: PaymentSubPeriod; index: number; paidAmount: number; totalAmount: number } | null => {
+    if (!item.subPeriods) return null;
+    for (let i = 0; i < targetIndex; i++) {
+      const sp = item.subPeriods[i];
+      const status = getSubPeriodStatus(santri, item, sp, i);
+      if (status === 'cicil') {
+        const info = getInstallmentInfo(santri.id, item.id, sp.id, item.defaultAmount || 350000);
+        return {
+          period: sp,
+          index: i,
+          paidAmount: info.paidAmount,
+          totalAmount: info.totalAmount
+        };
+      }
+    }
+    return null;
+  };
+
+  // Cek periode pertama yang sedang dalam status cicilan belum lunas
+  const getFirstUnfinishedInstallment = (
+    santri: Santri,
+    item: SantriPaymentItem
+  ): { period: PaymentSubPeriod; index: number; paidAmount: number; totalAmount: number } | null => {
+    if (!item.subPeriods) return null;
+    for (let i = 0; i < item.subPeriods.length; i++) {
+      const sp = item.subPeriods[i];
+      const status = getSubPeriodStatus(santri, item, sp, i);
+      if (status === 'cicil') {
+        const info = getInstallmentInfo(santri.id, item.id, sp.id, item.defaultAmount || 350000);
+        return {
+          period: sp,
+          index: i,
+          paidAmount: info.paidAmount,
+          totalAmount: info.totalAmount
+        };
+      }
+    }
+    return null;
+  };
+
+  // Handler klik pada pill sub-periode
+  const handleSubPeriodClick = (
+    item: SantriPaymentItem,
+    period: PaymentSubPeriod,
+    index: number
+  ) => {
+    if (!selectedSantri) {
+      setSelectSantriNotice(true);
+      setTimeout(() => setSelectSantriNotice(false), 4500);
+      setIsSearchingSantri(true);
+      return;
+    }
+
+    const status = getSubPeriodStatus(selectedSantri, item, period, index);
+
+    // 1. Jika sudah lunas, tidak perlu dipilih untuk dibayar
+    if (status === 'lunas') {
+      setBlockedNotice(`Periode ${period.label} sudah LUNAS.`);
+      setTimeout(() => setBlockedNotice(null), 3000);
+      return;
+    }
+
+    // 2. Jika ada periode sebelum ini yang masih dicicil (belum lunas), BLOKIR pemilihan periode ini!
+    const unfinishedBefore = getUnfinishedInstallmentBefore(selectedSantri, item, index);
+    if (unfinishedBefore) {
+      setBlockedNotice(
+        `Periode ${unfinishedBefore.period.label} masih dalam cicilan (belum lunas). Harap lunasi terlebih dahulu sebelum membayar periode berikutnya (${period.label}).`
+      );
+      setTimeout(() => setBlockedNotice(null), 5000);
+      return;
+    }
+
+    // 3. Update pilihan periode untuk item ini
+    setItemSelections(prev => {
+      const current = prev[item.id] || { selectedPeriodIds: [], isCicil: false };
+      const isAlreadySelected = current.selectedPeriodIds.includes(period.id);
+
+      let nextSelectedIds: string[];
+      if (isAlreadySelected) {
+        nextSelectedIds = current.selectedPeriodIds.filter(id => id !== period.id);
+      } else {
+        nextSelectedIds = [...current.selectedPeriodIds, period.id];
+      }
+
+      let nextIsCicil = false;
+      let nextAmount = item.defaultAmount || 0;
+
+      if (nextSelectedIds.length === 1) {
+        const singlePeriodId = nextSelectedIds[0];
+        const singlePeriod = item.subPeriods?.find(sp => sp.id === singlePeriodId);
+        const singleIdx = item.subPeriods?.findIndex(sp => sp.id === singlePeriodId) ?? -1;
+        const singleStatus = singlePeriod 
+          ? getSubPeriodStatus(selectedSantri, item, singlePeriod, singleIdx)
+          : 'belum';
+
+        if (singleStatus === 'cicil') {
+          // Otomatis ON dan Lanjut cicilan
+          nextIsCicil = true;
+          const info = getInstallmentInfo(selectedSantri.id, item.id, singlePeriodId, item.defaultAmount || 350000);
+          nextAmount = Math.max(0, info.totalAmount - info.paidAmount);
+        } else {
+          // Periode baru: jika sebelumnya user menyalakan mode cicil, pertahankan
+          nextIsCicil = current.isCicil;
+          nextAmount = current.isCicil && current.customAmount 
+            ? current.customAmount 
+            : (item.defaultAmount || 0);
+        }
+      } else {
+        // Lebih dari 1 periode dipilih: mode cicil otomatis nonaktif
+        nextIsCicil = false;
+        nextAmount = (item.defaultAmount || 0) * nextSelectedIds.length;
+      }
+
+      return {
+        ...prev,
+        [item.id]: {
+          selectedPeriodIds: nextSelectedIds,
+          isCicil: nextIsCicil,
+          customAmount: nextAmount
+        }
+      };
+    });
+  };
+
+  // Toggle switch mode cicil
+  const handleToggleCicilMode = (itemId: string) => {
+    setItemSelections(prev => {
+      const current = prev[itemId];
+      if (!current || current.selectedPeriodIds.length !== 1) return prev;
+
+      const singlePeriodId = current.selectedPeriodIds[0];
+      const item = paymentItems.find(p => p.id === itemId);
+      const singlePeriod = item?.subPeriods?.find(sp => sp.id === singlePeriodId);
+      const singleIdx = item?.subPeriods?.findIndex(sp => sp.id === singlePeriodId) ?? -1;
+      const singleStatus = (selectedSantri && item && singlePeriod)
+        ? getSubPeriodStatus(selectedSantri, item, singlePeriod, singleIdx)
+        : 'belum';
+
+      // Jika periode ini memang sedang dicicil, toggle tidak bisa dimatikan (karena harus lanjut cicilan)
+      if (singleStatus === 'cicil') {
+        return prev;
+      }
+
+      const nextIsCicil = !current.isCicil;
+      const defaultAmt = item?.defaultAmount || 0;
+      const customAmt = nextIsCicil 
+        ? (item?.minInstallmentAmount || Math.round(defaultAmt / 2) || 100000)
+        : defaultAmt;
+
+      return {
+        ...prev,
+        [itemId]: {
+          ...current,
+          isCicil: nextIsCicil,
+          customAmount: customAmt
+        }
+      };
+    });
+  };
+
+  // Handler saat input jumlah cicilan diubah
+  const handleInstallmentAmountChange = (itemId: string, rawVal: string) => {
+    const numVal = parseInt(rawVal.replace(/\D/g, ''), 10) || 0;
+    setItemSelections(prev => {
+      const current = prev[itemId] || { selectedPeriodIds: [], isCicil: true };
+      return {
+        ...prev,
+        [itemId]: {
+          ...current,
+          customAmount: numVal
+        }
+      };
+    });
+  };
+
+  // Tambahkan item yang telah dikonfigurasi (periode & cicilan) ke keranjang kasir
+  const handleAddConfiguredItemToCart = (item: SantriPaymentItem) => {
+    if (!selectedSantri) {
+      setSelectSantriNotice(true);
+      setTimeout(() => setSelectSantriNotice(false), 4500);
+      setIsSearchingSantri(true);
+      return;
+    }
+
+    const selection = itemSelections[item.id];
+    let selectedPeriodIds = selection?.selectedPeriodIds || [];
+
+    // Jika belum ada periode yang dipilih dan item memiliki subPeriods:
+    if (item.subPeriods && item.subPeriods.length > 0 && selectedPeriodIds.length === 0) {
+      // Prioritaskan periode yang sedang dicicil
+      const unfinished = getFirstUnfinishedInstallment(selectedSantri, item);
+      if (unfinished) {
+        handleSubPeriodClick(item, unfinished.period, unfinished.index);
+        return;
+      }
+      // Atau periode pertama yang belum lunas
+      const firstUnpaidIdx = item.subPeriods.findIndex((sp, idx) => {
+        return getSubPeriodStatus(selectedSantri, item, sp, idx) !== 'lunas';
+      });
+      if (firstUnpaidIdx !== -1) {
+        handleSubPeriodClick(item, item.subPeriods[firstUnpaidIdx], firstUnpaidIdx);
+        return;
+      }
+    }
+
+    const isCicil = Boolean(selection?.isCicil);
+    const isContinuing = selectedPeriodIds.length === 1 && item.subPeriods && (() => {
+      const sp = item.subPeriods.find(p => p.id === selectedPeriodIds[0]);
+      const idx = item.subPeriods.findIndex(p => p.id === selectedPeriodIds[0]);
+      return sp ? getSubPeriodStatus(selectedSantri, item, sp, idx) === 'cicil' : false;
+    })();
+
+    const selectedPeriods = item.subPeriods
+      ? item.subPeriods.filter(sp => selectedPeriodIds.includes(sp.id))
+      : [];
+    const selectedLabels = selectedPeriods.map(sp => sp.label);
+
+    let amount = 0;
+    if (isCicil) {
+      amount = selection?.customAmount !== undefined ? selection.customAmount : (item.defaultAmount || 0);
+    } else {
+      amount = (item.defaultAmount || 0) * (selectedPeriodIds.length || 1);
+    }
+
+    let note = '';
+    if (selectedLabels.length > 0) {
+      const pStr = selectedLabels.join(', ');
+      if (isContinuing) {
+        note = `Periode: ${pStr} • Lanjut Cicilan`;
+      } else if (isCicil) {
+        note = `Periode: ${pStr} • Mode Cicil`;
+      } else {
+        note = `Periode: ${pStr}`;
+      }
+    } else {
+      note = item.description || `Pembayaran ${item.name}`;
+    }
+
+    const newCartItem: PaymentCartItem = {
+      id: `cart-${item.id}`,
+      itemId: item.id,
+      name: item.name,
+      category: item.category || 'lainnya',
+      amount: amount,
+      quantity: 1,
+      note: note,
+      selectedPeriodIds: selectedPeriodIds,
+      isCicil: isCicil,
+      isContinuing: Boolean(isContinuing),
+      subPeriodId: selectedPeriodIds.length === 1 ? selectedPeriodIds[0] : undefined,
+      totalPeriodAmount: item.defaultAmount
+    };
+
+    setCart(prev => {
+      const withoutThis = prev.filter(c => c.itemId !== item.id);
+      return [...withoutThis, newCartItem];
     });
   };
 
@@ -642,6 +944,8 @@ export default function PembayaranSubView({
     setCart([]);
     setCashGiven('');
     setCashierNote('');
+    setItemSelections({});
+    setBlockedNotice(null);
   };
 
   // Quick cash buttons
@@ -697,33 +1001,64 @@ export default function PembayaranSubView({
       });
     }
 
-    // Tandai sub-periode terkait sebagai lunas jika santri membayar item sub-periode
+    // Perbarui status sub-periode dan catatan cicilan santri
     if (selectedSantri) {
-      setSubPeriodStatusMap(prev => {
-        const nextMap = { ...prev };
-        let hasChanges = false;
-        cart.forEach(cartItem => {
-          const matchedItem = paymentItems.find(p => p.id === cartItem.itemId);
-          if (matchedItem?.subPeriods && matchedItem.subPeriods.length > 0) {
-            const pendingPeriod = matchedItem.subPeriods.find(sp => {
-              const k = `${selectedSantri.id}_${matchedItem.id}_${sp.id}`;
-              const currStatus = nextMap[k] || (matchedItem.subPeriods?.indexOf(sp) === 0 ? 'lunas' : 'belum');
-              return currStatus !== 'lunas';
-            });
-            if (pendingPeriod) {
-              const k = `${selectedSantri.id}_${matchedItem.id}_${pendingPeriod.id}`;
-              nextMap[k] = 'lunas';
-              hasChanges = true;
+      const nextSubPeriodMap = { ...subPeriodStatusMap };
+      const nextInstallmentsMap = { ...installmentsMap };
+      let hasChanges = false;
+
+      cart.forEach(cartItem => {
+        const matchedItem = paymentItems.find(p => p.id === cartItem.itemId);
+        if (matchedItem?.subPeriods && matchedItem.subPeriods.length > 0) {
+          const selPeriodIds = cartItem.selectedPeriodIds || [];
+          const periodsToUpdate = selPeriodIds.length > 0
+            ? matchedItem.subPeriods.filter(sp => selPeriodIds.includes(sp.id))
+            : [matchedItem.subPeriods.find(sp => {
+                const k = `${selectedSantri.id}_${matchedItem.id}_${sp.id}`;
+                return nextSubPeriodMap[k] !== 'lunas';
+              })].filter(Boolean) as PaymentSubPeriod[];
+
+          periodsToUpdate.forEach(period => {
+            const k = `${selectedSantri.id}_${matchedItem.id}_${period.id}`;
+            const totalPeriodAmount = matchedItem.defaultAmount || 350000;
+            const currentInst = nextInstallmentsMap[k] || {
+              paidAmount: nextSubPeriodMap[k] === 'cicil' ? Math.round(totalPeriodAmount * 0.4) : 0,
+              totalAmount: totalPeriodAmount
+            };
+
+            const paidThisTime = cartItem.isCicil 
+              ? cartItem.amount 
+              : Math.round(cartItem.amount / (periodsToUpdate.length || 1));
+            const newPaid = currentInst.paidAmount + paidThisTime;
+
+            if (newPaid >= totalPeriodAmount) {
+              nextSubPeriodMap[k] = 'lunas';
+              nextInstallmentsMap[k] = {
+                paidAmount: totalPeriodAmount,
+                totalAmount: totalPeriodAmount,
+                lastPaymentDate: new Date().toISOString()
+              };
+            } else {
+              nextSubPeriodMap[k] = 'cicil';
+              nextInstallmentsMap[k] = {
+                paidAmount: newPaid,
+                totalAmount: totalPeriodAmount,
+                lastPaymentDate: new Date().toISOString()
+              };
             }
-          }
-        });
-        if (hasChanges) {
-          try {
-            localStorage.setItem('smartsantri_subperiod_status', JSON.stringify(nextMap));
-          } catch (e) {}
+            hasChanges = true;
+          });
         }
-        return nextMap;
       });
+
+      if (hasChanges) {
+        setSubPeriodStatusMap(nextSubPeriodMap);
+        setInstallmentsMap(nextInstallmentsMap);
+        try {
+          localStorage.setItem('smartsantri_subperiod_status', JSON.stringify(nextSubPeriodMap));
+          localStorage.setItem('smartsantri_subperiod_installments', JSON.stringify(nextInstallmentsMap));
+        } catch (e) {}
+      }
     }
 
     // Simpan ke riwayat lokal
@@ -738,10 +1073,12 @@ export default function PembayaranSubView({
     // Buka struk modal
     setActiveReceipt(newReceipt);
 
-    // Reset keranjang kasir
+    // Reset keranjang kasir & pilihan item
     setCart([]);
     setCashGiven('');
     setCashierNote('');
+    setItemSelections({});
+    setBlockedNotice(null);
   };
 
   return (
@@ -1016,6 +1353,8 @@ export default function PembayaranSubView({
                     setSantriSearch('');
                     setIsSearchingSantri(true);
                     setCart([]);
+                    setItemSelections({});
+                    setBlockedNotice(null);
                   }}
                   className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors shrink-0"
                   title="Ganti / Cari Santri Lain"
@@ -1079,6 +1418,24 @@ export default function PembayaranSubView({
                   <span>
                     Silakan cari dan <strong>pilih santri terlebih dahulu</strong> pada kotak pencarian di atas sebelum memasukkan pembayaran ke kasir.
                   </span>
+                </div>
+              )}
+
+              {/* Peringatan jika periode cicilan sebelumnya belum lunas */}
+              {blockedNotice && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-center justify-between gap-2 animate-in fade-in duration-150 shadow-xs">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span className="font-medium">{blockedNotice}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setBlockedNotice(null)}
+                    className="text-rose-400 hover:text-rose-700 p-0.5 cursor-pointer shrink-0"
+                    title="Tutup pemberitahuan"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               )}
 
@@ -1150,9 +1507,9 @@ export default function PembayaranSubView({
                             )}
                           </div>
 
-                          {/* Kotak-kotak Sub Periode (Hijau = Lunas, Kuning = Masih Dicicil, Netral = Belum) */}
+                          {/* Kotak-kotak Sub Periode (Hijau = Lunas, Kuning = Masih Dicicil, Merah = Menunggak, Outline = Belum) */}
                           {item.subPeriods && item.subPeriods.length > 0 && (
-                            <div className="mt-2.5 space-y-1.5">
+                            <div className="mt-2.5 space-y-2">
                               <div className="flex flex-wrap items-center gap-1.5">
                                 {item.subPeriods.map((period, pIdx) => {
                                   const displayLabel = period.shortLabel || (
@@ -1169,33 +1526,55 @@ export default function PembayaranSubView({
                                     ? getSubPeriodStatus(selectedSantri, item, period, pIdx)
                                     : 'belum';
 
+                                  const isPastDue = isSubPeriodPastDue(period);
                                   const isLunas = status === 'lunas';
                                   const isCicil = status === 'cicil';
+                                  // Menunggak: Belum lunas & periode sudah lewat jatuh tempo
+                                  const isMenunggak = !isLunas && !isCicil && isPastDue;
+                                  // Belum bayar: Belum lunas & periode belum jatuh tempo (bulan berjalan / mendatang)
+                                  const isBelum = !isLunas && !isCicil && !isPastDue;
+
+                                  // Cek apakah terkunci karena periode cicilan sebelumnya belum lunas
+                                  const unfinishedBefore = selectedSantri 
+                                    ? getUnfinishedInstallmentBefore(selectedSantri, item, pIdx) 
+                                    : null;
+                                  const isLocked = Boolean(unfinishedBefore);
+
+                                  const selection = itemSelections[item.id];
+                                  const isSelected = Boolean(selection?.selectedPeriodIds?.includes(period.id));
 
                                   const statusText = isLunas 
                                     ? 'Lunas' 
                                     : isCicil 
                                     ? 'Masih Dicicil' 
+                                    : isMenunggak 
+                                    ? 'Menunggak (Lewat Jatuh Tempo)' 
                                     : 'Belum Bayar';
 
                                   return (
                                     <button
                                       key={period.id || pIdx}
                                       type="button"
-                                      title={`${period.label} • ${statusText}${selectedSantri ? ' (Klik untuk ubah status)' : ''}`}
+                                      title={`${period.label} • ${statusText}${isLocked ? ' (Terkunci: selesaikan cicilan sebelumnya terlebih dahulu)' : ''}`}
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        if (selectedSantri) {
-                                          handleToggleSubPeriodStatus(selectedSantri.id, item.id, period.id);
-                                        }
+                                        handleSubPeriodClick(item, period, pIdx);
                                       }}
-                                      className={`w-7 h-7 sm:w-8 sm:h-8 aspect-square rounded-lg text-[10px] sm:text-[11px] font-bold flex items-center justify-center shrink-0 transition-all select-none ${
-                                        isLunas
-                                          ? 'bg-emerald-600 border border-emerald-600 text-white shadow-2xs hover:bg-emerald-700'
+                                      className={`w-7 h-7 sm:w-8 sm:h-8 aspect-square rounded-lg text-[10px] sm:text-[11px] font-bold flex items-center justify-center shrink-0 transition-all select-none relative ${
+                                        isLocked
+                                          ? 'bg-transparent border border-dashed border-slate-300 text-slate-300 cursor-not-allowed opacity-50'
+                                          : isLunas
+                                          ? 'bg-emerald-600 border border-emerald-600 text-white shadow-2xs hover:bg-emerald-700 cursor-pointer'
                                           : isCicil
-                                          ? 'bg-amber-400 border border-amber-500 text-amber-950 font-extrabold shadow-2xs hover:bg-amber-500'
-                                          : 'bg-slate-100 border border-slate-200 text-slate-500 hover:bg-slate-200/70 hover:text-slate-700'
-                                      } ${selectedSantri ? 'cursor-pointer' : 'cursor-default'}`}
+                                          ? 'bg-amber-400 border border-amber-500 text-amber-950 font-extrabold shadow-2xs hover:bg-amber-500 cursor-pointer'
+                                          : isMenunggak
+                                          ? 'bg-rose-500 border border-rose-600 text-white font-bold shadow-2xs hover:bg-rose-600 cursor-pointer'
+                                          : 'bg-transparent border border-slate-300 text-slate-600 hover:border-slate-400 hover:bg-slate-50/50 cursor-pointer'
+                                      } ${
+                                        isSelected 
+                                          ? 'ring-2 ring-emerald-500 ring-offset-2 scale-105 z-10 font-black' 
+                                          : ''
+                                      }`}
                                     >
                                       {displayLabel}
                                     </button>
@@ -1205,21 +1584,170 @@ export default function PembayaranSubView({
 
                               {/* Keterangan Indikator Status Warna saat santri dipilih */}
                               {selectedSantri && (
-                                <div className="flex items-center gap-3 text-[10px] text-slate-400 font-medium pt-0.5">
+                                <div className="flex items-center gap-3 text-[10px] text-slate-400 font-medium pt-0.5 flex-wrap">
                                   <span className="inline-flex items-center gap-1">
-                                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
                                     <span>Lunas</span>
                                   </span>
                                   <span className="inline-flex items-center gap-1">
-                                    <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
                                     <span>Dicicil</span>
                                   </span>
                                   <span className="inline-flex items-center gap-1">
-                                    <span className="w-2 h-2 rounded-full bg-slate-300"></span>
+                                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+                                    <span className="text-rose-600 font-bold">Menunggak</span>
+                                  </span>
+                                  <span className="inline-flex items-center gap-1">
+                                    <span className="w-2.5 h-2.5 rounded-full border border-slate-400 bg-transparent"></span>
                                     <span>Belum Bayar</span>
                                   </span>
                                 </div>
                               )}
+
+                              {/* Panel Konfigurasi Periode Terpilih & Mode Cicil */}
+                              {selectedSantri && itemSelections[item.id] && itemSelections[item.id].selectedPeriodIds.length > 0 && (() => {
+                                const selection = itemSelections[item.id];
+                                const isMultiSelected = selection.selectedPeriodIds.length > 1;
+                                const singlePeriodId = selection.selectedPeriodIds[0];
+                                const singlePeriod = item.subPeriods?.find(sp => sp.id === singlePeriodId);
+                                const singleIdx = item.subPeriods?.findIndex(sp => sp.id === singlePeriodId) ?? -1;
+                                const singleStatus = singlePeriod ? getSubPeriodStatus(selectedSantri, item, singlePeriod, singleIdx) : 'belum';
+                                const isContinuingCicil = !isMultiSelected && singleStatus === 'cicil';
+                                const singleCicilInfo = singlePeriod ? getInstallmentInfo(selectedSantri.id, item.id, singlePeriodId, item.defaultAmount || 350000) : null;
+                                const selectedPeriodsList = item.subPeriods ? item.subPeriods.filter(sp => selection.selectedPeriodIds.includes(sp.id)) : [];
+                                const selectedPeriodLabelsText = selectedPeriodsList.map(sp => sp.shortLabel || sp.label).join(', ');
+
+                                const computedAmount = selection.isCicil
+                                  ? (selection.customAmount !== undefined ? selection.customAmount : (item.defaultAmount || 0))
+                                  : (item.defaultAmount || 0) * selection.selectedPeriodIds.length;
+
+                                return (
+                                  <div className="mt-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200/90 space-y-2.5 animate-in fade-in duration-150">
+                                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                                      <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
+                                        <span>Periode:</span>
+                                        <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 text-emerald-800 font-mono font-bold text-[11px]">
+                                          {selectedPeriodLabelsText}
+                                        </span>
+                                      </div>
+
+                                      {/* Toggle Mode Cicil */}
+                                      <div className="flex items-center gap-2">
+                                        <span className={`text-xs font-bold ${
+                                          isMultiSelected 
+                                            ? 'text-slate-400' 
+                                            : isContinuingCicil 
+                                            ? 'text-amber-800 font-extrabold' 
+                                            : 'text-slate-700'
+                                        }`}>
+                                          {isContinuingCicil ? 'Lanjut cicilan' : 'Mode cicil'}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          role="switch"
+                                          aria-checked={selection.isCicil}
+                                          disabled={isMultiSelected || isContinuingCicil}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleToggleCicilMode(item.id);
+                                          }}
+                                          className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                            selection.isCicil ? 'bg-amber-500' : 'bg-slate-200'
+                                          } ${isMultiSelected ? 'opacity-40 cursor-not-allowed' : isContinuingCicil ? 'cursor-default' : 'cursor-pointer'}`}
+                                          title={
+                                            isMultiSelected 
+                                              ? 'Mode cicil hanya bisa diaktifkan saat yang dipilih hanya 1 periode' 
+                                              : isContinuingCicil 
+                                              ? 'Periode ini sedang dalam cicilan belum lunas (otomatis Lanjut Cicilan)' 
+                                              : 'Aktifkan jika ingin membayar secara bertahap / mencicil'
+                                          }
+                                        >
+                                          <span
+                                            className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                                              selection.isCicil ? 'translate-x-4' : 'translate-x-0'
+                                            }`}
+                                          />
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {/* Notice jika memilih lebih dari 1 periode */}
+                                    {isMultiSelected && (
+                                      <div className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2 flex items-center gap-1.5">
+                                        <Info className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                                        <span>Mode cicil hanya bisa diaktifkan saat yang dipilih hanya 1 periode.</span>
+                                      </div>
+                                    )}
+
+                                    {/* Info status cicilan berjalan */}
+                                    {isContinuingCicil && singleCicilInfo && (
+                                      <div className="text-[11px] text-amber-900 bg-amber-100/70 border border-amber-300/80 rounded-lg p-2 space-y-0.5">
+                                        <div>
+                                          Sudah dibayar sebelumnya: <strong>Rp {singleCicilInfo.paidAmount.toLocaleString('id-ID')}</strong> dari total <strong>Rp {singleCicilInfo.totalAmount.toLocaleString('id-ID')}</strong>.
+                                        </div>
+                                        <div className="font-bold text-amber-950 flex items-center justify-between">
+                                          <span>Sisa tagihan: Rp {(singleCicilInfo.totalAmount - singleCicilInfo.paidAmount).toLocaleString('id-ID')}</span>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Kotak Input Jumlah yang Ingin Dibayarkan saat Mode Cicil Aktif */}
+                                    {selection.isCicil && (
+                                      <div className="space-y-1.5 pt-1">
+                                        <div className="flex items-center justify-between">
+                                          <label className="text-[11px] font-bold text-slate-700">
+                                            Jumlah yang ingin dibayarkan
+                                          </label>
+                                          {isContinuingCicil && singleCicilInfo && (
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                const remaining = Math.max(0, singleCicilInfo.totalAmount - singleCicilInfo.paidAmount);
+                                                handleInstallmentAmountChange(item.id, String(remaining));
+                                              }}
+                                              className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 underline cursor-pointer"
+                                            >
+                                              Lunasi Sisa (Rp {(singleCicilInfo.totalAmount - singleCicilInfo.paidAmount).toLocaleString('id-ID')})
+                                            </button>
+                                          )}
+                                        </div>
+                                        <div className="relative">
+                                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">Rp</span>
+                                          <input
+                                            type="text"
+                                            value={selection.customAmount !== undefined ? selection.customAmount.toLocaleString('id-ID') : ''}
+                                            onChange={(e) => handleInstallmentAmountChange(item.id, e.target.value)}
+                                            placeholder="0"
+                                            className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm font-mono font-bold text-slate-900 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 shadow-2xs"
+                                          />
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Baris Tombol Konfirmasi ke Kasir */}
+                                    <div className="flex items-center justify-between pt-1.5 border-t border-slate-200/80">
+                                      <div className="text-xs">
+                                        <span className="text-slate-500">Nominal bayar: </span>
+                                        <span className="font-mono font-bold text-emerald-700">
+                                          Rp {computedAmount.toLocaleString('id-ID')}
+                                        </span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleAddConfiguredItemToCart(item);
+                                        }}
+                                        className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                                      >
+                                        <span>{cart.some(c => c.itemId === item.id) ? 'Perbarui di Kasir' : 'Masukkan ke Kasir'}</span>
+                                        <Check className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                             </div>
                           )}
                         </div>
@@ -1269,7 +1797,7 @@ export default function PembayaranSubView({
                           ) : (
                             <button
                               type="button"
-                              onClick={() => handleAddPaymentItemToCart(item)}
+                              onClick={() => handleAddConfiguredItemToCart(item)}
                               className="w-8 h-8 rounded-full bg-emerald-600 text-white hover:bg-emerald-700 flex items-center justify-center transition-all shadow-xs active:scale-95"
                               title="Tambah ke kasir"
                               aria-label="Tambah"
@@ -1322,15 +1850,29 @@ export default function PembayaranSubView({
                       className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between gap-2 hover:bg-slate-100/60 transition-colors"
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="text-xs font-bold text-slate-900 truncate">
-                          {item.name}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xs font-bold text-slate-900 truncate">
+                            {item.name}
+                          </span>
+                          {item.isContinuing ? (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-amber-100 text-amber-900 uppercase tracking-wider">
+                              Lanjut Cicilan
+                            </span>
+                          ) : item.isCicil ? (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-amber-50 text-amber-800 border border-amber-200 uppercase tracking-wider">
+                              Mode Cicil
+                            </span>
+                          ) : null}
                         </div>
                         {item.note && (
-                          <div className="text-[10px] text-slate-400 truncate">
+                          <div className="text-[10px] text-slate-400 truncate mt-0.5">
                             {item.note}
                           </div>
                         )}
-                        <div className="flex items-center gap-1.5 mt-1">
+                        <div className="flex items-center gap-1.5 mt-1.5">
+                          <span className="text-[10px] font-semibold text-slate-500">
+                            {item.isCicil ? 'Jumlah dibayar:' : 'Nominal:'}
+                          </span>
                           <span className="text-xs font-bold text-slate-400">Rp</span>
                           <input
                             type="text"

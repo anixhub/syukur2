@@ -147,6 +147,11 @@ export interface PaymentCartItem {
   month?: string;
   note?: string;
   bendaharaRecordId?: string;
+  selectedPeriodIds?: string[];
+  isCicil?: boolean;
+  isContinuing?: boolean;
+  subPeriodId?: string;
+  totalPeriodAmount?: number;
 }
 
 export interface PaymentReceipt {

@@ -71,7 +71,7 @@ const app = express();
 app.use(compression({
   threshold: 1024,
   level: 6
-}));
+}) as any);
 
 // WebSocket Instance Management for Realtime Broadcasting
 let wssInstance: WebSocketServer | null = null;
