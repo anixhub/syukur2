@@ -30,12 +30,39 @@ import {
   CheckCircle2,
   AlertCircle,
   BedDouble,
+  SlidersHorizontal,
 } from "lucide-react";
 import { Santri, Kompleks, Kamar, Lembaga, Kelas, isGenderMatch } from "../../types";
 import { hasValidRoom } from "../../lib/utils";
 import { renderSantriAvatar, getPesantrenProfile } from "../SekretarisHelper";
 import SantriDetailModal from "../sekretaris/SantriDetailModal";
 import { ExportModal } from "../ExportModal";
+import ColumnVisibilityModal from "../sekretaris/ColumnVisibilityModal";
+
+const DEFAULT_DATAKAMAR_COLUMNS = ["nis", "statusDomisili", "kamar", "nomorLemari"];
+
+const AVAILABLE_DATAKAMAR_COLUMNS = [
+  { key: "nis", label: "NIS", description: "Nomor Induk Santri" },
+  { key: "statusDomisili", label: "Status Domisili", description: "Status santri Mukim atau Non-Mukim (Kampung)" },
+  { key: "kamar", label: "Kamar", description: "Nama kamar dan kompleks santri" },
+  { key: "nomorLemari", label: "No. Lemari", description: "Nomor lemari / loker di kamar" },
+  { key: "gender", label: "Gender", description: "Jenis kelamin santri (Putra/Putri)" },
+  { key: "nik", label: "NIK", description: "Nomor Induk Kependudukan" },
+  { key: "nisn", label: "NISN", description: "Nomor Induk Siswa Nasional" },
+  { key: "kelas", label: "Kelas Madrasah", description: "Tingkat kelas pendidikan formal/diniyah" },
+  { key: "statusEmis", label: "Status EMIS", description: "Status pendataan EMIS Kemenag" },
+  { key: "statusKeanggotaan", label: "Status Anggota", description: "Status keaktifan santri" },
+  { key: "alamat", label: "Alamat Lengkap", description: "Alamat domisili asal santri" },
+  { key: "desa", label: "Desa / Kelurahan", description: "Desa asal santri" },
+  { key: "kecamatan", label: "Kecamatan", description: "Kecamatan asal santri" },
+  { key: "kabupaten", label: "Kabupaten / Kota", description: "Kabupaten/Kota asal santri" },
+  { key: "provinsi", label: "Provinsi", description: "Provinsi domisili santri" },
+  { key: "noHp", label: "No. Handphone", description: "Kontak WhatsApp / HP santri atau wali" },
+  { key: "tahunMasuk", label: "Tahun Masuk", description: "Tahun pendaftaran masuk pesantren" },
+  { key: "pendidikanTerakhir", label: "Pend. Terakhir", description: "Pendidikan terakhir sebelum masuk" },
+  { key: "pendidikanFormal", label: "Pend. Formal", description: "Instansi atau sekolah formal" },
+  { key: "catatan", label: "Catatan", description: "Catatan tambahan riwayat santri" },
+];
 
 interface DataKamarSantriSubProps {
   santriList: Santri[];
@@ -186,6 +213,55 @@ export default function DataKamarSantriSub({
   // Detail Modal State
   const [selectedSantri, setSelectedSantri] = useState<Santri | null>(null);
 
+  // Column Visibility Modal State & Visible Columns
+  const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem("smartsantri_datakamar_visible_columns");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === "object") return parsed;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return {
+      nis: true,
+      statusDomisili: true,
+      kamar: true,
+      nomorLemari: true,
+      gender: false,
+      nik: false,
+      nisn: false,
+      kelas: false,
+      statusEmis: false,
+      statusKeanggotaan: false,
+      alamat: false,
+      desa: false,
+      kecamatan: false,
+      kabupaten: false,
+      provinsi: false,
+      noHp: false,
+      tahunMasuk: false,
+      pendidikanTerakhir: false,
+      pendidikanFormal: false,
+      catatan: false,
+    };
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("smartsantri_datakamar_visible_columns", JSON.stringify(visibleColumns));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [visibleColumns]);
+
+  const shouldShowColumn = (colKey: string): boolean => {
+    if (colKey === "nama") return true;
+    return visibleColumns[colKey] ?? false;
+  };
+
   // Floating Table Header & Horizontal Scroll Navigation States
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -314,6 +390,15 @@ export default function DataKamarSantriSub({
     kompleksFilter,
     kamarFilter,
   ]);
+
+  // Re-measure table column widths and update header/scroll buttons when visible columns change
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      handleTableScroll();
+      updateScrollButtons();
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [visibleColumns]);
 
   // Handle Toast Auto Dismissal
   useEffect(() => {
@@ -497,6 +582,13 @@ export default function DataKamarSantriSub({
       const domA = a.statusDomisili || "";
       const domB = b.statusDomisili || "";
       comparison = domA.localeCompare(domB, "id");
+    } else if (sortKey) {
+      const valA = String((a as any)[sortKey] ?? '');
+      const valB = String((b as any)[sortKey] ?? '');
+      comparison = valA.localeCompare(valB, "id", {
+        sensitivity: "base",
+        numeric: true,
+      });
     }
 
     return sortDirection === "asc" ? comparison : -comparison;
@@ -598,27 +690,33 @@ export default function DataKamarSantriSub({
 
   // Excel Export Handler (XML Format compatible with Excel)
   const handleExportExcel = (customFileName?: string) => {
-    const headers = [
-      "No",
-      "Nama Lengkap",
-      "NIS",
-      "Alamat",
-      "Status Domisili",
-      "Kamar",
-      "No. Lemari",
+    const activeCols: { header: string; getValue: (s: Santri, idx: number) => string }[] = [
+      { header: "No", getValue: (_, idx) => String(idx + 1) },
+      { header: "Nama Lengkap", getValue: (s) => s.nama },
     ];
-    const rows = sortedSantri.map((s, idx) => {
-      const formattedRoom = getKamarFormat(s);
-      return [
-        String(idx + 1),
-        s.nama,
-        s.nis || "-",
-        getFormattedAlamat(s),
-        s.statusDomisili || "Muqim",
-        formattedRoom || "Belum Mendapatkan Kamar",
-        s.nomorLemari || "-",
-      ];
-    });
+    if (shouldShowColumn("nis")) activeCols.push({ header: "NIS", getValue: (s) => s.nis || "-" });
+    if (shouldShowColumn("statusDomisili")) activeCols.push({ header: "Status Domisili", getValue: (s) => s.statusDomisili || "Muqim" });
+    if (shouldShowColumn("kamar")) activeCols.push({ header: "Kamar", getValue: (s) => getKamarFormat(s) || "Belum Mendapatkan Kamar" });
+    if (shouldShowColumn("nomorLemari")) activeCols.push({ header: "No. Lemari", getValue: (s) => s.nomorLemari || "-" });
+    if (shouldShowColumn("gender")) activeCols.push({ header: "Gender", getValue: (s) => s.gender || "-" });
+    if (shouldShowColumn("nik")) activeCols.push({ header: "NIK", getValue: (s) => s.nik || "-" });
+    if (shouldShowColumn("nisn")) activeCols.push({ header: "NISN", getValue: (s) => s.nisn || "-" });
+    if (shouldShowColumn("kelas")) activeCols.push({ header: "Kelas", getValue: (s) => s.kelas || "-" });
+    if (shouldShowColumn("statusEmis")) activeCols.push({ header: "Status EMIS", getValue: (s) => s.statusEmis || "Belum" });
+    if (shouldShowColumn("statusKeanggotaan")) activeCols.push({ header: "Status Anggota", getValue: (s) => s.statusKeanggotaan || "Aktif" });
+    if (shouldShowColumn("alamat")) activeCols.push({ header: "Alamat", getValue: (s) => getFormattedAlamat(s) });
+    if (shouldShowColumn("desa")) activeCols.push({ header: "Desa", getValue: (s) => s.desa || "-" });
+    if (shouldShowColumn("kecamatan")) activeCols.push({ header: "Kecamatan", getValue: (s) => s.kecamatan || "-" });
+    if (shouldShowColumn("kabupaten")) activeCols.push({ header: "Kabupaten", getValue: (s) => s.kabupaten || "-" });
+    if (shouldShowColumn("provinsi")) activeCols.push({ header: "Provinsi", getValue: (s) => s.provinsi || "-" });
+    if (shouldShowColumn("noHp")) activeCols.push({ header: "No HP", getValue: (s) => s.noHp || "-" });
+    if (shouldShowColumn("tahunMasuk")) activeCols.push({ header: "Tahun Masuk", getValue: (s) => s.tahunMasuk || "-" });
+    if (shouldShowColumn("pendidikanTerakhir")) activeCols.push({ header: "Pend. Terakhir", getValue: (s) => s.pendidikanTerakhir || "-" });
+    if (shouldShowColumn("pendidikanFormal")) activeCols.push({ header: "Pend. Formal", getValue: (s) => s.pendidikanFormal || "-" });
+    if (shouldShowColumn("catatan")) activeCols.push({ header: "Catatan", getValue: (s) => s.catatan || "-" });
+
+    const headers = activeCols.map((c) => c.header);
+    const rows = sortedSantri.map((s, idx) => activeCols.map((c) => c.getValue(s, idx)));
 
     let xml = `<?xml version="1.0"?>
 <?mso-application progid="Excel.Sheet"?>
@@ -1130,17 +1228,26 @@ export default function DataKamarSantriSub({
         )}
 
         {/* Rest of non-sticky columns */}
-        {renderSortHeader("nis", "NIS", false, "", headerClass, getStyle())}
-        {renderSortHeader("statusDomisili", "Status Domisili", false, "", headerClass, getStyle())}
-        {renderSortHeader("kamar", "Kamar", false, "", headerClass, getStyle())}
-        {renderSortHeader(
-          "nomorLemari",
-          "No. Lemari",
-          false,
-          "",
-          headerClass,
-          getStyle(),
-        )}
+        {shouldShowColumn("nis") && renderSortHeader("nis", "NIS", false, "", headerClass, getStyle())}
+        {shouldShowColumn("statusDomisili") && renderSortHeader("statusDomisili", "Status Domisili", false, "", headerClass, getStyle())}
+        {shouldShowColumn("kamar") && renderSortHeader("kamar", "Kamar", false, "", headerClass, getStyle())}
+        {shouldShowColumn("nomorLemari") && renderSortHeader("nomorLemari", "No. Lemari", false, "", headerClass, getStyle())}
+        {shouldShowColumn("gender") && renderSortHeader("gender", "Gender", false, "", headerClass, getStyle())}
+        {shouldShowColumn("nik") && renderSortHeader("nik", "NIK", false, "", headerClass, getStyle())}
+        {shouldShowColumn("nisn") && renderSortHeader("nisn", "NISN", false, "", headerClass, getStyle())}
+        {shouldShowColumn("kelas") && renderSortHeader("kelas", "Kelas", false, "", headerClass, getStyle())}
+        {shouldShowColumn("statusEmis") && renderSortHeader("statusEmis", "Status EMIS", false, "", headerClass, getStyle())}
+        {shouldShowColumn("statusKeanggotaan") && renderSortHeader("statusKeanggotaan", "Status Anggota", false, "", headerClass, getStyle())}
+        {shouldShowColumn("alamat") && renderSortHeader("alamat", "Alamat", false, "", headerClass, getStyle())}
+        {shouldShowColumn("desa") && renderSortHeader("desa", "Desa", false, "", headerClass, getStyle())}
+        {shouldShowColumn("kecamatan") && renderSortHeader("kecamatan", "Kecamatan", false, "", headerClass, getStyle())}
+        {shouldShowColumn("kabupaten") && renderSortHeader("kabupaten", "Kabupaten", false, "", headerClass, getStyle())}
+        {shouldShowColumn("provinsi") && renderSortHeader("provinsi", "Provinsi", false, "", headerClass, getStyle())}
+        {shouldShowColumn("noHp") && renderSortHeader("noHp", "No HP", false, "", headerClass, getStyle())}
+        {shouldShowColumn("tahunMasuk") && renderSortHeader("tahunMasuk", "Tahun Masuk", false, "", headerClass, getStyle())}
+        {shouldShowColumn("pendidikanTerakhir") && renderSortHeader("pendidikanTerakhir", "Pend. Terakhir", false, "", headerClass, getStyle())}
+        {shouldShowColumn("pendidikanFormal") && renderSortHeader("pendidikanFormal", "Pend. Formal", false, "", headerClass, getStyle())}
+        {shouldShowColumn("catatan") && renderSortHeader("catatan", "Catatan", false, "", headerClass, getStyle())}
       </tr>
     );
   };
@@ -1362,6 +1469,17 @@ export default function DataKamarSantriSub({
           >
             <Filter className="h-4 w-4 text-current" />
             <span className="hidden sm:inline">Filter</span>
+          </button>
+
+          {/* Visibilitas Kolom Button */}
+          <button
+            type="button"
+            onClick={() => setIsColumnModalOpen(true)}
+            className="h-11 px-3.5 sm:px-4 flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-purple-50 hover:text-purple-800 hover:border-purple-200 font-display text-xs font-bold transition-all shrink-0 cursor-pointer shadow-3xs active:scale-95"
+            title="Atur Visibilitas Kolom Tabel Data Kamar"
+          >
+            <SlidersHorizontal className="h-4 w-4 text-purple-700 shrink-0" />
+            <span className="hidden sm:inline">Visibilitas Kolom</span>
           </button>
 
           {/* Mode Pilih Data Button */}
@@ -1952,175 +2070,271 @@ export default function DataKamarSantriSub({
                       </td>
 
                       {/* NIS Cell */}
-                      <td className="px-6 py-4 whitespace-nowrap font-mono text-xs font-semibold text-slate-700">
-                        {s.nis || "-"}
-                      </td>
+                      {shouldShowColumn("nis") && (
+                        <td className="px-6 py-4 whitespace-nowrap font-mono text-xs font-semibold text-slate-700">
+                          {s.nis || "-"}
+                        </td>
+                      )}
 
                       {/* Status Domisili Cell */}
-                      <td className="px-6 py-4 whitespace-nowrap text-xs">
-                        {s.statusDomisili === "Kampung" ? (
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200/80 font-bold text-[11px]">
-                            Kampung
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200/80 font-bold text-[11px]">
-                            Muqim
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Clickable Kamar Cell for Direct Inline Editing */}
-                      <td className="px-6 py-4 whitespace-nowrap text-xs">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            if (isSelectionMode) {
-                              // Allow bubbling to tr.onClick for selection
-                              return;
-                            }
-                            e.stopPropagation();
-                            if (activeInlineKamarSantriId === s.id) {
-                              setActiveInlineKamarSantriId(null);
-                              setInlineKamarPos(null);
-                            } else {
-                              const rect = e.currentTarget.getBoundingClientRect();
-                              const popupWidth = 340;
-                              const popupHeight = 390;
-                              const vh = window.innerHeight;
-                              const vw = window.innerWidth;
-
-                              const spaceBelow = vh - rect.bottom;
-                              const spaceAbove = rect.top;
-                              const isUpward = spaceBelow < popupHeight && spaceAbove > spaceBelow;
-
-                              let top = isUpward ? rect.top - popupHeight - 8 : rect.bottom + 8;
-                              // Ensure top is strictly clamped inside visible screen area
-                              top = Math.max(16, Math.min(top, vh - popupHeight - 16));
-
-                              let left = rect.left;
-                              if (left + popupWidth > vw - 16) {
-                                left = Math.max(16, vw - popupWidth - 16);
-                              }
-                              if (left < 16) {
-                                left = 16;
-                              }
-
-                              setInlineKamarPos({
-                                top,
-                                left,
-                                isUpward,
-                              });
-                              setActiveInlineKamarSantriId(s.id);
-                              const roomObj = kamarList.find(
-                                (r) =>
-                                  r.nama.toLowerCase() ===
-                                  (s.kamar || "").toLowerCase(),
-                              );
-                              setInlineSelectedComplexId(roomObj ? roomObj.kompleksId : "");
-                              setInlineSelectedRoomName(s.kamar || "");
-                              setInlineSelectedLockerNumber(s.nomorLemari || "");
-                            }
-                          }}
-                          className="group/kamar inline-flex items-center gap-1.5 rounded-xl transition-all border-none bg-transparent p-0 text-left cursor-pointer"
-                          title={isSelectionMode ? "Klik untuk memilih santri" : "Klik untuk atur kamar & lemari"}
-                        >
-                          {formattedRoom ? (
-                            <span className="font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-xl transition-colors flex items-center gap-1.5 border border-emerald-100">
-                              <span>{formattedRoom}</span>
-                              <ChevronDown className="h-3 w-3 text-emerald-600 opacity-60 group-hover/kamar:opacity-100" />
+                      {shouldShowColumn("statusDomisili") && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs">
+                          {s.statusDomisili === "Kampung" ? (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200/80 font-bold text-[11px]">
+                              Kampung
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 hover:bg-rose-100 px-2.5 py-1 text-[10px] font-extrabold text-rose-700 uppercase tracking-wider border border-rose-100 transition-colors">
-                              <span>Belum Dapat Kamar</span>
-                              <ChevronDown className="h-3 w-3 text-rose-500 opacity-60 group-hover/kamar:opacity-100" />
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200/80 font-bold text-[11px]">
+                              Muqim
                             </span>
                           )}
-                        </button>
-                      </td>
+                        </td>
+                      )}
+
+                      {/* Clickable Kamar Cell for Direct Inline Editing */}
+                      {shouldShowColumn("kamar") && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              if (isSelectionMode) {
+                                // Allow bubbling to tr.onClick for selection
+                                return;
+                              }
+                              e.stopPropagation();
+                              if (activeInlineKamarSantriId === s.id) {
+                                setActiveInlineKamarSantriId(null);
+                                setInlineKamarPos(null);
+                              } else {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                const popupWidth = 340;
+                                const popupHeight = 390;
+                                const vh = window.innerHeight;
+                                const vw = window.innerWidth;
+
+                                const spaceBelow = vh - rect.bottom;
+                                const spaceAbove = rect.top;
+                                const isUpward = spaceBelow < popupHeight && spaceAbove > spaceBelow;
+
+                                let top = isUpward ? rect.top - popupHeight - 8 : rect.bottom + 8;
+                                // Ensure top is strictly clamped inside visible screen area
+                                top = Math.max(16, Math.min(top, vh - popupHeight - 16));
+
+                                let left = rect.left;
+                                if (left + popupWidth > vw - 16) {
+                                  left = Math.max(16, vw - popupWidth - 16);
+                                }
+                                if (left < 16) {
+                                  left = 16;
+                                }
+
+                                setInlineKamarPos({
+                                  top,
+                                  left,
+                                  isUpward,
+                                });
+                                setActiveInlineKamarSantriId(s.id);
+                                const roomObj = kamarList.find(
+                                  (r) =>
+                                    r.nama.toLowerCase() ===
+                                    (s.kamar || "").toLowerCase(),
+                                );
+                                setInlineSelectedComplexId(roomObj ? roomObj.kompleksId : "");
+                                setInlineSelectedRoomName(s.kamar || "");
+                                setInlineSelectedLockerNumber(s.nomorLemari || "");
+                              }
+                            }}
+                            className="group/kamar inline-flex items-center gap-1.5 rounded-xl transition-all border-none bg-transparent p-0 text-left cursor-pointer"
+                            title={isSelectionMode ? "Klik untuk memilih santri" : "Klik untuk atur kamar & lemari"}
+                          >
+                            {formattedRoom ? (
+                              <span className="font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-xl transition-colors flex items-center gap-1.5 border border-emerald-100">
+                                <span>{formattedRoom}</span>
+                                <ChevronDown className="h-3 w-3 text-emerald-600 opacity-60 group-hover/kamar:opacity-100" />
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 hover:bg-rose-100 px-2.5 py-1 text-[10px] font-extrabold text-rose-700 uppercase tracking-wider border border-rose-100 transition-colors">
+                                <span>Belum Dapat Kamar</span>
+                                <ChevronDown className="h-3 w-3 text-rose-500 opacity-60 group-hover/kamar:opacity-100" />
+                              </span>
+                            )}
+                          </button>
+                        </td>
+                      )}
 
                       {/* Nomor Lemari Cell (Double Click to Edit Numbers Only, Disabled if No Room) */}
-                      <td
-                        onDoubleClick={(e) => {
-                          e.stopPropagation();
-                          if (isSelectionMode) return;
-                          if (!hasValidRoom(s.kamar)) {
-                            setToast({
-                              message: `Santri ${s.nama} belum dapat kamar. Atur kamar terlebih dahulu.`,
-                              type: "error",
-                            });
-                            return;
+                      {shouldShowColumn("nomorLemari") && (
+                        <td
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            if (isSelectionMode) return;
+                            if (!hasValidRoom(s.kamar)) {
+                              setToast({
+                                message: `Santri ${s.nama} belum dapat kamar. Atur kamar terlebih dahulu.`,
+                                type: "error",
+                              });
+                              return;
+                            }
+                            setEditingLemariSantriId(s.id);
+                            setEditingLemariValue(s.nomorLemari || "");
+                          }}
+                          className="px-6 py-4 whitespace-nowrap font-mono text-xs font-semibold text-slate-700 select-none"
+                          title={
+                            isSelectionMode
+                              ? undefined
+                              : !hasValidRoom(s.kamar)
+                              ? "Belum dapat kamar. Atur kamar terlebih dahulu untuk mengedit nomor lemari."
+                              : "Double klik untuk edit nomor lemari (angka saja)"
                           }
-                          setEditingLemariSantriId(s.id);
-                          setEditingLemariValue(s.nomorLemari || "");
-                        }}
-                        className="px-6 py-4 whitespace-nowrap font-mono text-xs font-semibold text-slate-700 select-none"
-                        title={
-                          isSelectionMode
-                            ? undefined
-                            : !hasValidRoom(s.kamar)
-                            ? "Belum dapat kamar. Atur kamar terlebih dahulu untuk mengedit nomor lemari."
-                            : "Double klik untuk edit nomor lemari (angka saja)"
-                        }
-                      >
-                        {editingLemariSantriId === s.id ? (
-                          <input
-                            type="text"
-                            autoFocus
-                            value={editingLemariValue}
-                            onChange={(e) => {
-                              const numbersOnly = e.target.value.replace(/\D/g, "");
-                              setEditingLemariValue(numbersOnly);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                onUpdateSantriRoom?.(
-                                  s.id,
-                                  s.kamar || "",
-                                  editingLemariValue || undefined,
-                                );
-                                setToast({
-                                  message: `Nomor lemari ${s.nama} diubah menjadi "${editingLemariValue || "-"}".`,
-                                  type: "success",
-                                });
+                        >
+                          {editingLemariSantriId === s.id ? (
+                            <input
+                              type="text"
+                              autoFocus
+                              value={editingLemariValue}
+                              onChange={(e) => {
+                                const numbersOnly = e.target.value.replace(/\D/g, "");
+                                setEditingLemariValue(numbersOnly);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  onUpdateSantriRoom?.(
+                                    s.id,
+                                    s.kamar || "",
+                                    editingLemariValue || undefined,
+                                  );
+                                  setToast({
+                                    message: `Nomor lemari ${s.nama} diubah menjadi "${editingLemariValue || "-"}".`,
+                                    type: "success",
+                                  });
+                                  setEditingLemariSantriId(null);
+                                } else if (e.key === "Escape") {
+                                  setEditingLemariSantriId(null);
+                                }
+                              }}
+                              onBlur={() => {
+                                if (editingLemariValue !== (s.nomorLemari || "")) {
+                                  onUpdateSantriRoom?.(
+                                    s.id,
+                                    s.kamar || "",
+                                    editingLemariValue || undefined,
+                                  );
+                                  setToast({
+                                    message: `Nomor lemari ${s.nama} diubah menjadi "${editingLemariValue || "-"}".`,
+                                    type: "success",
+                                  });
+                                }
                                 setEditingLemariSantriId(null);
-                              } else if (e.key === "Escape") {
-                                setEditingLemariSantriId(null);
+                              }}
+                              className="w-16 px-2 py-1 rounded-lg border border-purple-400 bg-white font-mono text-xs font-bold text-purple-900 shadow-inner outline-none focus:ring-2 focus:ring-purple-500"
+                              placeholder="0"
+                            />
+                          ) : (
+                            <span
+                              className={
+                                !hasValidRoom(s.kamar)
+                                  ? "text-slate-400 cursor-not-allowed px-2 py-1 inline-block opacity-60"
+                                  : "cursor-pointer hover:bg-slate-100 hover:text-purple-700 px-2 py-1 rounded-md transition-colors inline-block"
                               }
-                            }}
-                            onBlur={() => {
-                              if (editingLemariValue !== (s.nomorLemari || "")) {
-                                onUpdateSantriRoom?.(
-                                  s.id,
-                                  s.kamar || "",
-                                  editingLemariValue || undefined,
-                                );
-                                setToast({
-                                  message: `Nomor lemari ${s.nama} diubah menjadi "${editingLemariValue || "-"}".`,
-                                  type: "success",
-                                });
+                              title={
+                                !hasValidRoom(s.kamar)
+                                  ? "Belum dapat kamar"
+                                  : "Double klik untuk ubah nomor lemari"
                               }
-                              setEditingLemariSantriId(null);
-                            }}
-                            className="w-16 px-2 py-1 rounded-lg border border-purple-400 bg-white font-mono text-xs font-bold text-purple-900 shadow-inner outline-none focus:ring-2 focus:ring-purple-500"
-                            placeholder="0"
-                          />
-                        ) : (
-                          <span
-                            className={
-                              !hasValidRoom(s.kamar)
-                                ? "text-slate-400 cursor-not-allowed px-2 py-1 inline-block opacity-60"
-                                : "cursor-pointer hover:bg-slate-100 hover:text-purple-700 px-2 py-1 rounded-md transition-colors inline-block"
-                            }
-                            title={
-                              !hasValidRoom(s.kamar)
-                                ? "Belum dapat kamar"
-                                : "Double klik untuk ubah nomor lemari"
-                            }
-                          >
-                            {s.nomorLemari || "-"}
+                            >
+                              {s.nomorLemari || "-"}
+                            </span>
+                          )}
+                        </td>
+                      )}
+
+                      {/* Additional Columns */}
+                      {shouldShowColumn("gender") && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-center">
+                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${s.gender === 'Putri' ? 'bg-pink-50 text-pink-700' : 'bg-blue-50 text-blue-700'}`}>
+                            {s.gender === 'Putri' ? 'P' : 'L'}
                           </span>
-                        )}
-                      </td>
+                        </td>
+                      )}
+                      {shouldShowColumn("nik") && (
+                        <td className="px-6 py-4 whitespace-nowrap font-mono text-xs font-semibold text-slate-700">
+                          {s.nik || "-"}
+                        </td>
+                      )}
+                      {shouldShowColumn("nisn") && (
+                        <td className="px-6 py-4 whitespace-nowrap font-mono text-xs font-semibold text-slate-700">
+                          {s.nisn || "-"}
+                        </td>
+                      )}
+                      {shouldShowColumn("kelas") && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-700">
+                          {s.kelas || "-"}
+                        </td>
+                      )}
+                      {shouldShowColumn("statusEmis") && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-center">
+                          <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${s.statusEmis === 'Terdaftar' || (s.statusEmis as any) === 'Sudah' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500'}`}>
+                            {s.statusEmis || "Belum"}
+                          </span>
+                        </td>
+                      )}
+                      {shouldShowColumn("statusKeanggotaan") && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-center">
+                          <span className="inline-block px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold">
+                            {s.statusKeanggotaan || "Aktif"}
+                          </span>
+                        </td>
+                      )}
+                      {shouldShowColumn("alamat") && (
+                        <td className="px-6 py-4 text-xs text-slate-600 truncate max-w-[200px]" title={s.alamat || ''}>
+                          {s.alamat || "-"}
+                        </td>
+                      )}
+                      {shouldShowColumn("desa") && (
+                        <td className="px-6 py-4 text-xs text-slate-600 truncate max-w-[150px]">
+                          {s.desa || "-"}
+                        </td>
+                      )}
+                      {shouldShowColumn("kecamatan") && (
+                        <td className="px-6 py-4 text-xs text-slate-600 truncate max-w-[150px]">
+                          {s.kecamatan || "-"}
+                        </td>
+                      )}
+                      {shouldShowColumn("kabupaten") && (
+                        <td className="px-6 py-4 text-xs text-slate-600 truncate max-w-[150px]">
+                          {s.kabupaten || "-"}
+                        </td>
+                      )}
+                      {shouldShowColumn("provinsi") && (
+                        <td className="px-6 py-4 text-xs text-slate-600 truncate max-w-[150px]">
+                          {s.provinsi || "-"}
+                        </td>
+                      )}
+                      {shouldShowColumn("noHp") && (
+                        <td className="px-6 py-4 whitespace-nowrap font-mono text-xs text-slate-700">
+                          {s.noHp || "-"}
+                        </td>
+                      )}
+                      {shouldShowColumn("tahunMasuk") && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-700">
+                          {s.tahunMasuk || "-"}
+                        </td>
+                      )}
+                      {shouldShowColumn("pendidikanTerakhir") && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-700">
+                          {s.pendidikanTerakhir || "-"}
+                        </td>
+                      )}
+                      {shouldShowColumn("pendidikanFormal") && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-700">
+                          {s.pendidikanFormal || "-"}
+                        </td>
+                      )}
+                      {shouldShowColumn("catatan") && (
+                        <td className="px-6 py-4 text-xs text-slate-600 truncate max-w-[200px]" title={s.catatan || ''}>
+                          {s.catatan || "-"}
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -2948,6 +3162,18 @@ export default function DataKamarSantriSub({
           })(),
           document.body,
         )}
+
+      {/* Column Visibility Modal */}
+      <ColumnVisibilityModal
+        isOpen={isColumnModalOpen}
+        onClose={() => setIsColumnModalOpen(false)}
+        visibleColumns={visibleColumns}
+        setVisibleColumns={setVisibleColumns}
+        defaultColumns={DEFAULT_DATAKAMAR_COLUMNS}
+        availableColumns={AVAILABLE_DATAKAMAR_COLUMNS}
+        title="Atur Visibilitas Kolom Data Kamar"
+        description="Pilih kolom data santri yang ingin ditampilkan atau disembunyikan pada tabel data kamar santri"
+      />
     </div>
   );
 }

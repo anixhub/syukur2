@@ -11,6 +11,21 @@ import { Kompleks, Kamar, Santri, isGenderMatch } from '../../types';
 import { hasValidRoom } from '../../lib/utils';
 import SantriDetailModal from '../sekretaris/SantriDetailModal';
 import { renderSantriAvatar, calculateRealtimeAge, getPesantrenProfile } from '../SekretarisHelper';
+import ColumnVisibilityModal from '../sekretaris/ColumnVisibilityModal';
+
+const DEFAULT_KAMAR_DETAIL_COLUMNS = ['nomorLemari', 'no', 'nis', 'alamat'];
+
+const AVAILABLE_KAMAR_DETAIL_COLUMNS = [
+  { key: 'nomorLemari', label: 'No. Lemari', description: 'Nomor slot / lemari santri di kamar' },
+  { key: 'no', label: 'Nomor Urut', description: 'Nomor urut santri dalam kamar' },
+  { key: 'nis', label: 'NIS', description: 'Nomor Induk Santri' },
+  { key: 'alamat', label: 'Alamat / Asal', description: 'Desa dan kecamatan asal santri' },
+  { key: 'statusDomisili', label: 'Status Domisili', description: 'Status santri mukim atau kampung' },
+  { key: 'noHp', label: 'No. Handphone', description: 'Nomor kontak WhatsApp / HP' },
+  { key: 'gender', label: 'Jenis Kelamin', description: 'Gender santri (L/P)' },
+  { key: 'kelas', label: 'Kelas Madrasah', description: 'Tingkat & kelas pendidikan santri' },
+  { key: 'statusEmis', label: 'Status EMIS', description: 'Status sinkronisasi data EMIS Kemenag' },
+];
 
 interface KamarSubProps {
   kompleksList: Kompleks[];
@@ -74,6 +89,44 @@ export default function KamarSub({
   const [sortField, setSortField] = useState<'nama' | 'nis' | 'nomorLemari' | 'statusKeanggotaan' | 'kamar' | 'alamat' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [currentPage, setCurrentPage] = useState(1);
+
+  // Column Visibility States for Room Detail Table
+  const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('smartsantri_kamar_detail_visible_columns');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') return parsed;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return {
+      nomorLemari: true,
+      no: true,
+      nis: true,
+      alamat: true,
+      statusDomisili: false,
+      noHp: false,
+      gender: false,
+      kelas: false,
+      statusEmis: false,
+    };
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('smartsantri_kamar_detail_visible_columns', JSON.stringify(visibleColumns));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [visibleColumns]);
+
+  const shouldShowColumn = (colKey: string): boolean => {
+    if (colKey === 'nama' || colKey === 'aksi') return true;
+    return visibleColumns[colKey] ?? false;
+  };
 
   // Drag and drop
   const [draggedStudentId, setDraggedStudentId] = useState<string | null>(null);
@@ -1817,6 +1870,17 @@ export default function KamarSub({
                     <option value="Kampung">Kampung</option>
                   </select>
 
+                  {/* Visibilitas Kolom Button */}
+                  <button
+                    type="button"
+                    onClick={() => setIsColumnModalOpen(true)}
+                    className="py-1.5 px-3 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition-all cursor-pointer border-slate-200 bg-slate-50/50 text-slate-700 hover:bg-purple-50 hover:text-purple-800 hover:border-purple-200 shadow-3xs active:scale-95"
+                    title="Atur Visibilitas Kolom Tabel Kamar"
+                  >
+                    <Sliders className="w-3.5 h-3.5 text-purple-700 shrink-0" />
+                    <span>Visibilitas Kolom</span>
+                  </button>
+
                   {/* Tombol Pilih / Mode Pilih */}
                   <button
                     type="button"
@@ -1946,11 +2010,34 @@ export default function KamarSub({
                                   />
                                 </th>
                               )}
-                              <th className="py-3 px-3.5 w-28 text-center">No. Lemari</th>
-                              <th className="py-3 px-3.5 w-12 text-center">No</th>
+                              {shouldShowColumn('nomorLemari') && (
+                                <th className="py-3 px-3.5 w-28 text-center">No. Lemari</th>
+                              )}
+                              {shouldShowColumn('no') && (
+                                <th className="py-3 px-3.5 w-12 text-center">No</th>
+                              )}
                               <th className="py-3 px-3.5 min-w-[200px]">Nama Santri</th>
-                              <th className="py-3 px-3.5 w-28">NIS</th>
-                              <th className="py-3 px-3.5 w-48">Alamat</th>
+                              {shouldShowColumn('nis') && (
+                                <th className="py-3 px-3.5 w-28">NIS</th>
+                              )}
+                              {shouldShowColumn('alamat') && (
+                                <th className="py-3 px-3.5 w-48">Alamat</th>
+                              )}
+                              {shouldShowColumn('statusDomisili') && (
+                                <th className="py-3 px-3.5 w-28 text-center">Status</th>
+                              )}
+                              {shouldShowColumn('noHp') && (
+                                <th className="py-3 px-3.5 w-32">No. HP</th>
+                              )}
+                              {shouldShowColumn('gender') && (
+                                <th className="py-3 px-3.5 w-20 text-center">Gender</th>
+                              )}
+                              {shouldShowColumn('kelas') && (
+                                <th className="py-3 px-3.5 w-28">Kelas</th>
+                              )}
+                              {shouldShowColumn('statusEmis') && (
+                                <th className="py-3 px-3.5 w-24 text-center">EMIS</th>
+                              )}
                               <th className="py-3 px-3.5 w-20 text-center sticky right-0 bg-slate-100/95 backdrop-blur-xs z-10 border-l border-slate-200/60 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)]">
                                 Aksi
                               </th>
@@ -1959,6 +2046,19 @@ export default function KamarSub({
                           <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
                             {(() => {
                               let runningSantriCount = 0;
+                              const totalVisibleCols = 
+                                1 /* Nama */ + 
+                                1 /* Aksi */ +
+                                (isSelectionMode ? 1 : 0) +
+                                (shouldShowColumn('nomorLemari') ? 1 : 0) +
+                                (shouldShowColumn('no') ? 1 : 0) +
+                                (shouldShowColumn('nis') ? 1 : 0) +
+                                (shouldShowColumn('alamat') ? 1 : 0) +
+                                (shouldShowColumn('statusDomisili') ? 1 : 0) +
+                                (shouldShowColumn('noHp') ? 1 : 0) +
+                                (shouldShowColumn('gender') ? 1 : 0) +
+                                (shouldShowColumn('kelas') ? 1 : 0) +
+                                (shouldShowColumn('statusEmis') ? 1 : 0);
 
                               return slotNumbers.map(slotNum => {
                                 const slotStr = String(slotNum);
@@ -2019,14 +2119,18 @@ export default function KamarSub({
                                         {isSelectionMode && (
                                           <td className="py-3 px-2 text-center font-mono text-slate-300 text-[11px]">-</td>
                                         )}
-                                        <td className="py-3 px-3.5 text-center">
-                                          <span className="font-mono font-bold text-xs bg-slate-100 text-slate-400 px-2 py-0.5 rounded-md border border-slate-200">
-                                            {String(slotNum).padStart(2, '0')}
-                                          </span>
-                                        </td>
-                                        <td className="py-3 px-3.5 text-center font-mono text-slate-300 text-[11px]">
-                                          -
-                                        </td>
+                                        {shouldShowColumn('nomorLemari') && (
+                                          <td className="py-3 px-3.5 text-center">
+                                            <span className="font-mono font-bold text-xs bg-slate-100 text-slate-400 px-2 py-0.5 rounded-md border border-slate-200">
+                                              {String(slotNum).padStart(2, '0')}
+                                            </span>
+                                          </td>
+                                        )}
+                                        {shouldShowColumn('no') && (
+                                          <td className="py-3 px-3.5 text-center font-mono text-slate-300 text-[11px]">
+                                            -
+                                          </td>
+                                        )}
                                         <td className="py-3 px-3.5">
                                           {isOver && !isOwnSlot ? (
                                             <div className="flex items-center gap-2 text-xs font-extrabold text-emerald-800 bg-emerald-100/90 px-3 py-1.5 rounded-xl border border-emerald-300 w-fit shadow-2xs">
@@ -2046,8 +2150,27 @@ export default function KamarSub({
                                             </div>
                                           )}
                                         </td>
-                                        <td className="py-3 px-3.5 font-mono text-slate-300 text-[11px]">-</td>
-                                        <td className="py-3 px-3.5 text-slate-300 text-[11px]">-</td>
+                                        {shouldShowColumn('nis') && (
+                                          <td className="py-3 px-3.5 font-mono text-slate-300 text-[11px]">-</td>
+                                        )}
+                                        {shouldShowColumn('alamat') && (
+                                          <td className="py-3 px-3.5 text-slate-300 text-[11px]">-</td>
+                                        )}
+                                        {shouldShowColumn('statusDomisili') && (
+                                          <td className="py-3 px-3.5 text-center text-slate-300 text-[11px]">-</td>
+                                        )}
+                                        {shouldShowColumn('noHp') && (
+                                          <td className="py-3 px-3.5 text-slate-300 text-[11px]">-</td>
+                                        )}
+                                        {shouldShowColumn('gender') && (
+                                          <td className="py-3 px-3.5 text-center text-slate-300 text-[11px]">-</td>
+                                        )}
+                                        {shouldShowColumn('kelas') && (
+                                          <td className="py-3 px-3.5 text-slate-300 text-[11px]">-</td>
+                                        )}
+                                        {shouldShowColumn('statusEmis') && (
+                                          <td className="py-3 px-3.5 text-center text-slate-300 text-[11px]">-</td>
+                                        )}
                                         <td className="py-3 px-3.5 text-center sticky right-0 bg-white group-hover:bg-purple-50/20 z-10 border-l border-slate-100 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.03)] text-slate-300 text-[11px]">
                                           -
                                         </td>
@@ -2145,32 +2268,36 @@ export default function KamarSub({
                                               </td>
                                             )}
                                             {/* No. Lemari - Show badge for primary (idx 0), connect with vertical line for co-occupants (idx > 0) */}
-                                            <td className="py-3 px-3.5 text-center align-middle relative overflow-visible">
-                                              {idx === 0 ? (
-                                                <div className="flex flex-col items-center justify-center relative">
-                                                  <span className="font-mono font-bold text-xs px-2 py-0.5 rounded-md border inline-block bg-purple-50 text-purple-700 border-purple-200 shadow-2xs z-10 relative">
-                                                    {String(slotNum).padStart(2, '0')}
-                                                  </span>
-                                                  {occupants.length > 1 && (
-                                                    <div className="w-0.5 bg-purple-400 absolute left-1/2 -translate-x-1/2 top-1/2 -bottom-3.5 z-0" />
-                                                  )}
-                                                </div>
-                                              ) : (
-                                                <div className="flex justify-center items-center h-full relative">
-                                                  {/* Vertical trunk line - connects seamlessly across py-3 cell boundaries */}
-                                                  <div className={`w-0.5 bg-purple-400 absolute left-1/2 -translate-x-1/2 z-0 ${
-                                                    idx === occupants.length - 1 ? '-top-3.5 h-[calc(50%+14px)]' : '-top-3.5 -bottom-3.5'
-                                                  }`} />
-                                                  {/* Horizontal branch tick pointing right */}
-                                                  <div className="w-2.5 h-0.5 bg-purple-400 absolute left-1/2 top-1/2 z-0" />
-                                                </div>
-                                              )}
-                                            </td>
+                                            {shouldShowColumn('nomorLemari') && (
+                                              <td className="py-3 px-3.5 text-center align-middle relative overflow-visible">
+                                                {idx === 0 ? (
+                                                  <div className="flex flex-col items-center justify-center relative">
+                                                    <span className="font-mono font-bold text-xs px-2 py-0.5 rounded-md border inline-block bg-purple-50 text-purple-700 border-purple-200 shadow-2xs z-10 relative">
+                                                      {String(slotNum).padStart(2, '0')}
+                                                    </span>
+                                                    {occupants.length > 1 && (
+                                                      <div className="w-0.5 bg-purple-400 absolute left-1/2 -translate-x-1/2 top-1/2 -bottom-3.5 z-0" />
+                                                    )}
+                                                  </div>
+                                                ) : (
+                                                  <div className="flex justify-center items-center h-full relative">
+                                                    {/* Vertical trunk line - connects seamlessly across py-3 cell boundaries */}
+                                                    <div className={`w-0.5 bg-purple-400 absolute left-1/2 -translate-x-1/2 z-0 ${
+                                                      idx === occupants.length - 1 ? '-top-3.5 h-[calc(50%+14px)]' : '-top-3.5 -bottom-3.5'
+                                                    }`} />
+                                                    {/* Horizontal branch tick pointing right */}
+                                                    <div className="w-2.5 h-0.5 bg-purple-400 absolute left-1/2 top-1/2 z-0" />
+                                                  </div>
+                                                )}
+                                              </td>
+                                            )}
 
                                             {/* No - Runtut per Santri */}
-                                            <td className="py-3 px-3.5 text-center font-mono font-bold text-slate-600 text-[11px]">
-                                              {currentSantriNo}
-                                            </td>
+                                            {shouldShowColumn('no') && (
+                                              <td className="py-3 px-3.5 text-center font-mono font-bold text-slate-600 text-[11px]">
+                                                {currentSantriNo}
+                                              </td>
+                                            )}
 
                                             {/* Nama Santri */}
                                             <td className="py-3 px-3.5">
@@ -2223,14 +2350,65 @@ export default function KamarSub({
                                             </td>
 
                                               {/* NIS */}
-                                              <td className="py-3 px-3.5 font-mono text-slate-600 font-bold text-[11px]">
-                                                {s.nis || '-'}
-                                              </td>
+                                              {shouldShowColumn('nis') && (
+                                                <td className="py-3 px-3.5 font-mono text-slate-600 font-bold text-[11px]">
+                                                  {s.nis || '-'}
+                                                </td>
+                                              )}
 
                                               {/* Alamat */}
-                                              <td className="py-3 px-3.5 text-slate-500 text-[11px] truncate max-w-[180px]">
-                                                {s.desa ? `Ds. ${s.desa}, Kec. ${s.kecamatan || '-'}` : (s.alamat || s.asal || '-')}
-                                              </td>
+                                              {shouldShowColumn('alamat') && (
+                                                <td className="py-3 px-3.5 text-slate-500 text-[11px] truncate max-w-[180px]">
+                                                  {s.desa ? `Ds. ${s.desa}, Kec. ${s.kecamatan || '-'}` : (s.alamat || s.asal || '-')}
+                                                </td>
+                                              )}
+
+                                              {/* Status Domisili */}
+                                              {shouldShowColumn('statusDomisili') && (
+                                                <td className="py-3 px-3.5 text-center text-[11px]">
+                                                  <span className={`inline-block px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                                                    s.statusDomisili === 'Kampung' ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-blue-50 text-blue-700 border border-blue-200'
+                                                  }`}>
+                                                    {s.statusDomisili || 'Muqim'}
+                                                  </span>
+                                                </td>
+                                              )}
+
+                                              {/* No. HP */}
+                                              {shouldShowColumn('noHp') && (
+                                                <td className="py-3 px-3.5 font-mono text-slate-600 text-[11px]">
+                                                  {s.noHp || '-'}
+                                                </td>
+                                              )}
+
+                                              {/* Gender */}
+                                              {shouldShowColumn('gender') && (
+                                                <td className="py-3 px-3.5 text-center text-[11px]">
+                                                  <span className={`inline-block px-2 py-0.5 rounded font-bold text-[10px] ${
+                                                    s.gender === 'Putri' ? 'bg-pink-50 text-pink-700' : 'bg-blue-50 text-blue-700'
+                                                  }`}>
+                                                    {s.gender === 'Putri' ? 'P' : 'L'}
+                                                  </span>
+                                                </td>
+                                              )}
+
+                                              {/* Kelas */}
+                                              {shouldShowColumn('kelas') && (
+                                                <td className="py-3 px-3.5 text-slate-600 text-[11px]">
+                                                  {s.kelas || '-'}
+                                                </td>
+                                              )}
+
+                                              {/* Status EMIS */}
+                                              {shouldShowColumn('statusEmis') && (
+                                                <td className="py-3 px-3.5 text-center text-[11px]">
+                                                  <span className={`inline-block px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                                                    s.statusEmis === 'Terdaftar' || (s.statusEmis as any) === 'Sudah' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500'
+                                                  }`}>
+                                                    {s.statusEmis || 'Belum'}
+                                                  </span>
+                                                </td>
+                                              )}
 
                                               {/* Aksi - Sticky Right */}
                                               <td className="py-3 px-3.5 text-center sticky right-0 bg-white group-hover:bg-purple-50/30 z-10 border-l border-slate-100 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.03)]">
@@ -2254,7 +2432,7 @@ export default function KamarSub({
                                     {/* Expandable Bottom Border Row on Hover (ONLY for occupied slots & NOT during dragging) */}
                                     {occupants.length > 0 && !draggedStudentId && !isSelectionMode && (
                                       <tr className="group/addslot relative">
-                                        <td colSpan={6} className="p-0 border-0">
+                                        <td colSpan={totalVisibleCols} className="p-0 border-0">
                                           <div
                                             onClick={() => {
                                               if (canWriteCurrent) {
@@ -3383,6 +3561,18 @@ export default function KamarSub({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Column Visibility Modal */}
+      <ColumnVisibilityModal
+        isOpen={isColumnModalOpen}
+        onClose={() => setIsColumnModalOpen(false)}
+        visibleColumns={visibleColumns}
+        setVisibleColumns={setVisibleColumns}
+        defaultColumns={DEFAULT_KAMAR_DETAIL_COLUMNS}
+        availableColumns={AVAILABLE_KAMAR_DETAIL_COLUMNS}
+        title="Atur Visibilitas Kolom Kamar"
+        description="Pilih kolom anggota santri yang ingin ditampilkan atau disembunyikan pada tabel kamar asrama"
+      />
 
     </div>
   );

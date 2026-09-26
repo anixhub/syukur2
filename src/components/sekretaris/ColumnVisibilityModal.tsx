@@ -18,6 +18,10 @@ interface ColumnVisibilityModalProps {
   onClose: () => void;
   visibleColumns: Record<string, boolean>;
   setVisibleColumns: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  defaultColumns?: string[];
+  availableColumns?: Array<{ key: string; label: string; description?: string }>;
+  title?: string;
+  description?: string;
 }
 
 export default function ColumnVisibilityModal({
@@ -25,27 +29,45 @@ export default function ColumnVisibilityModal({
   onClose,
   visibleColumns,
   setVisibleColumns,
+  defaultColumns,
+  availableColumns,
+  title,
+  description,
 }: ColumnVisibilityModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
 
   // Fallback map of human labels for all known fields
   const labelsMap: Record<string, { label: string; description?: string }> = useMemo(() => {
-    const map: Record<string, { label: string; description?: string }> = {};
+    const map: Record<string, { label: string; description?: string }> = {
+      no: { label: 'Nomor Urut', description: 'Nomor urut baris' },
+      aksi: { label: 'Aksi', description: 'Menu aksi santri' },
+    };
     ALL_COLUMNS.forEach((col) => {
       map[col.key] = {
         label: col.label,
         description: col.description,
       };
     });
+    if (availableColumns && availableColumns.length > 0) {
+      availableColumns.forEach((col) => {
+        map[col.key] = {
+          label: col.label,
+          description: col.description,
+        };
+      });
+    }
     return map;
-  }, []);
+  }, [availableColumns]);
 
   const allKeys = useMemo(() => {
+    if (availableColumns && availableColumns.length > 0) {
+      return availableColumns.map((c) => c.key);
+    }
     const keys = new Set<string>();
     ALL_COLUMNS.forEach((c) => keys.add(c.key));
     Object.keys(visibleColumns).forEach((k) => keys.add(k));
     return Array.from(keys);
-  }, [visibleColumns]);
+  }, [visibleColumns, availableColumns]);
 
   const filteredKeys = useMemo(() => {
     if (!searchQuery.trim()) return allKeys;
@@ -90,8 +112,11 @@ export default function ColumnVisibilityModal({
 
   const handleResetDefault = () => {
     const next: Record<string, boolean> = {};
+    const defaultList = (defaultColumns && defaultColumns.length > 0)
+      ? defaultColumns
+      : (DEFAULT_TABLE_COLUMNS as string[]);
     allKeys.forEach((k) => {
-      next[k] = DEFAULT_TABLE_COLUMNS.includes(k as any);
+      next[k] = defaultList.includes(k);
     });
     setVisibleColumns(next);
   };
@@ -130,10 +155,10 @@ export default function ColumnVisibilityModal({
               </div>
               <div>
                 <h3 className="font-display text-base sm:text-lg font-bold text-slate-900 leading-tight">
-                  Atur Visibilitas Kolom
+                  {title || "Atur Visibilitas Kolom"}
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Tampilkan atau sembunyikan kolom data pada tabel
+                  {description || "Tampilkan atau sembunyikan kolom data pada tabel"}
                 </p>
               </div>
             </div>
