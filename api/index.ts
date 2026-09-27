@@ -102,24 +102,28 @@ app.use((req, res, next) => {
 // Enable JSON parsing with a 10MB limit for compressed base64 photos
 app.use(express.json({ limit: "10mb" }));
 
-// Upload Directory Helper (UPLOAD_DIR env variable with fallback to Hostinger storage/uploads or public/uploads)
+// Upload Directory Helper (UPLOAD_DIR env variable with fallback to local public/uploads or Hostinger storage)
 const getUploadDir = (): string => {
   if (process.env.UPLOAD_DIR && process.env.UPLOAD_DIR.trim() !== '') {
     return process.env.UPLOAD_DIR;
   }
-  const hostingerPath = '/home/u648273511/domains/attaroqqy.com/storage/uploads';
-  try {
-    if (!fs.existsSync(hostingerPath)) {
-      fs.mkdirSync(hostingerPath, { recursive: true });
-    }
-    return hostingerPath;
-  } catch (e) {
+  const defaultLocal = path.join(process.cwd(), 'public', 'uploads');
+  const hostingerParent = '/home/u648273511/domains/attaroqqy.com/storage';
+  if (fs.existsSync(hostingerParent)) {
+    const hostingerPath = path.join(hostingerParent, 'uploads');
     try {
-      return path.join(__dirname, 'public', 'uploads');
-    } catch (err) {
-      return path.join(process.cwd(), 'public', 'uploads');
-    }
+      if (!fs.existsSync(hostingerPath)) {
+        fs.mkdirSync(hostingerPath, { recursive: true });
+      }
+      return hostingerPath;
+    } catch (e) {}
   }
+  try {
+    if (!fs.existsSync(defaultLocal)) {
+      fs.mkdirSync(defaultLocal, { recursive: true });
+    }
+  } catch (err) {}
+  return defaultLocal;
 };
 console.log(">>> UPLOAD_DIR terdeteksi sebagai:", getUploadDir());
 

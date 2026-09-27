@@ -5,7 +5,7 @@ import fs from "fs";
 import dotenv from "dotenv";
 import { WebSocketServer, WebSocket } from "ws";
 import { fileURLToPath } from "url";
-import app, { broadcastWebSocketMessage, setWssInstance } from "./api/index";
+import app, { broadcastWebSocketMessage, setWssInstance } from "./api/index.ts";
 
 let __dirname: string;
 try {
@@ -17,7 +17,7 @@ try {
 
 dotenv.config();
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 async function startServer() {
   const httpServer = http.createServer(app);
@@ -86,10 +86,10 @@ async function startServer() {
   app.use("/api/uploads", express.static(distUploadsPath));
 
   // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV !== "production" || !fs.existsSync(path.join(process.cwd(), "dist"))) {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
-      server: { middlewareMode: true, allowedHosts: true },
+      server: { middlewareMode: true, allowedHosts: true, hmr: false },
       appType: "spa",
     });
     app.use(vite.middlewares);
