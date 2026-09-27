@@ -23,12 +23,18 @@ import {
   Info,
   Edit2,
   School,
-  ArrowLeftRight
+  ArrowLeftRight,
+  SlidersHorizontal,
+  Coins,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { Santri, BendaharaRecord, Lembaga, Kelas } from '../../types';
 import { PaymentCartItem, PaymentReceipt, SantriPaymentItem, PaymentSubPeriod, DEFAULT_PAYMENT_ITEMS } from './pembayaranTypes';
 import PaymentReceiptModal from './PaymentReceiptModal';
 import CreatePaymentItemModal from './CreatePaymentItemModal';
+import ManagePaymentItemsModal from './ManagePaymentItemsModal';
+import ConfigurePaymentModal from './ConfigurePaymentModal';
 import { isCustomPasFoto } from '../SekretarisHelper';
 import { getApiUrl, fetchTableData } from '../../lib/api';
 import { getSantriAcademicPlacements } from '../../lib/utils';
@@ -161,6 +167,159 @@ const formatDateDisplay = (d?: string): string => {
   return `${parseInt(day, 10)}/${parseInt(m, 10)}/${y}`;
 };
 
+// Komponen baris sub-periode: tersusun sebaris, scrollable horizontal dengan tombol navigasi kiri & kanan
+interface SubPeriodsRowProps {
+  item: SantriPaymentItem;
+  selectedSantri: Santri | null;
+  getSubPeriodStatus: (santri: Santri, item: SantriPaymentItem, period: PaymentSubPeriod, pIdx: number) => 'lunas' | 'cicil' | 'belum';
+  isSubPeriodPastDue: (period: PaymentSubPeriod) => boolean;
+  getInstallmentInfo: (santriId: string, itemId: string, subPeriodId: string, defaultAmount: number) => { paidAmount: number; totalAmount: number; lastPaymentDate?: string } | null;
+}
+
+const SubPeriodsRow: React.FC<SubPeriodsRowProps> = ({
+  item,
+  selectedSantri,
+  getSubPeriodStatus,
+  isSubPeriodPastDue,
+  getInstallmentInfo,
+}) => {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const updateScrollState = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const { scrollLeft, scrollWidth, clientWidth } = el;
+    setCanScrollLeft(scrollLeft > 2);
+    setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 2);
+  };
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    updateScrollState();
+
+    const timer = setTimeout(updateScrollState, 60);
+
+    el.addEventListener('scroll', updateScrollState, { passive: true });
+    window.addEventListener('resize', updateScrollState);
+
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => updateScrollState());
+      ro.observe(el);
+    }
+
+    return () => {
+      clearTimeout(timer);
+      el.removeEventListener('scroll', updateScrollState);
+      window.removeEventListener('resize', updateScrollState);
+      ro?.disconnect();
+    };
+  }, [item.subPeriods, selectedSantri]);
+
+  const handleScroll = (direction: 'left' | 'right') => (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const el = scrollRef.current;
+    if (!el) return;
+    const scrollAmount = 140;
+    el.scrollBy({
+      left: direction === 'left' ? -scrollAmount : scrollAmount,
+      behavior: 'smooth'
+    });
+  };
+
+  if (!item.subPeriods || item.subPeriods.length === 0) return null;
+
+  return (
+    <div className="relative group/subperiods py-0.5">
+      {/* Tombol navigasi kiri - muncul di tengah sisi garis kiri HANYA saat dibutuhkan */}
+      {canScrollLeft && (
+        <button
+          type="button"
+          onClick={handleScroll('left')}
+          className="absolute left-0 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white/95 hover:bg-white border border-slate-300 shadow-md text-slate-700 hover:text-emerald-700 flex items-center justify-center z-10 transition-all active:scale-90 cursor-pointer"
+          title="Geser ke kiri"
+          aria-label="Geser periode ke kiri"
+        >
+          <ChevronLeft className="w-3.5 h-3.5 stroke-[2.5]" />
+        </button>
+      )}
+
+      {/* Kontainer scrollable horizontal sebaris */}
+      <div
+        ref={scrollRef}
+        className="flex flex-nowrap items-center gap-1.5 overflow-x-auto scroll-smooth [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden px-1"
+      >
+        {item.subPeriods.map((period, pIdx) => {
+          const displayLabel = period.shortLabel || (
+            item.paymentFrequency === 'bulanan'
+              ? (period.periodMonth ? SHORT_MONTH_NAMES[period.periodMonth - 1] : period.label.slice(0, 3))
+              : item.paymentFrequency === 'triwulan'
+              ? `T${pIdx + 1}`
+              : item.paymentFrequency === 'caturwulan'
+              ? `C${pIdx + 1}`
+              : `S${pIdx + 1}`
+          );
+
+          const status = selectedSantri 
+            ? getSubPeriodStatus(selectedSantri, item, period, pIdx)
+            : 'belum';
+
+          const isPastDue = isSubPeriodPastDue(period);
+          const isLunas = status === 'lunas';
+          const isCicil = status === 'cicil';
+          const isMenunggak = !isLunas && !isCicil && isPastDue;
+
+          const cicilInfo = (selectedSantri && isCicil)
+            ? getInstallmentInfo(selectedSantri.id, item.id, period.id, item.defaultAmount || 350000)
+            : null;
+
+          const statusText = isLunas 
+            ? 'Lunas' 
+            : isCicil 
+            ? `Masih Dicicil (Sisa: Rp ${(cicilInfo ? Math.max(0, cicilInfo.totalAmount - cicilInfo.paidAmount) : 0).toLocaleString('id-ID')})` 
+            : isMenunggak 
+            ? 'Menunggak (Lewat Jatuh Tempo)' 
+            : 'Belum Bayar';
+
+          return (
+            <div
+              key={period.id || pIdx}
+              title={`${period.label} • ${statusText}`}
+              className={`w-7 h-7 sm:w-8 sm:h-8 aspect-square rounded-lg text-[10px] sm:text-[11px] font-bold flex items-center justify-center shrink-0 transition-all select-none relative cursor-default ${
+                isLunas
+                  ? 'bg-emerald-600 border border-emerald-600 text-white shadow-2xs'
+                  : isCicil
+                  ? 'bg-amber-400 border border-amber-500 text-amber-950 font-extrabold shadow-2xs'
+                  : isMenunggak
+                  ? 'bg-rose-500 border border-rose-600 text-white font-bold shadow-2xs'
+                  : 'bg-transparent border border-slate-300 text-slate-600'
+              }`}
+            >
+              {displayLabel}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Tombol navigasi kanan - muncul di tengah sisi garis kanan HANYA saat dibutuhkan */}
+      {canScrollRight && (
+        <button
+          type="button"
+          onClick={handleScroll('right')}
+          className="absolute right-0 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white/95 hover:bg-white border border-slate-300 shadow-md text-slate-700 hover:text-emerald-700 flex items-center justify-center z-10 transition-all active:scale-90 cursor-pointer"
+          title="Geser ke kanan"
+          aria-label="Geser periode ke kanan"
+        >
+          <ChevronRight className="w-3.5 h-3.5 stroke-[2.5]" />
+        </button>
+      )}
+    </div>
+  );
+};
+
 export default function PembayaranSubView({
   santriList = [],
   bendaharaList = [],
@@ -244,6 +403,13 @@ export default function PembayaranSubView({
 
   // Peringatan saat mencoba membayar periode berikutnya sementara periode cicilan sebelumnya belum lunas
   const [blockedNotice, setBlockedNotice] = useState<string | null>(null);
+
+  // Modal Kelola Item Pembayaran
+  const [isManageItemsModalOpen, setIsManageItemsModalOpen] = useState(false);
+
+  // Modal Atur / Konfigurasi Pembayaran (muncul saat klik "Tambah" atau edit item)
+  const [configuringItem, setConfiguringItem] = useState<SantriPaymentItem | null>(null);
+  const [isConfigureModalOpen, setIsConfigureModalOpen] = useState(false);
 
   // Helper cek apakah suatu sub-periode sudah lewat jatuh tempo (menunggak)
   const isSubPeriodPastDue = (subPeriod: PaymentSubPeriod): boolean => {
@@ -366,6 +532,142 @@ export default function PembayaranSubView({
       }
     }
     return null;
+  };
+
+  // Buka modal untuk mengatur pembayaran dan menambahkan ke kasir
+  const handleOpenConfigureModal = (item: SantriPaymentItem) => {
+    if (!selectedSantri) {
+      setSelectSantriNotice(true);
+      setTimeout(() => setSelectSantriNotice(false), 4500);
+      setIsSearchingSantri(true);
+      return;
+    }
+    setConfiguringItem(item);
+    setIsConfigureModalOpen(true);
+  };
+
+  // Simpan hasil konfigurasi modal ke keranjang pembayaran (kasir)
+  const handleSaveConfiguredItemToCart = (
+    item: SantriPaymentItem,
+    configured: {
+      selectedPeriodIds: string[];
+      isCicil: boolean;
+      isContinuing: boolean;
+      amount: number;
+      subPeriodId?: string;
+      note: string;
+    }
+  ) => {
+    const newCartItem: PaymentCartItem = {
+      id: `cart-${item.id}`,
+      itemId: item.id,
+      name: item.name,
+      category: item.category || 'lainnya',
+      amount: configured.amount,
+      quantity: 1,
+      note: configured.note,
+      selectedPeriodIds: configured.selectedPeriodIds,
+      isCicil: configured.isCicil,
+      isContinuing: configured.isContinuing,
+      subPeriodId: configured.subPeriodId,
+      totalPeriodAmount: item.defaultAmount
+    };
+
+    setCart(prev => {
+      const withoutThis = prev.filter(c => c.itemId !== item.id);
+      return [...withoutThis, newCartItem];
+    });
+
+    setItemSelections(prev => ({
+      ...prev,
+      [item.id]: {
+        selectedPeriodIds: configured.selectedPeriodIds,
+        isCicil: configured.isCicil,
+        customAmount: configured.amount
+      }
+    }));
+  };
+
+  // Helper mendapatkan status keseluruhan item pembayaran untuk santri yang dipilih (Lunas / Dicicil / Menunggak / Belum Lunas)
+  const getItemStatusSummary = (santri: Santri, item: SantriPaymentItem) => {
+    if (item.subPeriods && item.subPeriods.length > 0) {
+      const statuses = item.subPeriods.map((sp, idx) => ({
+        status: getSubPeriodStatus(santri, item, sp, idx),
+        isPastDue: isSubPeriodPastDue(sp)
+      }));
+
+      const allLunas = statuses.every(s => s.status === 'lunas');
+      const hasMenunggak = statuses.some(s => s.status !== 'lunas' && s.status !== 'cicil' && s.isPastDue);
+      const hasCicil = statuses.some(s => s.status === 'cicil');
+      const lunasCount = statuses.filter(s => s.status === 'lunas').length;
+      const totalCount = statuses.length;
+
+      if (allLunas) {
+        return {
+          status: 'lunas',
+          label: 'Lunas',
+          badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+          subText: `${lunasCount}/${totalCount} periode lunas`
+        };
+      }
+      if (hasMenunggak) {
+        return {
+          status: 'menunggak',
+          label: 'Menunggak',
+          badgeClass: 'bg-rose-50 text-rose-700 border-rose-200',
+          subText: `${totalCount - lunasCount} periode belum lunas`
+        };
+      }
+      if (hasCicil) {
+        return {
+          status: 'cicil',
+          label: 'Sedang Dicicil',
+          badgeClass: 'bg-amber-50 text-amber-800 border-amber-200',
+          subText: `${lunasCount}/${totalCount} periode selesai`
+        };
+      }
+      if (lunasCount > 0) {
+        return {
+          status: 'sebagian',
+          label: `${lunasCount}/${totalCount} Lunas`,
+          badgeClass: 'bg-emerald-50/70 text-emerald-800 border-emerald-200',
+          subText: `${totalCount - lunasCount} belum bayar`
+        };
+      }
+      return {
+        status: 'belum',
+        label: 'Belum Lunas',
+        badgeClass: 'bg-slate-50 text-slate-600 border-slate-200',
+        subText: 'Belum ada pembayaran'
+      };
+    }
+
+    // Item tunggal (tanpa sub-periode)
+    const key = `${santri.id}_${item.id}`;
+    if (subPeriodStatusMap[key] === 'lunas') {
+      return { status: 'lunas', label: 'Lunas', badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+    }
+    if (subPeriodStatusMap[key] === 'cicil') {
+      return { status: 'cicil', label: 'Sedang Dicicil', badgeClass: 'bg-amber-50 text-amber-800 border-amber-200' };
+    }
+    const inHistory = historyList.some(h => 
+      (h.santriId === santri.id || h.santriNama?.toLowerCase() === santri.nama.toLowerCase()) &&
+      h.items.some(it => it.itemId === item.id)
+    );
+    if (inHistory) {
+      return { status: 'lunas', label: 'Lunas', badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+    }
+    const matched = bendaharaList.find(b => 
+      b.namaSantri.toLowerCase() === santri.nama.toLowerCase() &&
+      (((b as any).keterangan || b.bulan)?.toLowerCase().includes(item.name.toLowerCase()) || item.name.toLowerCase().includes(((b as any).keterangan || b.bulan)?.toLowerCase() || ''))
+    );
+    if (matched?.status === 'Lunas') {
+      return { status: 'lunas', label: 'Lunas', badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+    }
+    if (matched?.status === 'Belum Lunas' && (matched.nominal || 0) > 0) {
+      return { status: 'cicil', label: 'Sedang Dicicil', badgeClass: 'bg-amber-50 text-amber-800 border-amber-200' };
+    }
+    return { status: 'belum', label: 'Belum Lunas', badgeClass: 'bg-slate-50 text-slate-600 border-slate-200' };
   };
 
   // Handler klik pada pill sub-periode
@@ -1103,11 +1405,6 @@ export default function PembayaranSubView({
               <ArrowLeftRight className="w-4 h-4 mt-0.5 shrink-0" />
             </span>
           </h1>
-          <p className="text-xs text-slate-500 font-medium mt-0.5">
-            {genderFilter === 'Putra' 
-              ? 'Layanan kasir & tagihan asrama santri putra terpadu' 
-              : 'Layanan kasir & tagihan asrama santri putri terpadu'}
-          </p>
         </div>
 
         {/* View Switcher: POS vs Riwayat Hari Ini */}
@@ -1217,16 +1514,16 @@ export default function PembayaranSubView({
         </div>
       ) : (
         /* TAB KASIR POS (2 KOLOM RESPONSIVE) */
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch lg:h-[650px]">
           {/* KOLOM KIRI: PENCARIAN SANTRI & DAFTAR TAGIHAN VALID */}
-          <div className="lg:col-span-7 space-y-4">
+          <div className="lg:col-span-7 flex flex-col space-y-3.5 h-full min-h-0">
             {/* Kotak Pencarian Santri (TIDAK di dalam kontainer, tanpa teks 'Santri Penerima' & 'Ganti Santri') */}
             {!selectedSantri ? (
-              <div ref={searchContainerRef} className="relative">
+              <div ref={searchContainerRef} className="relative shrink-0">
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                 <input
                   type="text"
-                  placeholder={genderFilter === 'Putra' ? "Cari santri putra (nama, NIS, alamat)..." : "Cari santri putri (nama, NIS, alamat)..."}
+                  placeholder="Cari nama, nis, atau alamat santri"
                   value={santriSearch}
                   onFocus={() => setIsSearchingSantri(true)}
                   onChange={e => {
@@ -1250,8 +1547,8 @@ export default function PembayaranSubView({
                   </button>
                 )}
 
-                {/* Dropdown Suggestions saat mencari */}
-                {isSearchingSantri && (
+                {/* Dropdown Suggestions saat mencari (hanya muncul saat mulai mengetik) */}
+                {isSearchingSantri && santriSearch.trim().length > 0 && (
                   <div className="absolute top-full left-0 right-0 mt-1.5 bg-white rounded-xl border border-slate-200 shadow-xl z-30 max-h-64 overflow-y-auto divide-y divide-slate-100">
                     {searchedSantriList.map(s => {
                       const hasPhoto = isCustomPasFoto(s.filePasFoto);
@@ -1312,7 +1609,7 @@ export default function PembayaranSubView({
               </div>
             ) : (
               /* Saat ada santri terpilih: isi kotak pencarian jadi profil santri dengan tombol X di kanan */
-              <div className="relative flex items-center justify-between gap-3 p-3 sm:p-3.5 bg-white rounded-xl border border-slate-200 shadow-xs">
+              <div className="relative flex items-center justify-between gap-3 p-3 sm:p-3.5 bg-white rounded-xl border border-slate-200 shadow-xs shrink-0">
                 <div className="flex items-center gap-3 min-w-0">
                   {/* Foto lingkaran sempurna sama seperti data santri sekretaris */}
                   <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full border-2 border-emerald-500/30 overflow-hidden shrink-0 flex items-center justify-center bg-slate-100 aspect-square shadow-xs">
@@ -1351,7 +1648,7 @@ export default function PembayaranSubView({
                   onClick={() => {
                     setSelectedSantri(null);
                     setSantriSearch('');
-                    setIsSearchingSantri(true);
+                    setIsSearchingSantri(false);
                     setCart([]);
                     setItemSelections({});
                     setBlockedNotice(null);
@@ -1365,55 +1662,11 @@ export default function PembayaranSubView({
               </div>
             )}
 
-            {/* KOTAK DAFTAR ITEM PEMBAYARAN */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-xs space-y-4">
-              {/* Header Box */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3.5">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="font-bold text-xs sm:text-sm text-slate-900">
-                      Item Pembayaran
-                    </h2>
-                    <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold inline-flex items-center justify-center">
-                      {displayedPaymentItems.length}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    {selectedSantri
-                      ? `Menampilkan Pembayaran yang relevan dengan ${selectedSantri.nama}`
-                      : `Menampilkan item pembayaran yang relevan untuk santri ${genderFilter.toLowerCase()}`}
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-                  {selectedSantri && displayedPaymentItems.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={handleAddAllRelevantItems}
-                      className="px-2.5 py-1.5 rounded-full text-emerald-700 bg-emerald-50 hover:bg-emerald-100 text-xs font-bold transition-colors"
-                      title="Tambahkan semua item yang relevan ke kasir"
-                    >
-                      Pilih Semua
-                    </button>
-                  )}
-                  {/* Tombol Buat: text 'Buat', plus di kanan, jangan warna hitam */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingItem(null);
-                      setIsCreateItemModalOpen(true);
-                    }}
-                    className="px-3.5 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
-                  >
-                    <span>Buat</span>
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-
+            {/* KOTAK DAFTAR ITEM PEMBAYARAN / TAGIHAN */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-xs flex-1 flex flex-col min-h-0 overflow-hidden">
               {/* Peringatan jika klik item tanpa santri terpilih */}
               {selectSantriNotice && !selectedSantri && (
-                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2 animate-in fade-in duration-150">
+                <div className="p-3 mb-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2 shrink-0 animate-in fade-in duration-150">
                   <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
                   <span>
                     Silakan cari dan <strong>pilih santri terlebih dahulu</strong> pada kotak pencarian di atas sebelum memasukkan pembayaran ke kasir.
@@ -1423,7 +1676,7 @@ export default function PembayaranSubView({
 
               {/* Peringatan jika periode cicilan sebelumnya belum lunas */}
               {blockedNotice && (
-                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-center justify-between gap-2 animate-in fade-in duration-150 shadow-xs">
+                <div className="p-3 mb-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-center justify-between gap-2 shrink-0 animate-in fade-in duration-150 shadow-xs">
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
                     <span className="font-medium">{blockedNotice}</span>
@@ -1440,372 +1693,176 @@ export default function PembayaranSubView({
               )}
 
               {/* Tampilkan Daftar Item Pembayaran */}
-              {displayedPaymentItems.length === 0 ? (
-                <div className="py-12 sm:py-16 text-center space-y-3">
-                  <div className="w-12 h-12 rounded-2xl bg-slate-50 border border-slate-200 text-slate-400 mx-auto flex items-center justify-center">
-                    <Receipt className="w-6 h-6 text-slate-300" />
+              {!selectedSantri ? (
+                /* Bersih & minimalis: tanpa kontainer dalam, tanpa icon, teks ringkas di tengah */
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-2">
+                  <p className="text-xs sm:text-sm font-medium text-slate-500">
+                    Tagihan Santri yang dipilih akan ditampilkan disini.
+                  </p>
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setIsManageItemsModalOpen(true)}
+                      className="text-xs text-emerald-600 hover:text-emerald-700 hover:underline font-semibold transition-colors cursor-pointer"
+                    >
+                      Kelola item pembayaran
+                    </button>
                   </div>
+                </div>
+              ) : displayedPaymentItems.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-2">
                   <div className="text-xs sm:text-sm font-bold text-slate-700">
                     Tidak ada jenis pembayaran yang relevan
                   </div>
                   <p className="text-[11px] sm:text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
                     Tidak ditemukan item pembayaran yang sesuai dengan kriteria santri ini.
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingItem(null);
-                      setIsCreateItemModalOpen(true);
-                    }}
-                    className="px-4 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs inline-flex items-center gap-1.5 shadow-xs transition-colors"
-                  >
-                    <span>Buat</span>
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
                 </div>
               ) : (
-                <div className="space-y-2.5 max-h-[520px] overflow-y-auto pr-1">
+                <div className="flex-1 overflow-y-auto pr-1 space-y-2.5 min-h-0">
                   {displayedPaymentItems.map(item => {
                     const isInCart = cart.some(c => c.itemId === item.id);
 
                     return (
                       <div
                         key={item.id}
-                        className={`group p-3 sm:p-3.5 rounded-xl border flex items-center justify-between gap-3 transition-all ${
+                        className={`group p-3 sm:p-3.5 rounded-xl border flex flex-col gap-2.5 transition-all ${
                           isInCart
                             ? 'bg-emerald-50/70 border-emerald-300 shadow-xs'
                             : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-xs'
                         }`}
                       >
-                        {/* Detail Pembayaran: Hanya nama dan nominal per periode tanpa icon */}
-                        <div className="min-w-0 flex-1">
-                          <span className="text-xs sm:text-sm font-bold text-slate-900 truncate block">
-                            {item.name}
-                          </span>
-                          <div className="text-xs font-mono font-bold text-emerald-700 mt-0.5 flex items-center gap-1">
-                            {item.defaultAmount && item.defaultAmount > 0 ? (
-                              <>
-                                <span>Rp {item.defaultAmount.toLocaleString('id-ID')}</span>
-                                <span className="text-[11px] font-sans font-medium text-slate-400">
-                                  {item.paymentFrequency === 'bulanan'
-                                    ? '/ bulan'
-                                    : item.paymentFrequency === 'triwulan'
-                                    ? '/ triwulan'
-                                    : item.paymentFrequency === 'caturwulan'
-                                    ? '/ caturwulan'
-                                    : item.paymentFrequency === 'semester'
-                                    ? '/ semester'
-                                    : item.paymentFrequency === 'sekali'
-                                    ? '/ sekali bayar'
-                                    : ''}
+                        {/* Baris Atas: Nama & Tarif Pembayaran di kiri, Tombol Aksi di kanan */}
+                        <div className="flex items-start justify-between gap-3 w-full">
+                          <div className="min-w-0 flex-1">
+                            <span className="text-xs sm:text-sm font-bold text-slate-900 truncate block">
+                              {item.name}
+                            </span>
+                            <div className="text-xs font-mono font-bold text-emerald-700 mt-0.5 flex items-center gap-1">
+                              {item.defaultAmount && item.defaultAmount > 0 ? (
+                                <>
+                                  <span>Rp {item.defaultAmount.toLocaleString('id-ID')}</span>
+                                  <span className="text-[11px] font-sans font-medium text-slate-400">
+                                    {item.paymentFrequency === 'bulanan'
+                                      ? '/ bulan'
+                                      : item.paymentFrequency === 'triwulan'
+                                      ? '/ triwulan'
+                                      : item.paymentFrequency === 'caturwulan'
+                                      ? '/ caturwulan'
+                                      : item.paymentFrequency === 'semester'
+                                      ? '/ semester'
+                                      : item.paymentFrequency === 'sekali'
+                                      ? '/ sekali bayar'
+                                      : ''}
+                                  </span>
+                                </>
+                              ) : (
+                                <span className="text-[11px] text-slate-400 font-sans font-medium italic">
+                                  Tarif Fleksibel
                                 </span>
-                              </>
-                            ) : (
-                              <span className="text-[11px] text-slate-400 font-sans font-medium italic">
-                                Tarif Fleksibel
-                              </span>
-                            )}
+                              )}
+                            </div>
                           </div>
 
-                          {/* Kotak-kotak Sub Periode (Hijau = Lunas, Kuning = Masih Dicicil, Merah = Menunggak, Outline = Belum) */}
-                          {item.subPeriods && item.subPeriods.length > 0 && (
-                            <div className="mt-2.5 space-y-2">
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                {item.subPeriods.map((period, pIdx) => {
-                                  const displayLabel = period.shortLabel || (
-                                    item.paymentFrequency === 'bulanan'
-                                      ? (period.periodMonth ? SHORT_MONTH_NAMES[period.periodMonth - 1] : period.label.slice(0, 3))
-                                      : item.paymentFrequency === 'triwulan'
-                                      ? `T${pIdx + 1}`
-                                      : item.paymentFrequency === 'caturwulan'
-                                      ? `C${pIdx + 1}`
-                                      : `S${pIdx + 1}`
-                                  );
-
-                                  const status = selectedSantri 
-                                    ? getSubPeriodStatus(selectedSantri, item, period, pIdx)
-                                    : 'belum';
-
-                                  const isPastDue = isSubPeriodPastDue(period);
-                                  const isLunas = status === 'lunas';
-                                  const isCicil = status === 'cicil';
-                                  // Menunggak: Belum lunas & periode sudah lewat jatuh tempo
-                                  const isMenunggak = !isLunas && !isCicil && isPastDue;
-                                  // Belum bayar: Belum lunas & periode belum jatuh tempo (bulan berjalan / mendatang)
-                                  const isBelum = !isLunas && !isCicil && !isPastDue;
-
-                                  // Cek apakah terkunci karena periode cicilan sebelumnya belum lunas
-                                  const unfinishedBefore = selectedSantri 
-                                    ? getUnfinishedInstallmentBefore(selectedSantri, item, pIdx) 
-                                    : null;
-                                  const isLocked = Boolean(unfinishedBefore);
-
-                                  const selection = itemSelections[item.id];
-                                  const isSelected = Boolean(selection?.selectedPeriodIds?.includes(period.id));
-
-                                  const statusText = isLunas 
-                                    ? 'Lunas' 
-                                    : isCicil 
-                                    ? 'Masih Dicicil' 
-                                    : isMenunggak 
-                                    ? 'Menunggak (Lewat Jatuh Tempo)' 
-                                    : 'Belum Bayar';
-
-                                  return (
-                                    <button
-                                      key={period.id || pIdx}
-                                      type="button"
-                                      title={`${period.label} • ${statusText}${isLocked ? ' (Terkunci: selesaikan cicilan sebelumnya terlebih dahulu)' : ''}`}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleSubPeriodClick(item, period, pIdx);
-                                      }}
-                                      className={`w-7 h-7 sm:w-8 sm:h-8 aspect-square rounded-lg text-[10px] sm:text-[11px] font-bold flex items-center justify-center shrink-0 transition-all select-none relative ${
-                                        isLocked
-                                          ? 'bg-transparent border border-dashed border-slate-300 text-slate-300 cursor-not-allowed opacity-50'
-                                          : isLunas
-                                          ? 'bg-emerald-600 border border-emerald-600 text-white shadow-2xs hover:bg-emerald-700 cursor-pointer'
-                                          : isCicil
-                                          ? 'bg-amber-400 border border-amber-500 text-amber-950 font-extrabold shadow-2xs hover:bg-amber-500 cursor-pointer'
-                                          : isMenunggak
-                                          ? 'bg-rose-500 border border-rose-600 text-white font-bold shadow-2xs hover:bg-rose-600 cursor-pointer'
-                                          : 'bg-transparent border border-slate-300 text-slate-600 hover:border-slate-400 hover:bg-slate-50/50 cursor-pointer'
-                                      } ${
-                                        isSelected 
-                                          ? 'ring-2 ring-emerald-500 ring-offset-2 scale-105 z-10 font-black' 
-                                          : ''
-                                      }`}
-                                    >
-                                      {displayLabel}
-                                    </button>
-                                  );
-                                })}
+                          {/* Tombol Aksi: Tambah (buka modal konfigurasi) atau Di Kasir */}
+                          <div className="shrink-0 flex items-center gap-1.5 pt-0.5">
+                            {!selectedSantri ? (
+                              /* Saat TIDAK ADA santri yang dipilih: tombol EDIT dan HAPUS hanya icon */
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingItem(item);
+                                    setIsCreateItemModalOpen(true);
+                                  }}
+                                  className="w-8 h-8 rounded-full border border-slate-200 bg-white hover:bg-amber-50 hover:text-amber-700 hover:border-amber-300 text-slate-600 flex items-center justify-center transition-all shadow-xs active:scale-95 cursor-pointer"
+                                  title="Edit item ini"
+                                  aria-label="Edit"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5 text-amber-600" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDeleteConfirmItem(item)}
+                                  className="w-8 h-8 rounded-full border border-slate-200 bg-white hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 text-slate-600 flex items-center justify-center transition-all shadow-xs active:scale-95 cursor-pointer"
+                                  title="Hapus item ini"
+                                  aria-label="Hapus"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                                </button>
+                              </>
+                            ) : isInCart ? (
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenConfigureModal(item)}
+                                  className="px-2.5 py-1.5 rounded-full bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 text-emerald-800 font-bold text-xs shadow-xs flex items-center gap-1 transition-all cursor-pointer"
+                                  title="Sudah di kasir • Klik untuk mengedit pengaturan pembayaran"
+                                >
+                                  <Check className="w-3.5 h-3.5 text-emerald-700" />
+                                  <span className="hidden sm:inline">Di Kasir</span>
+                                  <Edit2 className="w-3 h-3 text-emerald-700 ml-0.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const cartItem = cart.find(c => c.itemId === item.id);
+                                    if (cartItem) handleRemoveFromCart(cartItem.id);
+                                  }}
+                                  className="w-8 h-8 rounded-full border border-slate-200 bg-white hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 text-slate-400 flex items-center justify-center transition-all shadow-xs cursor-pointer"
+                                  title="Hapus dari kasir"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
                               </div>
-
-                              {/* Keterangan Indikator Status Warna saat santri dipilih */}
-                              {selectedSantri && (
-                                <div className="flex items-center gap-3 text-[10px] text-slate-400 font-medium pt-0.5 flex-wrap">
-                                  <span className="inline-flex items-center gap-1">
-                                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-                                    <span>Lunas</span>
-                                  </span>
-                                  <span className="inline-flex items-center gap-1">
-                                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
-                                    <span>Dicicil</span>
-                                  </span>
-                                  <span className="inline-flex items-center gap-1">
-                                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
-                                    <span className="text-rose-600 font-bold">Menunggak</span>
-                                  </span>
-                                  <span className="inline-flex items-center gap-1">
-                                    <span className="w-2.5 h-2.5 rounded-full border border-slate-400 bg-transparent"></span>
-                                    <span>Belum Bayar</span>
-                                  </span>
-                                </div>
-                              )}
-
-                              {/* Panel Konfigurasi Periode Terpilih & Mode Cicil */}
-                              {selectedSantri && itemSelections[item.id] && itemSelections[item.id].selectedPeriodIds.length > 0 && (() => {
-                                const selection = itemSelections[item.id];
-                                const isMultiSelected = selection.selectedPeriodIds.length > 1;
-                                const singlePeriodId = selection.selectedPeriodIds[0];
-                                const singlePeriod = item.subPeriods?.find(sp => sp.id === singlePeriodId);
-                                const singleIdx = item.subPeriods?.findIndex(sp => sp.id === singlePeriodId) ?? -1;
-                                const singleStatus = singlePeriod ? getSubPeriodStatus(selectedSantri, item, singlePeriod, singleIdx) : 'belum';
-                                const isContinuingCicil = !isMultiSelected && singleStatus === 'cicil';
-                                const singleCicilInfo = singlePeriod ? getInstallmentInfo(selectedSantri.id, item.id, singlePeriodId, item.defaultAmount || 350000) : null;
-                                const selectedPeriodsList = item.subPeriods ? item.subPeriods.filter(sp => selection.selectedPeriodIds.includes(sp.id)) : [];
-                                const selectedPeriodLabelsText = selectedPeriodsList.map(sp => sp.shortLabel || sp.label).join(', ');
-
-                                const computedAmount = selection.isCicil
-                                  ? (selection.customAmount !== undefined ? selection.customAmount : (item.defaultAmount || 0))
-                                  : (item.defaultAmount || 0) * selection.selectedPeriodIds.length;
-
-                                return (
-                                  <div className="mt-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200/90 space-y-2.5 animate-in fade-in duration-150">
-                                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                                      <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
-                                        <span>Periode:</span>
-                                        <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 text-emerald-800 font-mono font-bold text-[11px]">
-                                          {selectedPeriodLabelsText}
-                                        </span>
-                                      </div>
-
-                                      {/* Toggle Mode Cicil */}
-                                      <div className="flex items-center gap-2">
-                                        <span className={`text-xs font-bold ${
-                                          isMultiSelected 
-                                            ? 'text-slate-400' 
-                                            : isContinuingCicil 
-                                            ? 'text-amber-800 font-extrabold' 
-                                            : 'text-slate-700'
-                                        }`}>
-                                          {isContinuingCicil ? 'Lanjut cicilan' : 'Mode cicil'}
-                                        </span>
-                                        <button
-                                          type="button"
-                                          role="switch"
-                                          aria-checked={selection.isCicil}
-                                          disabled={isMultiSelected || isContinuingCicil}
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleToggleCicilMode(item.id);
-                                          }}
-                                          className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                                            selection.isCicil ? 'bg-amber-500' : 'bg-slate-200'
-                                          } ${isMultiSelected ? 'opacity-40 cursor-not-allowed' : isContinuingCicil ? 'cursor-default' : 'cursor-pointer'}`}
-                                          title={
-                                            isMultiSelected 
-                                              ? 'Mode cicil hanya bisa diaktifkan saat yang dipilih hanya 1 periode' 
-                                              : isContinuingCicil 
-                                              ? 'Periode ini sedang dalam cicilan belum lunas (otomatis Lanjut Cicilan)' 
-                                              : 'Aktifkan jika ingin membayar secara bertahap / mencicil'
-                                          }
-                                        >
-                                          <span
-                                            className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
-                                              selection.isCicil ? 'translate-x-4' : 'translate-x-0'
-                                            }`}
-                                          />
-                                        </button>
-                                      </div>
-                                    </div>
-
-                                    {/* Notice jika memilih lebih dari 1 periode */}
-                                    {isMultiSelected && (
-                                      <div className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2 flex items-center gap-1.5">
-                                        <Info className="w-3.5 h-3.5 shrink-0 text-amber-600" />
-                                        <span>Mode cicil hanya bisa diaktifkan saat yang dipilih hanya 1 periode.</span>
-                                      </div>
-                                    )}
-
-                                    {/* Info status cicilan berjalan */}
-                                    {isContinuingCicil && singleCicilInfo && (
-                                      <div className="text-[11px] text-amber-900 bg-amber-100/70 border border-amber-300/80 rounded-lg p-2 space-y-0.5">
-                                        <div>
-                                          Sudah dibayar sebelumnya: <strong>Rp {singleCicilInfo.paidAmount.toLocaleString('id-ID')}</strong> dari total <strong>Rp {singleCicilInfo.totalAmount.toLocaleString('id-ID')}</strong>.
-                                        </div>
-                                        <div className="font-bold text-amber-950 flex items-center justify-between">
-                                          <span>Sisa tagihan: Rp {(singleCicilInfo.totalAmount - singleCicilInfo.paidAmount).toLocaleString('id-ID')}</span>
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    {/* Kotak Input Jumlah yang Ingin Dibayarkan saat Mode Cicil Aktif */}
-                                    {selection.isCicil && (
-                                      <div className="space-y-1.5 pt-1">
-                                        <div className="flex items-center justify-between">
-                                          <label className="text-[11px] font-bold text-slate-700">
-                                            Jumlah yang ingin dibayarkan
-                                          </label>
-                                          {isContinuingCicil && singleCicilInfo && (
-                                            <button
-                                              type="button"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                const remaining = Math.max(0, singleCicilInfo.totalAmount - singleCicilInfo.paidAmount);
-                                                handleInstallmentAmountChange(item.id, String(remaining));
-                                              }}
-                                              className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 underline cursor-pointer"
-                                            >
-                                              Lunasi Sisa (Rp {(singleCicilInfo.totalAmount - singleCicilInfo.paidAmount).toLocaleString('id-ID')})
-                                            </button>
-                                          )}
-                                        </div>
-                                        <div className="relative">
-                                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">Rp</span>
-                                          <input
-                                            type="text"
-                                            value={selection.customAmount !== undefined ? selection.customAmount.toLocaleString('id-ID') : ''}
-                                            onChange={(e) => handleInstallmentAmountChange(item.id, e.target.value)}
-                                            placeholder="0"
-                                            className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm font-mono font-bold text-slate-900 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 shadow-2xs"
-                                          />
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    {/* Baris Tombol Konfirmasi ke Kasir */}
-                                    <div className="flex items-center justify-between pt-1.5 border-t border-slate-200/80">
-                                      <div className="text-xs">
-                                        <span className="text-slate-500">Nominal bayar: </span>
-                                        <span className="font-mono font-bold text-emerald-700">
-                                          Rp {computedAmount.toLocaleString('id-ID')}
-                                        </span>
-                                      </div>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleAddConfiguredItemToCart(item);
-                                        }}
-                                        className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
-                                      >
-                                        <span>{cart.some(c => c.itemId === item.id) ? 'Perbarui di Kasir' : 'Masukkan ke Kasir'}</span>
-                                        <Check className="w-3.5 h-3.5" />
-                                      </button>
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Tombol Aksi: Hanya icon dan hanya muncul saat hover */}
-                        <div className={`shrink-0 flex items-center gap-1.5 transition-opacity duration-150 ${
-                          isInCart ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                        }`}>
-                          {!selectedSantri ? (
-                            /* Saat TIDAK ADA santri yang dipilih: tombol EDIT dan HAPUS hanya icon */
-                            <>
+                            ) : (
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setEditingItem(item);
-                                  setIsCreateItemModalOpen(true);
-                                }}
-                                className="w-8 h-8 rounded-full border border-slate-200 bg-white hover:bg-amber-50 hover:text-amber-700 hover:border-amber-300 text-slate-600 flex items-center justify-center transition-all shadow-xs active:scale-95"
-                                title="Edit item ini"
-                                aria-label="Edit"
+                                onClick={() => handleOpenConfigureModal(item)}
+                                className="px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                                title="Atur pembayaran dan masukkan ke rincian pembayaran kasir"
                               >
-                                <Edit2 className="w-3.5 h-3.5 text-amber-600" />
+                                <Plus className="w-3.5 h-3.5" />
+                                <span>Tambah</span>
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => setDeleteConfirmItem(item)}
-                                className="w-8 h-8 rounded-full border border-slate-200 bg-white hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 text-slate-600 flex items-center justify-center transition-all shadow-xs active:scale-95"
-                                title="Hapus item ini"
-                                aria-label="Hapus"
-                              >
-                                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                              </button>
-                            </>
-                          ) : isInCart ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const cartItem = cart.find(c => c.itemId === item.id);
-                                if (cartItem) handleRemoveFromCart(cartItem.id);
-                              }}
-                              className="w-8 h-8 rounded-full bg-emerald-600 text-white hover:bg-emerald-700 flex items-center justify-center transition-colors shadow-xs"
-                              title="Sudah di kasir (klik untuk membatalkan)"
-                              aria-label="Di Kasir"
-                            >
-                              <Check className="w-4 h-4" />
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleAddConfiguredItemToCart(item)}
-                              className="w-8 h-8 rounded-full bg-emerald-600 text-white hover:bg-emerald-700 flex items-center justify-center transition-all shadow-xs active:scale-95"
-                              title="Tambah ke kasir"
-                              aria-label="Tambah"
-                            >
-                              <Plus className="w-4 h-4" />
-                            </button>
-                          )}
+                            )}
+                          </div>
                         </div>
+
+                        {/* Baris Bawah: Kotak-kotak Sub Periode Informatif MENTOK SAMPAI SISI KANAN KOTAK di bawah tombol tambah */}
+                        {item.subPeriods && item.subPeriods.length > 0 && (
+                          <div className="w-full space-y-2 pt-1 border-t border-slate-100/80">
+                            <SubPeriodsRow
+                              item={item}
+                              selectedSantri={selectedSantri}
+                              getSubPeriodStatus={getSubPeriodStatus}
+                              isSubPeriodPastDue={isSubPeriodPastDue}
+                              getInstallmentInfo={getInstallmentInfo}
+                            />
+
+                            {/* Keterangan Indikator Status Warna */}
+                            {selectedSantri && (
+                              <div className="flex items-center gap-3 text-[10px] text-slate-400 font-medium pt-0.5 flex-wrap">
+                                <span className="inline-flex items-center gap-1">
+                                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                                  <span>Lunas</span>
+                                </span>
+                                <span className="inline-flex items-center gap-1">
+                                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+                                  <span>Dicicil</span>
+                                </span>
+                                <span className="inline-flex items-center gap-1">
+                                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+                                  <span className="text-rose-600 font-bold">Menunggak</span>
+                                </span>
+                                <span className="inline-flex items-center gap-1">
+                                  <span className="w-2.5 h-2.5 rounded-full border border-slate-400 bg-transparent"></span>
+                                  <span>Belum Bayar</span>
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -1815,19 +1872,18 @@ export default function PembayaranSubView({
           </div>
 
           {/* KOLOM KANAN (PANEL KASIR / REGISTER CHECKOUT) */}
-          <div className="lg:col-span-5 sticky top-4 space-y-4">
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 space-y-4">
+          <div className="lg:col-span-5 flex flex-col h-full min-h-0">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 h-full flex flex-col min-h-0 overflow-hidden">
               {/* Header Register */}
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-2">
-                  <Receipt className="w-4 h-4 text-emerald-600" />
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
+                <div>
                   <h2 className="font-extrabold text-sm text-slate-900">Rincian Pembayaran</h2>
                 </div>
                 {cart.length > 0 && (
                   <button
                     type="button"
                     onClick={handleClearCart}
-                    className="text-[11px] font-bold text-rose-600 hover:text-rose-700 flex items-center gap-1"
+                    className="text-[11px] font-bold text-rose-600 hover:text-rose-700 flex items-center gap-1 cursor-pointer"
                   >
                     <Trash2 className="w-3 h-3" />
                     Reset
@@ -1836,12 +1892,11 @@ export default function PembayaranSubView({
               </div>
 
               {/* Cart Items List */}
-              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+              <div className="flex-1 overflow-y-auto pr-1 space-y-2 my-2 min-h-0">
                 {cart.length === 0 ? (
-                  <div className="py-10 text-center text-slate-400 space-y-1.5">
-                    <Receipt className="w-8 h-8 mx-auto text-slate-300" />
-                    <div className="text-xs font-semibold">Belum ada tagihan dipilih</div>
-                    <p className="text-[10px] text-slate-400">Pilih santri dan klik tagihan di sebelah kiri.</p>
+                  <div className="h-full flex flex-col items-center justify-center text-center py-8 text-slate-400 space-y-1">
+                    <div className="text-xs font-semibold text-slate-600">Belum ada tagihan dipilih</div>
+                    <p className="text-[10px] text-slate-400">Pilih santri dan klik Tambah pada tagihan di sebelah kiri.</p>
                   </div>
                 ) : (
                   cart.map(item => (
@@ -1888,21 +1943,34 @@ export default function PembayaranSubView({
                         </div>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveFromCart(item.id)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors shrink-0"
-                        title="Hapus item"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const orig = paymentItems.find(p => p.id === item.itemId);
+                            if (orig) handleOpenConfigureModal(orig);
+                          }}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 transition-colors cursor-pointer"
+                          title="Atur / Edit rincian pembayaran item ini"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveFromCart(item.id)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors shrink-0 cursor-pointer"
+                          title="Hapus item"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   ))
                 )}
               </div>
 
               {/* Ringkasan & Form Pembayaran */}
-              <div className="pt-3 border-t border-slate-100 space-y-3">
+              <div className="shrink-0 pt-3 border-t border-slate-100 space-y-2.5 overflow-y-auto max-h-[380px] pr-0.5">
                 {/* Total Biaya */}
                 <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-100 flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-700">Total Tagihan:</span>
@@ -2029,6 +2097,30 @@ export default function PembayaranSubView({
         onNewTransaction={() => setActiveReceipt(null)}
       />
 
+      {/* Modal Konfigurasi Pembayaran (saat klik Tambah atau Edit pada item) */}
+      {selectedSantri && (
+        <ConfigurePaymentModal
+          isOpen={isConfigureModalOpen}
+          onClose={() => {
+            setIsConfigureModalOpen(false);
+            setConfiguringItem(null);
+          }}
+          item={configuringItem}
+          santri={selectedSantri}
+          currentCartItem={cart.find(c => c.itemId === configuringItem?.id)}
+          initialSelection={configuringItem ? itemSelections[configuringItem.id] : undefined}
+          onSaveToCart={(configured) => {
+            if (configuringItem) {
+              handleSaveConfiguredItemToCart(configuringItem, configured);
+            }
+          }}
+          isSubPeriodPastDue={isSubPeriodPastDue}
+          getSubPeriodStatus={getSubPeriodStatus}
+          getInstallmentInfo={getInstallmentInfo}
+          getUnfinishedInstallmentBefore={getUnfinishedInstallmentBefore}
+        />
+      )}
+
       {/* Modal Buat / Edit Item Pembayaran */}
       <CreatePaymentItemModal
         isOpen={isCreateItemModalOpen}
@@ -2040,6 +2132,24 @@ export default function PembayaranSubView({
         itemToEdit={editingItem}
         defaultTargetGender={genderFilter}
         lembagasList={lembagasList}
+      />
+
+      {/* Modal Kelola Item Pembayaran */}
+      <ManagePaymentItemsModal
+        isOpen={isManageItemsModalOpen}
+        onClose={() => setIsManageItemsModalOpen(false)}
+        paymentItems={paymentItems}
+        onAddNew={() => {
+          setEditingItem(null);
+          setIsCreateItemModalOpen(true);
+        }}
+        onEditItem={(item) => {
+          setEditingItem(item);
+          setIsCreateItemModalOpen(true);
+        }}
+        onDeleteItem={(item) => {
+          setDeleteConfirmItem(item);
+        }}
       />
 
       {/* Modal Konfirmasi Hapus Item Pembayaran */}

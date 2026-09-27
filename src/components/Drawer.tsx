@@ -76,7 +76,7 @@ const MENU_ITEMS: MenuItemDef[] = [
     icon: Wallet,
     submenus: [
       { id: 'wallet', label: 'Wallet' },
-      { id: 'syahriah', label: 'Syahriah' }
+      { id: 'pembayaran', label: 'Pembayaran' }
     ]
   },
   { 
@@ -400,7 +400,7 @@ export default function Drawer({
               <div className="flex flex-wrap gap-2">
                 {[
                   { label: 'Data Induk Santri', mod: 'sekretaris', sub: 'santri' },
-                  { label: 'Syahriah & Kas', mod: 'bendahara', sub: '' },
+                  { label: 'Kas & Pembayaran', mod: 'bendahara', sub: 'pembayaran' },
                   { label: 'Aktivitas Akademik', mod: 'pendidikan', sub: 'lembaga' },
                   { label: 'Kelola Kamar', mod: 'humasy', sub: 'kamar' },
                   { label: 'Perizinan & Sanksi', mod: 'keamanan', sub: 'overview' },
