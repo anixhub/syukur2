@@ -28,7 +28,9 @@ import {
   BookOpen,
   Users,
   Activity,
-  Filter
+  Filter,
+  Pencil,
+  Edit2
 } from 'lucide-react';
 import { Santri, KeamananRecord, BendaharaRecord, Kompleks, Kamar } from '../types';
 import { INITIAL_KOMPLEKS, INITIAL_KAMAR } from './HumasyView';
@@ -79,17 +81,38 @@ export default function HomeView({
     return () => clearInterval(timer);
   }, []);
 
+  // Helper to parse timestamp safely from number, numeric string, or date string
+  const parseSafeTimestamp = (val: any, fallback: number = Date.now()): number => {
+    if (!val) return fallback;
+    if (typeof val === 'number' && !isNaN(val) && val > 0) return val;
+    const num = Number(val);
+    if (!isNaN(num) && num > 1000000000) return num;
+    const dateMs = new Date(val).getTime();
+    if (!isNaN(dateMs) && dateMs > 1000000000) return dateMs;
+    return fallback;
+  };
+
   // Normalize task item
-  const normalizeTask = (item: any): TaskItem => ({
-    id: String(item.id || Date.now()),
-    text: item.text || item.judul || item.title || 'Tugas Tanpa Judul',
-    description: item.description || item.deskripsi || '',
-    status: item.status === 'done' || item.status === 'Selesai' ? 'done' : 'pending',
-    deadlineTimestamp: Number(item.deadlineTimestamp || item.deadline_timestamp || item.due_date) || (Date.now() + 3600000),
-    color: (item.color === 'green' || item.color === 'yellow' || item.color === 'blue') ? item.color : 'yellow',
-    createdAt: Number(item.createdAt || item.created_at) || Date.now(),
-    username: (item.username || item.user_id || '').toLowerCase().trim()
-  });
+  const normalizeTask = (item: any): TaskItem => {
+    const rawStatus = String(item.status || item.status_label || '').toLowerCase().trim();
+    const isDone = rawStatus === 'done' || rawStatus === 'selesai' || rawStatus === 'success';
+
+    const deadline = item.deadlineTimestamp || item.deadline_timestamp || item.tenggat_waktu || item.due_date;
+    const createdAt = item.createdAt || item.created_at || item.tanggal;
+
+    return {
+      id: String(item.id || Date.now()),
+      text: item.text || item.judul || item.title || 'Catatan Tugas',
+      description: item.description || item.deskripsi || item.keterangan || '',
+      status: isDone ? 'done' : 'pending',
+      deadlineTimestamp: deadline ? parseSafeTimestamp(deadline, Date.now() + 3600000) : (Date.now() + 3600000),
+      color: (item.color === 'green' || item.color === 'yellow' || item.color === 'blue') 
+        ? item.color 
+        : (item.prioritas === 'Tinggi' || item.priority === 'high' ? 'blue' : (item.prioritas === 'Rendah' ? 'green' : 'yellow')),
+      createdAt: createdAt ? parseSafeTimestamp(createdAt, Date.now()) : Date.now(),
+      username: (item.username || item.user_id || '').toLowerCase().trim()
+    };
+  };
 
   // Task list state - Initialized from localStorage, then fetched from database
   const [tasks, setTasks] = useState<TaskItem[]>(() => {
@@ -108,7 +131,33 @@ export default function HomeView({
   // Task modal states
   const [isAddTaskModalOpen, setIsAddTaskModalOpen] = useState(false);
   const [selectedTaskDetail, setSelectedTaskDetail] = useState<TaskItem | null>(null);
+  const [editingTask, setEditingTask] = useState<TaskItem | null>(null);
   const [selectedSantriForDetail, setSelectedSantriForDetail] = useState<Santri | null>(null);
+
+  // Add task form states
+  const [taskFormText, setTaskFormText] = useState('');
+  const [taskFormDesc, setTaskFormDesc] = useState('');
+  const [taskFormColor, setTaskFormColor] = useState<'green' | 'yellow' | 'blue'>('yellow');
+  const [taskDurationMode, setTaskDurationMode] = useState<'duration' | 'datetime'>('duration');
+  const [taskFormDays, setTaskFormDays] = useState<number>(0);
+  const [taskFormHours, setTaskFormHours] = useState<number>(1);
+  const [taskFormMinutes, setTaskFormMinutes] = useState<number>(0);
+  const [taskFormSeconds, setTaskFormSeconds] = useState<number>(0);
+  const [taskFormDeadlineDate, setTaskFormDeadlineDate] = useState<string>('');
+  const [taskFormDeadlineTime, setTaskFormDeadlineTime] = useState<string>('');
+
+  // Edit task form states
+  const [editFormText, setEditFormText] = useState('');
+  const [editFormDesc, setEditFormDesc] = useState('');
+  const [editFormColor, setEditFormColor] = useState<'green' | 'yellow' | 'blue'>('yellow');
+  const [editFormStatus, setEditFormStatus] = useState<'pending' | 'done'>('pending');
+  const [editDurationMode, setEditDurationMode] = useState<'datetime' | 'duration'>('datetime');
+  const [editFormDeadlineDate, setEditFormDeadlineDate] = useState<string>('');
+  const [editFormDeadlineTime, setEditFormDeadlineTime] = useState<string>('');
+  const [editFormDays, setEditFormDays] = useState<number>(0);
+  const [editFormHours, setEditFormHours] = useState<number>(1);
+  const [editFormMinutes, setEditFormMinutes] = useState<number>(0);
+  const [editFormSeconds, setEditFormSeconds] = useState<number>(0);
 
   // Tab and Gender Filter for Top 10 Card (Pelanggaran vs Pelanggar & Semua/Putra/Putri)
   const [violationsTab, setViolationsTab] = useState<'pelanggaran' | 'pelanggar'>('pelanggaran');
@@ -157,15 +206,6 @@ export default function HomeView({
       unsubscribeWs();
     };
   }, []);
-
-  // Add task form states
-  const [taskFormText, setTaskFormText] = useState('');
-  const [taskFormDesc, setTaskFormDesc] = useState('');
-  const [taskFormColor, setTaskFormColor] = useState<'green' | 'yellow' | 'blue'>('yellow');
-  const [taskFormDays, setTaskFormDays] = useState<number>(0);
-  const [taskFormHours, setTaskFormHours] = useState<number>(1);
-  const [taskFormMinutes, setTaskFormMinutes] = useState<number>(0);
-  const [taskFormSeconds, setTaskFormSeconds] = useState<number>(0);
 
   // Kompleks and Kamar state for capacity calculations
   const [kompleksList, setKompleksList] = useState<Kompleks[]>([]);
@@ -1319,13 +1359,103 @@ export default function HomeView({
     }
   };
 
+  const handleOpenEditTask = (task: TaskItem) => {
+    setEditingTask(task);
+    setEditFormText(task.text);
+    setEditFormDesc(task.description || '');
+    setEditFormColor(task.color);
+    setEditFormStatus(task.status);
+
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    if (task.deadlineTimestamp && task.deadlineTimestamp > 0) {
+      const d = new Date(task.deadlineTimestamp);
+      const dateStr = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      const timeStr = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      setEditFormDeadlineDate(dateStr);
+      setEditFormDeadlineTime(timeStr);
+
+      const diffSec = Math.max(0, Math.floor((task.deadlineTimestamp - Date.now()) / 1000));
+      setEditFormDays(Math.floor(diffSec / 86400));
+      setEditFormHours(Math.floor((diffSec % 86400) / 3600));
+      setEditFormMinutes(Math.floor((diffSec % 3600) / 60));
+      setEditFormSeconds(diffSec % 60);
+    } else {
+      const nowD = new Date(Date.now() + 3600000);
+      setEditFormDeadlineDate(`${nowD.getFullYear()}-${pad(nowD.getMonth() + 1)}-${pad(nowD.getDate())}`);
+      setEditFormDeadlineTime(`${pad(nowD.getHours())}:${pad(nowD.getMinutes())}`);
+      setEditFormDays(0);
+      setEditFormHours(1);
+      setEditFormMinutes(0);
+      setEditFormSeconds(0);
+    }
+    setEditDurationMode('datetime');
+  };
+
+  const handleEditTaskSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTask || !editFormText.trim()) return;
+
+    let targetDeadline = editingTask.deadlineTimestamp || (Date.now() + 3600000);
+    if (editDurationMode === 'datetime' && editFormDeadlineDate) {
+      const [y, m, d] = editFormDeadlineDate.split('-').map(Number);
+      const [hh, mm] = (editFormDeadlineTime || '12:00').split(':').map(Number);
+      const dt = new Date(y, m - 1, d, hh, mm, 0);
+      targetDeadline = dt.getTime();
+    } else if (editDurationMode === 'duration') {
+      const totalSec = (editFormDays * 86400) + (editFormHours * 3600) + (editFormMinutes * 60) + editFormSeconds;
+      targetDeadline = Date.now() + (totalSec > 0 ? totalSec * 1000 : 3600000);
+    }
+
+    const updatedTask: TaskItem = {
+      ...editingTask,
+      text: editFormText.trim(),
+      description: editFormDesc.trim(),
+      color: editFormColor,
+      status: editFormStatus,
+      deadlineTimestamp: targetDeadline
+    };
+
+    setTasks(prev => prev.map(t => t.id === editingTask.id ? updatedTask : t));
+
+    if (selectedTaskDetail && selectedTaskDetail.id === editingTask.id) {
+      setSelectedTaskDetail(updatedTask);
+    }
+
+    setEditingTask(null);
+
+    try {
+      await updateTableRow<any>('tugas', 'smartsantri_dashboard_tasks', editingTask.id, {
+        text: updatedTask.text,
+        judul: updatedTask.text,
+        description: updatedTask.description,
+        deskripsi: updatedTask.description,
+        color: updatedTask.color,
+        status: updatedTask.status,
+        deadline_timestamp: targetDeadline,
+        deadlineTimestamp: targetDeadline,
+        updated_at: new Date().toISOString()
+      });
+    } catch (e) {
+      console.error("Gagal memperbarui tugas di database:", e);
+    }
+  };
+
   const handleAddTaskSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!taskFormText.trim()) return;
 
-    const totalSec = (taskFormDays * 86400) + (taskFormHours * 3600) + (taskFormMinutes * 60) + taskFormSeconds;
-    const totalMs = totalSec * 1000;
-    const deadlineTimestamp = Date.now() + (totalMs > 0 ? totalMs : 3600000);
+    let deadlineTimestamp = Date.now() + 3600000;
+    if (taskDurationMode === 'datetime' && taskFormDeadlineDate) {
+      const [y, m, d] = taskFormDeadlineDate.split('-').map(Number);
+      const [hh, mm] = (taskFormDeadlineTime || '12:00').split(':').map(Number);
+      const dt = new Date(y, m - 1, d, hh, mm, 0);
+      deadlineTimestamp = dt.getTime();
+    } else {
+      const totalSec = (taskFormDays * 86400) + (taskFormHours * 3600) + (taskFormMinutes * 60) + taskFormSeconds;
+      const totalMs = totalSec * 1000;
+      deadlineTimestamp = Date.now() + (totalMs > 0 ? totalMs : 3600000);
+    }
+
     const currentActiveUsername = (
       localStorage.getItem('smartsantri_active_username') || 
       localStorage.getItem('smartsantri_active_role') || 
@@ -1354,6 +1484,8 @@ export default function HomeView({
     setTaskFormHours(1);
     setTaskFormMinutes(0);
     setTaskFormSeconds(0);
+    setTaskFormDeadlineDate('');
+    setTaskFormDeadlineTime('');
     setIsAddTaskModalOpen(false);
 
     try {
@@ -1363,22 +1495,29 @@ export default function HomeView({
     }
   };
 
-  // Derive active username for filtering tasks per account
-  const currentActiveUser = (
-    localStorage.getItem('smartsantri_active_username') || 
-    localStorage.getItem('smartsantri_active_role') || 
-    'pengurus'
-  ).toLowerCase().trim();
+  // Derive active username and role for filtering tasks per account
+  const currentActiveUsername = (localStorage.getItem('smartsantri_active_username') || '').toLowerCase().trim();
+  const currentActiveRole = (localStorage.getItem('smartsantri_active_role') || 'superadmin').toLowerCase().trim();
+  const isSuperadminOrAdmin = currentActiveRole.includes('superadmin') || currentActiveRole.includes('admin') || !currentActiveRole;
 
-  // Filter tasks to only show tasks belonging to the active account
+  // Filter tasks: Superadmin can see all tasks, or users see tasks matching username / role / email prefix
   const userTasks = useMemo(() => {
     return tasks.filter(t => {
-      if (!t.username) {
-        return currentActiveUser.includes('superadmin') || currentActiveUser === 'pengurus';
-      }
-      return t.username.toLowerCase().trim() === currentActiveUser;
+      if (!t.username) return true;
+      const taskUser = t.username.toLowerCase().trim();
+      if (!taskUser || taskUser === 'pengurus' || taskUser === 'semua' || taskUser === 'public') return true;
+
+      if (isSuperadminOrAdmin) return true;
+
+      const activeUname = currentActiveUsername || currentActiveRole;
+      if (taskUser === activeUname) return true;
+      const taskPrefix = taskUser.split('@')[0];
+      const activePrefix = activeUname.split('@')[0];
+      if (taskPrefix && activePrefix && taskPrefix === activePrefix) return true;
+
+      return false;
     });
-  }, [tasks, currentActiveUser]);
+  }, [tasks, currentActiveUsername, currentActiveRole, isSuperadminOrAdmin]);
 
   // Filter tasks by search query matching eligible keyword in text or description
   const filteredTasks = useMemo(() => {
@@ -1905,16 +2044,28 @@ export default function HomeView({
                         </div>
                       )}
 
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteTask(task.id);
-                        }}
-                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                        title="Hapus Tugas"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenEditTask(task);
+                          }}
+                          className="p-1 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                          title="Ubah / Edit Tugas"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteTask(task.id);
+                          }}
+                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                          title="Hapus Tugas"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -2253,72 +2404,131 @@ export default function HomeView({
                   />
                 </div>
 
-                {/* Input Durasi Pengerjaan */}
+                {/* Input Durasi / Deadline Pengerjaan */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
-                    <span>Durasi Pengerjaan / Target Time</span>
-                    <span className="text-[10px] text-emerald-700 font-extrabold">Hitung otomatis</span>
-                  </label>
-                  <div className="grid grid-cols-4 gap-2">
-                    <div>
-                      <span className="text-[10px] text-slate-500 font-bold block mb-0.5 text-center">Hari</span>
-                      <input 
-                        type="number"
-                        min="0"
-                        max="365"
-                        value={taskFormDays}
-                        onFocus={(e) => e.target.select()}
-                        onClick={(e) => e.currentTarget.select()}
-                        onChange={(e) => setTaskFormDays(Math.max(0, parseInt(e.target.value) || 0))}
-                        className="w-full text-xs p-2 rounded-xl bg-slate-50 border border-slate-200 font-extrabold text-slate-800 text-center focus:outline-none focus:border-[#0D8A68] focus:bg-white focus:ring-2 focus:ring-emerald-500/20"
-                      />
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-500 font-bold block mb-0.5 text-center">Jam</span>
-                      <input 
-                        type="number"
-                        min="0"
-                        max="23"
-                        value={taskFormHours}
-                        onFocus={(e) => e.target.select()}
-                        onClick={(e) => e.currentTarget.select()}
-                        onChange={(e) => setTaskFormHours(Math.max(0, parseInt(e.target.value) || 0))}
-                        className="w-full text-xs p-2 rounded-xl bg-slate-50 border border-slate-200 font-extrabold text-slate-800 text-center focus:outline-none focus:border-[#0D8A68] focus:bg-white focus:ring-2 focus:ring-emerald-500/20"
-                      />
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-500 font-bold block mb-0.5 text-center">Menit</span>
-                      <input 
-                        type="number"
-                        min="0"
-                        max="59"
-                        value={taskFormMinutes}
-                        onFocus={(e) => e.target.select()}
-                        onClick={(e) => e.currentTarget.select()}
-                        onChange={(e) => setTaskFormMinutes(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
-                        className="w-full text-xs p-2 rounded-xl bg-slate-50 border border-slate-200 font-extrabold text-slate-800 text-center focus:outline-none focus:border-[#0D8A68] focus:bg-white focus:ring-2 focus:ring-emerald-500/20"
-                      />
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-500 font-bold block mb-0.5 text-center">Detik</span>
-                      <input 
-                        type="number"
-                        min="0"
-                        max="59"
-                        value={taskFormSeconds}
-                        onFocus={(e) => e.target.select()}
-                        onClick={(e) => e.currentTarget.select()}
-                        onChange={(e) => setTaskFormSeconds(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
-                        className="w-full text-xs p-2 rounded-xl bg-slate-50 border border-slate-200 font-extrabold text-slate-800 text-center focus:outline-none focus:border-[#0D8A68] focus:bg-white focus:ring-2 focus:ring-emerald-500/20"
-                      />
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold text-slate-700">
+                      Tenggat Waktu / Target Deadline
+                    </label>
+                    <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-[10px]">
+                      <button
+                        type="button"
+                        onClick={() => setTaskDurationMode('duration')}
+                        className={`px-2 py-0.5 rounded-md font-bold transition-all cursor-pointer ${
+                          taskDurationMode === 'duration'
+                            ? 'bg-white text-emerald-800 shadow-2xs'
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        Durasi Waktu
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTaskDurationMode('datetime');
+                          if (!taskFormDeadlineDate) {
+                            const nowD = new Date(Date.now() + 3600000);
+                            const pad = (n: number) => n.toString().padStart(2, '0');
+                            setTaskFormDeadlineDate(`${nowD.getFullYear()}-${pad(nowD.getMonth() + 1)}-${pad(nowD.getDate())}`);
+                            setTaskFormDeadlineTime(`${pad(nowD.getHours())}:${pad(nowD.getMinutes())}`);
+                          }
+                        }}
+                        className={`px-2 py-0.5 rounded-md font-bold transition-all cursor-pointer ${
+                          taskDurationMode === 'datetime'
+                            ? 'bg-white text-emerald-800 shadow-2xs'
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        Tanggal & Jam
+                      </button>
                     </div>
                   </div>
-                  <p className="text-[10px] text-slate-500 mt-1.5 flex items-center gap-1 font-medium">
-                    <Clock className="w-3 h-3 text-[#0D8A68]" />
-                    <span>
-                      Target Deadline: <strong className="text-slate-700">{new Date(Date.now() + (((taskFormDays * 86400) + (taskFormHours * 3600) + (taskFormMinutes * 60) + taskFormSeconds) * 1000)).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</strong> ({taskFormDays > 0 ? `${taskFormDays}h ` : ''}{taskFormHours}j {taskFormMinutes}m {taskFormSeconds}d dari sekarang)
-                    </span>
-                  </p>
+
+                  {taskDurationMode === 'datetime' ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <span className="text-[10px] text-slate-500 font-bold block mb-0.5">Tanggal</span>
+                        <input
+                          type="date"
+                          value={taskFormDeadlineDate}
+                          onChange={(e) => setTaskFormDeadlineDate(e.target.value)}
+                          className="w-full text-xs p-2.5 rounded-xl bg-slate-50 border border-slate-200 font-semibold text-slate-800 focus:outline-none focus:border-[#0D8A68] focus:bg-white"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-500 font-bold block mb-0.5">Jam</span>
+                        <input
+                          type="time"
+                          value={taskFormDeadlineTime}
+                          onChange={(e) => setTaskFormDeadlineTime(e.target.value)}
+                          className="w-full text-xs p-2.5 rounded-xl bg-slate-50 border border-slate-200 font-semibold text-slate-800 focus:outline-none focus:border-[#0D8A68] focus:bg-white"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="grid grid-cols-4 gap-2">
+                        <div>
+                          <span className="text-[10px] text-slate-500 font-bold block mb-0.5 text-center">Hari</span>
+                          <input 
+                            type="number"
+                            min="0"
+                            max="365"
+                            value={taskFormDays}
+                            onFocus={(e) => e.target.select()}
+                            onClick={(e) => e.currentTarget.select()}
+                            onChange={(e) => setTaskFormDays(Math.max(0, parseInt(e.target.value) || 0))}
+                            className="w-full text-xs p-2 rounded-xl bg-slate-50 border border-slate-200 font-extrabold text-slate-800 text-center focus:outline-none focus:border-[#0D8A68] focus:bg-white focus:ring-2 focus:ring-emerald-500/20"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-500 font-bold block mb-0.5 text-center">Jam</span>
+                          <input 
+                            type="number"
+                            min="0"
+                            max="23"
+                            value={taskFormHours}
+                            onFocus={(e) => e.target.select()}
+                            onClick={(e) => e.currentTarget.select()}
+                            onChange={(e) => setTaskFormHours(Math.max(0, parseInt(e.target.value) || 0))}
+                            className="w-full text-xs p-2 rounded-xl bg-slate-50 border border-slate-200 font-extrabold text-slate-800 text-center focus:outline-none focus:border-[#0D8A68] focus:bg-white focus:ring-2 focus:ring-emerald-500/20"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-500 font-bold block mb-0.5 text-center">Menit</span>
+                          <input 
+                            type="number"
+                            min="0"
+                            max="59"
+                            value={taskFormMinutes}
+                            onFocus={(e) => e.target.select()}
+                            onClick={(e) => e.currentTarget.select()}
+                            onChange={(e) => setTaskFormMinutes(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
+                            className="w-full text-xs p-2 rounded-xl bg-slate-50 border border-slate-200 font-extrabold text-slate-800 text-center focus:outline-none focus:border-[#0D8A68] focus:bg-white focus:ring-2 focus:ring-emerald-500/20"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-500 font-bold block mb-0.5 text-center">Detik</span>
+                          <input 
+                            type="number"
+                            min="0"
+                            max="59"
+                            value={taskFormSeconds}
+                            onFocus={(e) => e.target.select()}
+                            onClick={(e) => e.currentTarget.select()}
+                            onChange={(e) => setTaskFormSeconds(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
+                            className="w-full text-xs p-2 rounded-xl bg-slate-50 border border-slate-200 font-extrabold text-slate-800 text-center focus:outline-none focus:border-[#0D8A68] focus:bg-white focus:ring-2 focus:ring-emerald-500/20"
+                          />
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-1.5 flex items-center gap-1 font-medium">
+                        <Clock className="w-3 h-3 text-[#0D8A68]" />
+                        <span>
+                          Target Deadline: <strong className="text-slate-700">{new Date(Date.now() + (((taskFormDays * 86400) + (taskFormHours * 3600) + (taskFormMinutes * 60) + taskFormSeconds) * 1000)).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</strong> ({taskFormDays > 0 ? `${taskFormDays}h ` : ''}{taskFormHours}j {taskFormMinutes}m {taskFormSeconds}d dari sekarang)
+                        </span>
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Prioritas / Warna Card */}
@@ -2526,6 +2736,17 @@ export default function HomeView({
 
                 <div className="flex items-center gap-2">
                   <button
+                    type="button"
+                    onClick={() => {
+                      const t = selectedTaskDetail;
+                      handleOpenEditTask(t);
+                    }}
+                    className="px-3.5 py-2 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                    Ubah Catatan
+                  </button>
+                  <button
                     onClick={() => toggleTaskStatus(selectedTaskDetail.id)}
                     className={`px-4 py-2 text-xs font-extrabold rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 ${
                       selectedTaskDetail.status === 'done'
@@ -2544,6 +2765,279 @@ export default function HomeView({
                   </button>
                 </div>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL EDIT TUGAS / CATATAN MEMO */}
+      <AnimatePresence>
+        {editingTask && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white rounded-3xl p-5 md:p-6 w-full max-w-md shadow-2xl border border-slate-100 space-y-4 max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-xl bg-emerald-50 text-[#0D8A68]">
+                    <Pencil className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold text-slate-800">Ubah Catatan / Memo</h3>
+                    <p className="text-[11px] text-slate-400 font-medium">Perbarui isi tugas dan tenggat waktu</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setEditingTask(null)}
+                  className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleEditTaskSubmit} className="space-y-4">
+                {/* Judul Tugas */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Judul / Nama Tugas <span className="text-rose-500">*</span>
+                  </label>
+                  <input 
+                    type="text"
+                    required
+                    placeholder="Contoh: Cetak rekap iuran bulanan..."
+                    value={editFormText}
+                    onFocus={(e) => e.target.select()}
+                    onClick={(e) => e.currentTarget.select()}
+                    onChange={(e) => setEditFormText(e.target.value)}
+                    className="w-full text-xs p-2.5 rounded-xl bg-slate-50 border border-slate-200 font-semibold text-slate-800 focus:outline-none focus:border-[#0D8A68] focus:bg-white"
+                    autoFocus
+                  />
+                </div>
+
+                {/* Deskripsi Detail */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Deskripsi Detail / Catatan (Opsional)
+                  </label>
+                  <textarea 
+                    rows={3}
+                    placeholder="Tambahkan detail instruksi atau catatan tugas..."
+                    value={editFormDesc}
+                    onFocus={(e) => e.target.select()}
+                    onClick={(e) => e.currentTarget.select()}
+                    onChange={(e) => setEditFormDesc(e.target.value)}
+                    className="w-full text-xs p-2.5 rounded-xl bg-slate-50 border border-slate-200 font-medium text-slate-800 focus:outline-none focus:border-[#0D8A68] focus:bg-white resize-none"
+                  />
+                </div>
+
+                {/* Status Tugas */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Status Pengerjaan
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditFormStatus('pending')}
+                      className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                        editFormStatus === 'pending'
+                          ? 'bg-amber-100 text-amber-900 border-amber-400 ring-2 ring-amber-400/20'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <Clock className="w-3.5 h-3.5 text-amber-700" />
+                      Dalam Proses (Pending)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditFormStatus('done')}
+                      className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                        editFormStatus === 'done'
+                          ? 'bg-emerald-100 text-emerald-900 border-emerald-400 ring-2 ring-emerald-400/20'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <Check className="w-3.5 h-3.5 text-emerald-700 stroke-[3]" />
+                      Selesai (Done)
+                    </button>
+                  </div>
+                </div>
+
+                {/* Mode Pengaturan Deadline */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold text-slate-700">
+                      Tenggat Waktu / Deadline
+                    </label>
+                    <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-[10px]">
+                      <button
+                        type="button"
+                        onClick={() => setEditDurationMode('datetime')}
+                        className={`px-2 py-0.5 rounded-md font-bold transition-all cursor-pointer ${
+                          editDurationMode === 'datetime'
+                            ? 'bg-white text-emerald-800 shadow-2xs'
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        Tanggal & Jam
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditDurationMode('duration')}
+                        className={`px-2 py-0.5 rounded-md font-bold transition-all cursor-pointer ${
+                          editDurationMode === 'duration'
+                            ? 'bg-white text-emerald-800 shadow-2xs'
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        Durasi Waktu
+                      </button>
+                    </div>
+                  </div>
+
+                  {editDurationMode === 'datetime' ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <span className="text-[10px] text-slate-500 font-bold block mb-0.5">Tanggal</span>
+                        <input
+                          type="date"
+                          value={editFormDeadlineDate}
+                          onChange={(e) => setEditFormDeadlineDate(e.target.value)}
+                          className="w-full text-xs p-2.5 rounded-xl bg-slate-50 border border-slate-200 font-semibold text-slate-800 focus:outline-none focus:border-[#0D8A68] focus:bg-white"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-500 font-bold block mb-0.5">Jam</span>
+                        <input
+                          type="time"
+                          value={editFormDeadlineTime}
+                          onChange={(e) => setEditFormDeadlineTime(e.target.value)}
+                          className="w-full text-xs p-2.5 rounded-xl bg-slate-50 border border-slate-200 font-semibold text-slate-800 focus:outline-none focus:border-[#0D8A68] focus:bg-white"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="grid grid-cols-4 gap-2">
+                        <div>
+                          <span className="text-[10px] text-slate-500 font-bold block mb-0.5 text-center">Hari</span>
+                          <input 
+                            type="number"
+                            min="0"
+                            max="365"
+                            value={editFormDays}
+                            onFocus={(e) => e.target.select()}
+                            onClick={(e) => e.currentTarget.select()}
+                            onChange={(e) => setEditFormDays(Math.max(0, parseInt(e.target.value) || 0))}
+                            className="w-full text-xs p-2 rounded-xl bg-slate-50 border border-slate-200 font-extrabold text-slate-800 text-center focus:outline-none focus:border-[#0D8A68] focus:bg-white"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-500 font-bold block mb-0.5 text-center">Jam</span>
+                          <input 
+                            type="number"
+                            min="0"
+                            max="23"
+                            value={editFormHours}
+                            onFocus={(e) => e.target.select()}
+                            onClick={(e) => e.currentTarget.select()}
+                            onChange={(e) => setEditFormHours(Math.max(0, parseInt(e.target.value) || 0))}
+                            className="w-full text-xs p-2 rounded-xl bg-slate-50 border border-slate-200 font-extrabold text-slate-800 text-center focus:outline-none focus:border-[#0D8A68] focus:bg-white"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-500 font-bold block mb-0.5 text-center">Menit</span>
+                          <input 
+                            type="number"
+                            min="0"
+                            max="59"
+                            value={editFormMinutes}
+                            onFocus={(e) => e.target.select()}
+                            onClick={(e) => e.currentTarget.select()}
+                            onChange={(e) => setEditFormMinutes(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
+                            className="w-full text-xs p-2 rounded-xl bg-slate-50 border border-slate-200 font-extrabold text-slate-800 text-center focus:outline-none focus:border-[#0D8A68] focus:bg-white"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-500 font-bold block mb-0.5 text-center">Detik</span>
+                          <input 
+                            type="number"
+                            min="0"
+                            max="59"
+                            value={editFormSeconds}
+                            onFocus={(e) => e.target.select()}
+                            onClick={(e) => e.currentTarget.select()}
+                            onChange={(e) => setEditFormSeconds(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
+                            className="w-full text-xs p-2 rounded-xl bg-slate-50 border border-slate-200 font-extrabold text-slate-800 text-center focus:outline-none focus:border-[#0D8A68] focus:bg-white"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Prioritas / Warna Card */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Kategori / Tingkat Prioritas
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditFormColor('yellow')}
+                      className={`py-2 px-2 rounded-xl text-xs font-extrabold border transition-all cursor-pointer ${
+                        editFormColor === 'yellow'
+                          ? 'bg-amber-100 text-amber-900 border-amber-400 ring-2 ring-amber-400/20'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-amber-50'
+                      }`}
+                    >
+                      Penting (Kuning)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditFormColor('blue')}
+                      className={`py-2 px-2 rounded-xl text-xs font-extrabold border transition-all cursor-pointer ${
+                        editFormColor === 'blue'
+                          ? 'bg-sky-100 text-sky-900 border-sky-400 ring-2 ring-sky-400/20'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-sky-50'
+                      }`}
+                    >
+                      Mendesak (Biru)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditFormColor('green')}
+                      className={`py-2 px-2 rounded-xl text-xs font-extrabold border transition-all cursor-pointer ${
+                        editFormColor === 'green'
+                          ? 'bg-emerald-100 text-emerald-900 border-emerald-400 ring-2 ring-emerald-400/20'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-emerald-50'
+                      }`}
+                    >
+                      Santai (Hijau)
+                    </button>
+                  </div>
+                </div>
+
+                {/* Submit Buttons */}
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button 
+                    type="button" 
+                    onClick={() => setEditingTask(null)}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button 
+                    type="submit"
+                    className="px-5 py-2 text-xs font-extrabold bg-[#0D8A68] hover:bg-emerald-700 text-white rounded-xl shadow-xs transition-colors cursor-pointer"
+                  >
+                    Simpan Perubahan
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}

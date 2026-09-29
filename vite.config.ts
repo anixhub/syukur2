@@ -11,6 +11,24 @@ export default defineConfig(() => {
       alias: {
         '@': path.resolve(__dirname, '.'),
       },
+      dedupe: ['react', 'react-dom'],
+    },
+    optimizeDeps: {
+      include: [
+        'react',
+        'react-dom',
+        'react/jsx-runtime',
+        'react/jsx-dev-runtime',
+        'react-dom/client',
+        'motion/react',
+        'lucide-react',
+        '@hugeicons/react',
+        'recharts',
+        'date-fns',
+        'xlsx',
+        '@radix-ui/react-popover',
+        '@radix-ui/react-slot',
+      ],
     },
     build: {
       outDir: 'dist',
@@ -33,7 +51,7 @@ export default defineConfig(() => {
               if (id.includes('motion')) {
                 return 'vendor-motion';
               }
-              if (id.includes('react-dom') || id.includes('react/') || id.includes('/react@')) {
+              if (id.includes('react-dom') || id.includes('react/') || id.includes('/react@') || id.includes('scheduler') || id.includes('use-sync-external-store')) {
                 return 'vendor-react';
               }
             }

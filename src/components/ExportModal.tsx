@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, FileSpreadsheet, Printer, FileText } from 'lucide-react';
@@ -24,7 +24,7 @@ export function ExportModal({
   onExportExcel,
   onPrintPDF
 }: ExportModalProps) {
-  const initialFileName = React.useMemo(() => {
+  const initialFileName = useMemo(() => {
     if (defaultFileName) return defaultFileName;
     const dateStr = new Date().toISOString().split('T')[0];
     if (subTab === 'akademik') return `Data_Akademik_${dateStr}`;
@@ -35,9 +35,9 @@ export function ExportModal({
     return `Data_Santri_${dateStr}`;
   }, [defaultFileName, subTab]);
 
-  const [fileName, setFileName] = React.useState(initialFileName);
+  const [fileName, setFileName] = useState(initialFileName);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (isOpen) {
       setFileName(initialFileName);
       document.body.style.overflow = 'hidden';

@@ -33,36 +33,14 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import { Santri, Kompleks, Kamar, Lembaga, Kelas, isGenderMatch } from "../../types";
-import { hasValidRoom } from "../../lib/utils";
+import { hasValidRoom, formatDateDDMMYYYY } from "../../lib/utils";
 import { renderSantriAvatar, getPesantrenProfile } from "../SekretarisHelper";
 import SantriDetailModal from "../sekretaris/SantriDetailModal";
 import { ExportModal } from "../ExportModal";
 import ColumnVisibilityModal from "../sekretaris/ColumnVisibilityModal";
+import { ALL_COLUMNS } from "../../constants/monitoringColumns";
 
-const DEFAULT_DATAKAMAR_COLUMNS = ["nis", "statusDomisili", "kamar", "nomorLemari"];
-
-const AVAILABLE_DATAKAMAR_COLUMNS = [
-  { key: "nis", label: "NIS", description: "Nomor Induk Santri" },
-  { key: "statusDomisili", label: "Status Domisili", description: "Status santri Mukim atau Non-Mukim (Kampung)" },
-  { key: "kamar", label: "Kamar", description: "Nama kamar dan kompleks santri" },
-  { key: "nomorLemari", label: "No. Lemari", description: "Nomor lemari / loker di kamar" },
-  { key: "gender", label: "Gender", description: "Jenis kelamin santri (Putra/Putri)" },
-  { key: "nik", label: "NIK", description: "Nomor Induk Kependudukan" },
-  { key: "nisn", label: "NISN", description: "Nomor Induk Siswa Nasional" },
-  { key: "kelas", label: "Kelas Madrasah", description: "Tingkat kelas pendidikan formal/diniyah" },
-  { key: "statusEmis", label: "Status EMIS", description: "Status pendataan EMIS Kemenag" },
-  { key: "statusKeanggotaan", label: "Status Anggota", description: "Status keaktifan santri" },
-  { key: "alamat", label: "Alamat Lengkap", description: "Alamat domisili asal santri" },
-  { key: "desa", label: "Desa / Kelurahan", description: "Desa asal santri" },
-  { key: "kecamatan", label: "Kecamatan", description: "Kecamatan asal santri" },
-  { key: "kabupaten", label: "Kabupaten / Kota", description: "Kabupaten/Kota asal santri" },
-  { key: "provinsi", label: "Provinsi", description: "Provinsi domisili santri" },
-  { key: "noHp", label: "No. Handphone", description: "Kontak WhatsApp / HP santri atau wali" },
-  { key: "tahunMasuk", label: "Tahun Masuk", description: "Tahun pendaftaran masuk pesantren" },
-  { key: "pendidikanTerakhir", label: "Pend. Terakhir", description: "Pendidikan terakhir sebelum masuk" },
-  { key: "pendidikanFormal", label: "Pend. Formal", description: "Instansi atau sekolah formal" },
-  { key: "catatan", label: "Catatan", description: "Catatan tambahan riwayat santri" },
-];
+const DEFAULT_DATAKAMAR_COLUMNS = ["nis", "statusDomisili", "kamar", "nomorLemari", "gender", "kelas", "statusKeanggotaan", "noHp"];
 
 interface DataKamarSantriSubProps {
   santriList: Santri[];
@@ -225,28 +203,11 @@ export default function DataKamarSantriSub({
     } catch (e) {
       console.error(e);
     }
-    return {
-      nis: true,
-      statusDomisili: true,
-      kamar: true,
-      nomorLemari: true,
-      gender: false,
-      nik: false,
-      nisn: false,
-      kelas: false,
-      statusEmis: false,
-      statusKeanggotaan: false,
-      alamat: false,
-      desa: false,
-      kecamatan: false,
-      kabupaten: false,
-      provinsi: false,
-      noHp: false,
-      tahunMasuk: false,
-      pendidikanTerakhir: false,
-      pendidikanFormal: false,
-      catatan: false,
-    };
+    const initial: Record<string, boolean> = {};
+    ALL_COLUMNS.forEach((col) => {
+      initial[col.key] = DEFAULT_DATAKAMAR_COLUMNS.includes(col.key);
+    });
+    return initial;
   });
 
   useEffect(() => {
@@ -688,35 +649,67 @@ export default function DataKamarSantriSub({
     );
   }).length;
 
+  const getActiveExportColumns = () => {
+    const allExportColumns: { id: string; label: string; colKey: string; isAlwaysVisible: boolean; getValue: (s: Santri) => string }[] = [
+      { id: 'nama', label: 'Nama Lengkap', colKey: 'nama', isAlwaysVisible: true, getValue: (s: Santri) => s.nama },
+      { id: 'nis', label: 'NIS', colKey: 'nis', isAlwaysVisible: false, getValue: (s: Santri) => s.nis || '-' },
+      { id: 'statusDomisili', label: 'Status Domisili', colKey: 'statusDomisili', isAlwaysVisible: false, getValue: (s: Santri) => s.statusDomisili || 'Muqim' },
+      { id: 'kamar', label: 'Kamar', colKey: 'kamar', isAlwaysVisible: false, getValue: (s: Santri) => getKamarFormat(s) || s.kamar || '-' },
+      { id: 'nomorLemari', label: 'No. Lemari', colKey: 'nomorLemari', isAlwaysVisible: false, getValue: (s: Santri) => s.nomorLemari || '-' },
+      { id: 'gender', label: 'Gender', colKey: 'gender', isAlwaysVisible: false, getValue: (s: Santri) => s.gender || '-' },
+      { id: 'nik', label: 'NIK', colKey: 'nik', isAlwaysVisible: false, getValue: (s: Santri) => s.nik || '-' },
+      { id: 'nisn', label: 'NISN', colKey: 'nisn', isAlwaysVisible: false, getValue: (s: Santri) => s.nisn || '-' },
+      { id: 'nism', label: 'NISM', colKey: 'nism', isAlwaysVisible: false, getValue: (s: Santri) => s.nism || '-' },
+      { id: 'kelas', label: 'Kelas', colKey: 'kelas', isAlwaysVisible: false, getValue: (s: Santri) => s.kelas || '-' },
+      { id: 'kelasMhd', label: 'Kelas MHD', colKey: 'kelasMhd', isAlwaysVisible: false, getValue: (s: Santri) => s.kelasMhd || '-' },
+      { id: 'indukMhd', label: 'Induk MHD', colKey: 'indukMhd', isAlwaysVisible: false, getValue: (s: Santri) => s.indukMhd || '-' },
+      { id: 'indukWustho', label: 'Induk Wustho', colKey: 'indukWustho', isAlwaysVisible: false, getValue: (s: Santri) => s.indukWustho || '-' },
+      { id: 'indukUlya', label: 'Induk Ulya', colKey: 'indukUlya', isAlwaysVisible: false, getValue: (s: Santri) => s.indukUlya || '-' },
+      { id: 'noKk', label: 'No. KK', colKey: 'noKk', isAlwaysVisible: false, getValue: (s: Santri) => s.noKk || '-' },
+      { id: 'tempatLahir', label: 'Tempat Lahir', colKey: 'tempatLahir', isAlwaysVisible: false, getValue: (s: Santri) => s.tempatLahir || '-' },
+      { id: 'tanggalLahir', label: 'Tanggal Lahir', colKey: 'tanggalLahir', isAlwaysVisible: false, getValue: (s: Santri) => formatDateDDMMYYYY(s.tanggalLahir) || '-' },
+      { id: 'pendidikanTerakhir', label: 'Pend. Terakhir', colKey: 'pendidikanTerakhir', isAlwaysVisible: false, getValue: (s: Santri) => s.pendidikanTerakhir || '-' },
+      { id: 'pendidikanFormal', label: 'Pend. Formal', colKey: 'pendidikanFormal', isAlwaysVisible: false, getValue: (s: Santri) => s.pendidikanFormal || '-' },
+      { id: 'anakKe', label: 'Anak Ke', colKey: 'anakKe', isAlwaysVisible: false, getValue: (s: Santri) => s.anakKe !== undefined ? String(s.anakKe) : '-' },
+      { id: 'dariBersaudara', label: 'Jumlah Saudara', colKey: 'dariBersaudara', isAlwaysVisible: false, getValue: (s: Santri) => s.dariBersaudara !== undefined ? String(s.dariBersaudara) : '-' },
+      { id: 'namaAyah', label: 'Nama Ayah', colKey: 'namaAyah', isAlwaysVisible: false, getValue: (s: Santri) => s.namaAyah || '-' },
+      { id: 'nikAyah', label: 'NIK Ayah', colKey: 'nikAyah', isAlwaysVisible: false, getValue: (s: Santri) => s.nikAyah || '-' },
+      { id: 'pekerjaanAyah', label: 'Pekerjaan Ayah', colKey: 'pekerjaanAyah', isAlwaysVisible: false, getValue: (s: Santri) => s.pekerjaanAyah || '-' },
+      { id: 'pendidikanAyah', label: 'Pendidikan Ayah', colKey: 'pendidikanAyah', isAlwaysVisible: false, getValue: (s: Santri) => s.pendidikanAyah || '-' },
+      { id: 'namaIbu', label: 'Nama Ibu', colKey: 'namaIbu', isAlwaysVisible: false, getValue: (s: Santri) => s.namaIbu || '-' },
+      { id: 'nikIbu', label: 'NIK Ibu', colKey: 'nikIbu', isAlwaysVisible: false, getValue: (s: Santri) => s.nikIbu || '-' },
+      { id: 'pekerjaanIbu', label: 'Pekerjaan Ibu', colKey: 'pekerjaanIbu', isAlwaysVisible: false, getValue: (s: Santri) => s.pekerjaanIbu || '-' },
+      { id: 'pendidikanIbu', label: 'Pendidikan Ibu', colKey: 'pendidikanIbu', isAlwaysVisible: false, getValue: (s: Santri) => s.pendidikanIbu || '-' },
+      { id: 'alamat', label: 'Alamat', colKey: 'alamat', isAlwaysVisible: false, getValue: (s: Santri) => s.alamat || '-' },
+      { id: 'rt', label: 'RT', colKey: 'rt', isAlwaysVisible: false, getValue: (s: Santri) => s.rt || '-' },
+      { id: 'rw', label: 'RW', colKey: 'rw', isAlwaysVisible: false, getValue: (s: Santri) => s.rw || '-' },
+      { id: 'desa', label: 'Desa', colKey: 'desa', isAlwaysVisible: false, getValue: (s: Santri) => s.desa || '-' },
+      { id: 'kecamatan', label: 'Kecamatan', colKey: 'kecamatan', isAlwaysVisible: false, getValue: (s: Santri) => s.kecamatan || '-' },
+      { id: 'kabupaten', label: 'Kabupaten', colKey: 'kabupaten', isAlwaysVisible: false, getValue: (s: Santri) => s.kabupaten || '-' },
+      { id: 'provinsi', label: 'Provinsi', colKey: 'provinsi', isAlwaysVisible: false, getValue: (s: Santri) => s.provinsi || '-' },
+      { id: 'jarakRumah', label: 'Jarak (km)', colKey: 'jarakRumah', isAlwaysVisible: false, getValue: (s: Santri) => s.jarakRumah ? `${s.jarakRumah} km` : '-' },
+      { id: 'noHp', label: 'No HP', colKey: 'noHp', isAlwaysVisible: false, getValue: (s: Santri) => s.noHp || '-' },
+      { id: 'tahunMasuk', label: 'Tahun Masuk', colKey: 'tahunMasuk', isAlwaysVisible: false, getValue: (s: Santri) => s.tahunMasuk || '-' },
+      { id: 'tanggalMasuk', label: 'Tgl Masuk', colKey: 'tanggalMasuk', isAlwaysVisible: false, getValue: (s: Santri) => formatDateDDMMYYYY(s.tanggalMasuk) || '-' },
+      { id: 'tanggalKeluar', label: 'Tgl Keluar', colKey: 'tanggalKeluar', isAlwaysVisible: false, getValue: (s: Santri) => formatDateDDMMYYYY(s.tanggalKeluar) || '-' },
+      { id: 'statusKeanggotaan', label: 'Status Anggota', colKey: 'statusKeanggotaan', isAlwaysVisible: false, getValue: (s: Santri) => s.statusKeanggotaan || 'Aktif' },
+      { id: 'statusEmis', label: 'Status EMIS', colKey: 'statusEmis', isAlwaysVisible: false, getValue: (s: Santri) => s.statusEmis || 'Belum' },
+      { id: 'statusVerval', label: 'Status Verval', colKey: 'statusVerval', isAlwaysVisible: false, getValue: (s: Santri) => s.statusVerval || 'Belum' },
+      { id: 'asal', label: 'Asal Sekolah', colKey: 'asal', isAlwaysVisible: false, getValue: (s: Santri) => s.asal || '-' },
+      { id: 'catatan', label: 'Catatan', colKey: 'catatan', isAlwaysVisible: false, getValue: (s: Santri) => s.catatan || '-' }
+    ];
+
+    return allExportColumns.filter((col) => col.isAlwaysVisible || shouldShowColumn(col.colKey));
+  };
+
   // Excel Export Handler (XML Format compatible with Excel)
   const handleExportExcel = (customFileName?: string) => {
-    const activeCols: { header: string; getValue: (s: Santri, idx: number) => string }[] = [
-      { header: "No", getValue: (_, idx) => String(idx + 1) },
-      { header: "Nama Lengkap", getValue: (s) => s.nama },
-    ];
-    if (shouldShowColumn("nis")) activeCols.push({ header: "NIS", getValue: (s) => s.nis || "-" });
-    if (shouldShowColumn("statusDomisili")) activeCols.push({ header: "Status Domisili", getValue: (s) => s.statusDomisili || "Muqim" });
-    if (shouldShowColumn("kamar")) activeCols.push({ header: "Kamar", getValue: (s) => getKamarFormat(s) || "Belum Mendapatkan Kamar" });
-    if (shouldShowColumn("nomorLemari")) activeCols.push({ header: "No. Lemari", getValue: (s) => s.nomorLemari || "-" });
-    if (shouldShowColumn("gender")) activeCols.push({ header: "Gender", getValue: (s) => s.gender || "-" });
-    if (shouldShowColumn("nik")) activeCols.push({ header: "NIK", getValue: (s) => s.nik || "-" });
-    if (shouldShowColumn("nisn")) activeCols.push({ header: "NISN", getValue: (s) => s.nisn || "-" });
-    if (shouldShowColumn("kelas")) activeCols.push({ header: "Kelas", getValue: (s) => s.kelas || "-" });
-    if (shouldShowColumn("statusEmis")) activeCols.push({ header: "Status EMIS", getValue: (s) => s.statusEmis || "Belum" });
-    if (shouldShowColumn("statusKeanggotaan")) activeCols.push({ header: "Status Anggota", getValue: (s) => s.statusKeanggotaan || "Aktif" });
-    if (shouldShowColumn("alamat")) activeCols.push({ header: "Alamat", getValue: (s) => getFormattedAlamat(s) });
-    if (shouldShowColumn("desa")) activeCols.push({ header: "Desa", getValue: (s) => s.desa || "-" });
-    if (shouldShowColumn("kecamatan")) activeCols.push({ header: "Kecamatan", getValue: (s) => s.kecamatan || "-" });
-    if (shouldShowColumn("kabupaten")) activeCols.push({ header: "Kabupaten", getValue: (s) => s.kabupaten || "-" });
-    if (shouldShowColumn("provinsi")) activeCols.push({ header: "Provinsi", getValue: (s) => s.provinsi || "-" });
-    if (shouldShowColumn("noHp")) activeCols.push({ header: "No HP", getValue: (s) => s.noHp || "-" });
-    if (shouldShowColumn("tahunMasuk")) activeCols.push({ header: "Tahun Masuk", getValue: (s) => s.tahunMasuk || "-" });
-    if (shouldShowColumn("pendidikanTerakhir")) activeCols.push({ header: "Pend. Terakhir", getValue: (s) => s.pendidikanTerakhir || "-" });
-    if (shouldShowColumn("pendidikanFormal")) activeCols.push({ header: "Pend. Formal", getValue: (s) => s.pendidikanFormal || "-" });
-    if (shouldShowColumn("catatan")) activeCols.push({ header: "Catatan", getValue: (s) => s.catatan || "-" });
-
-    const headers = activeCols.map((c) => c.header);
-    const rows = sortedSantri.map((s, idx) => activeCols.map((c) => c.getValue(s, idx)));
+    const activeCols = getActiveExportColumns();
+    const headers = ["No", ...activeCols.map((c) => c.label)];
+    const rows = sortedSantri.map((s, idx) => [
+      String(idx + 1),
+      ...activeCols.map((c) => c.getValue(s)),
+    ]);
 
     let xml = `<?xml version="1.0"?>
 <?mso-application progid="Excel.Sheet"?>
@@ -753,13 +746,6 @@ export default function DataKamarSantriSub({
  </Styles>
  <Worksheet ss:Name="Data Kamar Santri">
   <Table>
-   <Column ss:Width="40"/>
-   <Column ss:Width="200"/>
-   <Column ss:Width="90"/>
-   <Column ss:Width="240"/>
-   <Column ss:Width="100"/>
-   <Column ss:Width="160"/>
-   <Column ss:Width="90"/>
    <Row ss:Height="26">`;
 
     headers.forEach((header) => {
@@ -809,6 +795,8 @@ export default function DataKamarSantriSub({
       alert("Tidak ada data santri untuk dicetak.");
       return;
     }
+
+    const activeCols = getActiveExportColumns();
 
     let html = `
       <html>
@@ -921,31 +909,48 @@ export default function DataKamarSantriSub({
         <table>
           <thead>
             <tr>
-              <th style="width: 5%; text-align: center;">No</th>
-              <th style="width: 25%;">Nama Lengkap</th>
-              <th style="width: 9%; text-align: center;">NIS</th>
-              <th style="width: 24%;">Alamat</th>
-              <th style="width: 13%; text-align: center;">Status Domisili</th>
-              <th style="width: 14%;">Kamar</th>
-              <th style="width: 10%; text-align: center;">No. Lemari</th>
+              <th style="width: 28px; text-align: center;">No</th>
+              ${activeCols.map((c) => `<th>${c.label}</th>`).join("")}
             </tr>
           </thead>
           <tbody>
             ${sortedSantri
               .map((s, idx) => {
-                const formattedRoom = getKamarFormat(s);
-                const roomHtml = formattedRoom
-                  ? `<span>${formattedRoom}</span>`
-                  : `<span class="badge-unassigned">Belum Mendapatkan Kamar</span>`;
                 return `
                 <tr>
                   <td class="text-center font-mono">${idx + 1}</td>
-                  <td style="font-weight: 600;">${s.nama}</td>
-                  <td class="text-center font-mono">${s.nis || "-"}</td>
-                  <td>${getFormattedAlamat(s)}</td>
-                  <td class="text-center" style="font-weight: 500;">${s.statusDomisili || "Muqim"}</td>
-                  <td style="font-weight: 500;">${roomHtml}</td>
-                  <td class="text-center font-mono" style="font-weight: 500;">${s.nomorLemari || "-"}</td>
+                  ${activeCols
+                    .map((c) => {
+                      const val = c.getValue(s);
+                      const isMono = [
+                        "nis",
+                        "nism",
+                        "nisn",
+                        "nik",
+                        "noKk",
+                        "noHp",
+                        "nomorLemari",
+                        "rt",
+                        "rw",
+                        "tanggalLahir",
+                        "tanggalMasuk",
+                        "tanggalKeluar",
+                      ].includes(c.id);
+                      const isCentered = [
+                        "gender",
+                        "nomorLemari",
+                        "statusDomisili",
+                        "statusKeanggotaan",
+                        "statusEmis",
+                        "statusVerval",
+                        "anakKe",
+                        "dariBersaudara",
+                        "jarakRumah",
+                      ].includes(c.id);
+                      const style = `${isMono ? "font-family: monospace;" : ""} ${isCentered ? "text-align: center;" : ""}`;
+                      return `<td style="${style}">${val}</td>`;
+                    })
+                    .join("")}
                 </tr>
               `;
               })
@@ -1228,25 +1233,50 @@ export default function DataKamarSantriSub({
         )}
 
         {/* Rest of non-sticky columns */}
-        {shouldShowColumn("nis") && renderSortHeader("nis", "NIS", false, "", headerClass, getStyle())}
-        {shouldShowColumn("statusDomisili") && renderSortHeader("statusDomisili", "Status Domisili", false, "", headerClass, getStyle())}
         {shouldShowColumn("kamar") && renderSortHeader("kamar", "Kamar", false, "", headerClass, getStyle())}
         {shouldShowColumn("nomorLemari") && renderSortHeader("nomorLemari", "No. Lemari", false, "", headerClass, getStyle())}
-        {shouldShowColumn("gender") && renderSortHeader("gender", "Gender", false, "", headerClass, getStyle())}
-        {shouldShowColumn("nik") && renderSortHeader("nik", "NIK", false, "", headerClass, getStyle())}
+        {shouldShowColumn("statusDomisili") && renderSortHeader("statusDomisili", "Status Domisili", false, "", headerClass, getStyle())}
+        {shouldShowColumn("nis") && renderSortHeader("nis", "NIS", false, "", headerClass, getStyle())}
+        {shouldShowColumn("nism") && renderSortHeader("nism", "NISM", false, "", headerClass, getStyle())}
         {shouldShowColumn("nisn") && renderSortHeader("nisn", "NISN", false, "", headerClass, getStyle())}
+        {shouldShowColumn("nik") && renderSortHeader("nik", "NIK", false, "", headerClass, getStyle())}
+        {shouldShowColumn("gender") && renderSortHeader("gender", "Gender", false, "", headerClass, getStyle())}
         {shouldShowColumn("kelas") && renderSortHeader("kelas", "Kelas", false, "", headerClass, getStyle())}
-        {shouldShowColumn("statusEmis") && renderSortHeader("statusEmis", "Status EMIS", false, "", headerClass, getStyle())}
-        {shouldShowColumn("statusKeanggotaan") && renderSortHeader("statusKeanggotaan", "Status Anggota", false, "", headerClass, getStyle())}
+        {shouldShowColumn("kelasMhd") && renderSortHeader("kelasMhd", "Kelas MHD", false, "", headerClass, getStyle())}
+        {shouldShowColumn("indukMhd") && renderSortHeader("indukMhd", "Induk MHD", false, "", headerClass, getStyle())}
+        {shouldShowColumn("indukWustho") && renderSortHeader("indukWustho", "Induk Wustho", false, "", headerClass, getStyle())}
+        {shouldShowColumn("indukUlya") && renderSortHeader("indukUlya", "Induk Ulya", false, "", headerClass, getStyle())}
+        {shouldShowColumn("noKk") && renderSortHeader("noKk", "No. KK", false, "", headerClass, getStyle())}
+        {shouldShowColumn("tempatLahir") && renderSortHeader("tempatLahir", "Tempat Lahir", false, "", headerClass, getStyle())}
+        {shouldShowColumn("tanggalLahir") && renderSortHeader("tanggalLahir", "Tanggal Lahir", false, "", headerClass, getStyle())}
+        {shouldShowColumn("pendidikanTerakhir") && renderSortHeader("pendidikanTerakhir", "Pend. Terakhir", false, "", headerClass, getStyle())}
+        {shouldShowColumn("pendidikanFormal") && renderSortHeader("pendidikanFormal", "Pend. Formal", false, "", headerClass, getStyle())}
+        {shouldShowColumn("anakKe") && renderSortHeader("anakKe", "Anak Ke", false, "", headerClass, getStyle())}
+        {shouldShowColumn("dariBersaudara") && renderSortHeader("dariBersaudara", "Jumlah Saudara", false, "", headerClass, getStyle())}
+        {shouldShowColumn("namaAyah") && renderSortHeader("namaAyah", "Nama Ayah", false, "", headerClass, getStyle())}
+        {shouldShowColumn("nikAyah") && renderSortHeader("nikAyah", "NIK Ayah", false, "", headerClass, getStyle())}
+        {shouldShowColumn("pekerjaanAyah") && renderSortHeader("pekerjaanAyah", "Pekerjaan Ayah", false, "", headerClass, getStyle())}
+        {shouldShowColumn("pendidikanAyah") && renderSortHeader("pendidikanAyah", "Pendidikan Ayah", false, "", headerClass, getStyle())}
+        {shouldShowColumn("namaIbu") && renderSortHeader("namaIbu", "Nama Ibu", false, "", headerClass, getStyle())}
+        {shouldShowColumn("nikIbu") && renderSortHeader("nikIbu", "NIK Ibu", false, "", headerClass, getStyle())}
+        {shouldShowColumn("pekerjaanIbu") && renderSortHeader("pekerjaanIbu", "Pekerjaan Ibu", false, "", headerClass, getStyle())}
+        {shouldShowColumn("pendidikanIbu") && renderSortHeader("pendidikanIbu", "Pendidikan Ibu", false, "", headerClass, getStyle())}
         {shouldShowColumn("alamat") && renderSortHeader("alamat", "Alamat", false, "", headerClass, getStyle())}
+        {shouldShowColumn("rt") && renderSortHeader("rt", "RT", false, "", headerClass, getStyle())}
+        {shouldShowColumn("rw") && renderSortHeader("rw", "RW", false, "", headerClass, getStyle())}
         {shouldShowColumn("desa") && renderSortHeader("desa", "Desa", false, "", headerClass, getStyle())}
         {shouldShowColumn("kecamatan") && renderSortHeader("kecamatan", "Kecamatan", false, "", headerClass, getStyle())}
         {shouldShowColumn("kabupaten") && renderSortHeader("kabupaten", "Kabupaten", false, "", headerClass, getStyle())}
         {shouldShowColumn("provinsi") && renderSortHeader("provinsi", "Provinsi", false, "", headerClass, getStyle())}
+        {shouldShowColumn("jarakRumah") && renderSortHeader("jarakRumah", "Jarak (km)", false, "", headerClass, getStyle())}
         {shouldShowColumn("noHp") && renderSortHeader("noHp", "No HP", false, "", headerClass, getStyle())}
         {shouldShowColumn("tahunMasuk") && renderSortHeader("tahunMasuk", "Tahun Masuk", false, "", headerClass, getStyle())}
-        {shouldShowColumn("pendidikanTerakhir") && renderSortHeader("pendidikanTerakhir", "Pend. Terakhir", false, "", headerClass, getStyle())}
-        {shouldShowColumn("pendidikanFormal") && renderSortHeader("pendidikanFormal", "Pend. Formal", false, "", headerClass, getStyle())}
+        {shouldShowColumn("tanggalMasuk") && renderSortHeader("tanggalMasuk", "Tgl Masuk", false, "", headerClass, getStyle())}
+        {shouldShowColumn("tanggalKeluar") && renderSortHeader("tanggalKeluar", "Tgl Keluar", false, "", headerClass, getStyle())}
+        {shouldShowColumn("statusKeanggotaan") && renderSortHeader("statusKeanggotaan", "Status Anggota", false, "", headerClass, getStyle())}
+        {shouldShowColumn("statusEmis") && renderSortHeader("statusEmis", "Status EMIS", false, "", headerClass, getStyle())}
+        {shouldShowColumn("statusVerval") && renderSortHeader("statusVerval", "Verval", false, "", headerClass, getStyle())}
+        {shouldShowColumn("asal") && renderSortHeader("asal", "Asal Sekolah", false, "", headerClass, getStyle())}
         {shouldShowColumn("catatan") && renderSortHeader("catatan", "Catatan", false, "", headerClass, getStyle())}
       </tr>
     );
@@ -1471,15 +1501,17 @@ export default function DataKamarSantriSub({
             <span className="hidden sm:inline">Filter</span>
           </button>
 
-          {/* Visibilitas Kolom Button */}
+          {/* Tombol Atur Visibilitas Kolom (Sebelah Kanan Tombol Filter - Hanya Ikon, Sudut Lengkung Sempurna) */}
           <button
+            id="btn-column-visibility-modal-trigger"
             type="button"
             onClick={() => setIsColumnModalOpen(true)}
-            className="h-11 px-3.5 sm:px-4 flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-purple-50 hover:text-purple-800 hover:border-purple-200 font-display text-xs font-bold transition-all shrink-0 cursor-pointer shadow-3xs active:scale-95"
-            title="Atur Visibilitas Kolom Tabel Data Kamar"
+            className={`h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-purple-50 hover:text-purple-800 hover:border-purple-200 transition-all shadow-2xs cursor-pointer active:scale-95 ${
+              isSelectionMode ? 'hidden' : 'flex'
+            }`}
+            title="Atur Visibilitas Kolom"
           >
-            <SlidersHorizontal className="h-4 w-4 text-purple-700 shrink-0" />
-            <span className="hidden sm:inline">Visibilitas Kolom</span>
+            <SlidersHorizontal className="h-5 w-5 text-current" />
           </button>
 
           {/* Mode Pilih Data Button */}
@@ -1502,25 +1534,26 @@ export default function DataKamarSantriSub({
             <span className="hidden sm:inline">Pilih Data</span>
           </button>
 
-          {/* Export Button - Far Right, Icon Only */}
+          {/* Export Button - Far Right, Icon Only, Rounded Full */}
           <button
+            id="btn-export-trigger"
             onClick={() => {
               if (isSelectionMode) return;
               setIsExportModalOpen(true);
             }}
             disabled={isSelectionMode}
-            className={`h-11 w-11 flex items-center justify-center rounded-xl transition-all outline-none border shrink-0 ${
+            className={`h-11 w-11 flex items-center justify-center rounded-full transition-all outline-none border shrink-0 ${
               isSelectionMode
                 ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-50"
-                : "bg-purple-50 text-purple-700 border-purple-100 hover:bg-purple-100 cursor-pointer"
+                : "bg-white text-slate-600 border-slate-200 hover:bg-purple-50 hover:text-purple-800 hover:border-purple-200 shadow-2xs hover:scale-105 active:scale-95 cursor-pointer"
             }`}
             title={
               isSelectionMode
                 ? "Matikan mode pilih untuk mengekspor data"
-                : "Ekspor Data Kamar Santri"
+                : "Ekspor Data"
             }
           >
-            <Download className="h-4 w-4" />
+            <Download className="h-5 w-5" />
           </button>
         </div>
 
@@ -3170,7 +3203,6 @@ export default function DataKamarSantriSub({
         visibleColumns={visibleColumns}
         setVisibleColumns={setVisibleColumns}
         defaultColumns={DEFAULT_DATAKAMAR_COLUMNS}
-        availableColumns={AVAILABLE_DATAKAMAR_COLUMNS}
         title="Atur Visibilitas Kolom Data Kamar"
         description="Pilih kolom data santri yang ingin ditampilkan atau disembunyikan pada tabel data kamar santri"
       />
