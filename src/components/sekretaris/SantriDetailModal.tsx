@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 import { Santri, BendaharaRecord, KeamananRecord, Kamar, Kompleks, Kelas, Lembaga, KelompokRombel, RombelAssignment, KategoriRombel } from '../../types';
 import { renderSantriAvatar, isCustomPasFoto, calculateRealtimeAge } from '../SekretarisHelper';
-import { uploadFileToStorage, updateTableRow, getApiUrl, fetchTableData } from '../../lib/api';
+import { uploadFileToStorage, deleteFileFromStorage, updateTableRow, getApiUrl, fetchTableData } from '../../lib/api';
 import { 
   processUploadedFile, 
   getSantriAcademicPlacements, 
@@ -204,6 +204,7 @@ export default function SantriDetailModal({
   const [isUploadingPasFoto, setIsUploadingPasFoto] = useState(false);
   const [isUploadingDoc, setIsUploadingDoc] = useState<Record<string, boolean>>({});
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
+  const [previewDoc, setPreviewDoc] = useState<{ title: string; url: string; defaultName?: string } | null>(null);
   const [isPhotoPreviewOpen, setIsPhotoPreviewOpen] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
@@ -336,6 +337,7 @@ export default function SantriDetailModal({
     if (!localSantri) return;
     setIsUploadingDoc(prev => ({ ...prev, [fileKey]: true }));
     try {
+      const oldUrl = (localSantri as any)[fileKey];
       const { originalUrl } = await processUploadedFile(file);
       const publicUrl = await uploadFileToStorage(originalUrl, file.name, fileKey);
       
@@ -345,9 +347,39 @@ export default function SantriDetailModal({
       
       setLocalSantri(updated);
       onUpdateSantri?.(updated);
+
+      // Auto-cleanup old file from storage if replaced
+      if (oldUrl && oldUrl !== publicUrl) {
+        deleteFileFromStorage(oldUrl).catch(() => {});
+      }
     } catch (err: any) {
       console.error(`Gagal mengunggah berkas ${fileKey}:`, err);
       alert("Gagal mengunggah berkas: " + err.message);
+    } finally {
+      setIsUploadingDoc(prev => ({ ...prev, [fileKey]: false }));
+    }
+  };
+
+  const handleDeleteDoc = async (fileKey: string, docLabel: string) => {
+    if (!localSantri) return;
+    const oldUrl = (localSantri as any)[fileKey];
+    if (!oldUrl) return;
+
+    if (!window.confirm(`Apakah Anda yakin ingin menghapus berkas ${docLabel} santri ${localSantri.nama}?`)) {
+      return;
+    }
+
+    setIsUploadingDoc(prev => ({ ...prev, [fileKey]: true }));
+    try {
+      const updated = await updateTableRow<Santri>('santri', 'smartsantri_santriList', localSantri.id, {
+        [fileKey]: ''
+      });
+      setLocalSantri(updated);
+      onUpdateSantri?.(updated);
+      deleteFileFromStorage(oldUrl).catch(() => {});
+    } catch (err: any) {
+      console.error(`Gagal menghapus berkas ${fileKey}:`, err);
+      alert("Gagal menghapus berkas: " + err.message);
     } finally {
       setIsUploadingDoc(prev => ({ ...prev, [fileKey]: false }));
     }
@@ -979,14 +1011,17 @@ export default function SantriDetailModal({
 
                   <div className="flex flex-col gap-2.5">
                     {[
-                      { label: 'Kartu Keluarga (KK)', key: 'fileKk', url: localSantri.fileKk, icon: FileText, defaultName: 'kartu_keluarga.pdf', accept: '.pdf,image/*' },
-                      { label: 'KTP Orang Tua', key: 'fileKtp', url: localSantri.fileKtp, icon: User, defaultName: 'ktp_orang_tua.pdf', accept: '.pdf,image/*' },
-                      { label: 'Akta Kelahiran', key: 'fileAkta', url: localSantri.fileAkta, icon: FileText, defaultName: 'akta_kelahiran.pdf', accept: '.pdf,image/*' },
-                      { label: 'Ijazah Terakhir', key: 'fileIjazah', url: localSantri.fileIjazah, icon: GraduationCap, defaultName: 'ijazah_terakhir.pdf', accept: '.pdf,image/*' },
-                      { label: 'Pas Foto Santri (3x4)', key: 'filePasFoto', url: isCustomPasFoto(localSantri.filePasFoto) ? localSantri.filePasFoto : '', icon: User, defaultName: 'pas_foto_resmi.jpg', accept: 'image/*' },
+                      { label: 'Kartu Keluarga (KK)', key: 'fileKk', url: localSantri.fileKk, icon: FileText, defaultName: 'kartu_keluarga', accept: '.pdf,image/*' },
+                      { label: 'KTP Orang Tua', key: 'fileKtp', url: localSantri.fileKtp, icon: User, defaultName: 'ktp_orang_tua', accept: '.pdf,image/*' },
+                      { label: 'Akta Kelahiran', key: 'fileAkta', url: localSantri.fileAkta, icon: FileText, defaultName: 'akta_kelahiran', accept: '.pdf,image/*' },
+                      { label: 'Ijazah Terakhir', key: 'fileIjazah', url: localSantri.fileIjazah, icon: GraduationCap, defaultName: 'ijazah_terakhir', accept: '.pdf,image/*' },
+                      { label: 'Pas Foto Santri (3x4)', key: 'filePasFoto', url: isCustomPasFoto(localSantri.filePasFoto) ? localSantri.filePasFoto : '', icon: User, defaultName: 'pas_foto_resmi', accept: 'image/*' },
                     ].map((file, i) => {
                       const isUploaded = Boolean(file.url);
                       const isBusy = isUploadingDoc[file.key];
+                      const isPdf = file.url ? (file.url.toLowerCase().includes('.pdf') || file.url.startsWith('data:application/pdf')) : false;
+                      const ext = isPdf ? 'pdf' : (file.url && file.url.toLowerCase().includes('.png') ? 'png' : 'jpg');
+                      const smartFileName = `${file.defaultName}_${(localSantri.nama || 'santri').replace(/\s+/g, '_')}.${ext}`;
 
                       return (
                         <div key={i} className="flex items-center justify-between p-3 sm:p-3.5 rounded-2xl bg-white border border-slate-200/80 shadow-2xs hover:border-slate-300 transition-all gap-3">
@@ -1000,9 +1035,12 @@ export default function SantriDetailModal({
                               </span>
                               <span className="text-[11px] text-slate-400 font-medium truncate block mt-0.5">
                                 {isUploaded ? (
-                                  <span className="text-emerald-600 font-semibold flex items-center gap-1">
-                                    <CheckCircle className="h-3 w-3 inline" />
-                                    Tersedia ({file.defaultName})
+                                  <span className="text-emerald-600 font-semibold flex items-center gap-1.5">
+                                    <CheckCircle className="h-3 w-3 inline text-emerald-600 shrink-0" />
+                                    <span>Tersedia</span>
+                                    <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase bg-emerald-100 text-emerald-800">
+                                      {ext.toUpperCase()}
+                                    </span>
                                   </span>
                                 ) : (
                                   'Belum diunggah'
@@ -1012,33 +1050,80 @@ export default function SantriDetailModal({
                           </div>
 
                           {isUploaded ? (
-                            <div className="flex items-center gap-1.5 shrink-0">
+                            <div className="flex items-center gap-1 shrink-0">
+                              {/* Lihat / Pratinjau */}
                               <button
                                 type="button"
-                                onClick={() => setPreviewPhotoUrl(getApiUrl(file.url!))}
-                                className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer border-none"
+                                onClick={() => setPreviewDoc({
+                                  title: `${file.label} — ${localSantri.nama}`,
+                                  url: getApiUrl(file.url!),
+                                  defaultName: smartFileName
+                                })}
+                                className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer border-none"
                                 title="Pratinjau Berkas"
                               >
                                 <Eye className="h-3.5 w-3.5" />
                                 <span className="hidden sm:inline">Lihat</span>
                               </button>
+
+                              {/* Ganti / Perbarui Berkas */}
+                              <label
+                                className={`px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer border-none ${
+                                  isBusy ? 'opacity-60 pointer-events-none' : ''
+                                }`}
+                                title="Ganti / Perbarui Berkas"
+                              >
+                                {isBusy ? (
+                                  <div className="h-3 w-3 border-2 border-slate-700 border-t-transparent rounded-full animate-spin"></div>
+                                ) : (
+                                  <Upload className="h-3.5 w-3.5 text-slate-600" />
+                                )}
+                                <span className="hidden sm:inline">{isBusy ? 'Menyimpan...' : 'Ganti'}</span>
+                                <input
+                                  type="file"
+                                  accept={file.accept}
+                                  className="hidden"
+                                  disabled={isBusy}
+                                  onClick={(e) => {
+                                    (e.target as HTMLInputElement).value = '';
+                                  }}
+                                  onChange={(e) => {
+                                    if (e.target.files && e.target.files[0]) {
+                                      handleUploadDoc(file.key, e.target.files[0]);
+                                    }
+                                  }}
+                                />
+                              </label>
+
+                              {/* Unduh Berkas */}
                               <button
                                 type="button"
                                 onClick={() => {
                                   if (file.url) {
                                     const link = document.createElement('a');
                                     link.href = getApiUrl(file.url);
-                                    link.download = file.defaultName;
+                                    link.download = smartFileName;
                                     document.body.appendChild(link);
                                     link.click();
                                     document.body.removeChild(link);
                                   }
                                 }}
-                                className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer border-none"
+                                className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer border-none"
                                 title="Unduh Berkas"
                               >
                                 <Download className="h-3.5 w-3.5" />
                                 <span className="hidden sm:inline">Unduh</span>
+                              </button>
+
+                              {/* Hapus Berkas */}
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteDoc(file.key, file.label)}
+                                disabled={isBusy}
+                                className="p-1.5 rounded-xl text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition-colors cursor-pointer border-none disabled:opacity-50"
+                                title={`Hapus ${file.label}`}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
                               </button>
                             </div>
                           ) : (
@@ -1046,7 +1131,7 @@ export default function SantriDetailModal({
                               {isBusy ? (
                                 <>
                                   <div className="h-3 w-3 border-2 border-slate-700 border-t-transparent rounded-full animate-spin"></div>
-                                  <span>Uploading...</span>
+                                  <span>Mengunggah...</span>
                                 </>
                               ) : (
                                 <>
@@ -1662,52 +1747,64 @@ export default function SantriDetailModal({
 
       {/* Photo & Document Preview Overlay */}
       <AnimatePresence>
-        {previewPhotoUrl && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 p-4">
-            <div className="absolute inset-0" onClick={() => setPreviewPhotoUrl(null)} />
+        {(previewDoc || previewPhotoUrl) && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-5">
+            <div className="absolute inset-0" onClick={() => { setPreviewPhotoUrl(null); setPreviewDoc(null); }} />
             <motion.div
               initial={{ scale: 0.98, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.98, opacity: 0 }}
               transition={{ duration: 0.05, ease: 'linear' }}
-              className="relative max-w-lg w-full bg-white p-5 rounded-3xl shadow-2xl border border-slate-100 z-10 flex flex-col items-center"
+              className="relative max-w-3xl w-full bg-white p-4 sm:p-6 rounded-3xl shadow-2xl border border-slate-100 z-10 flex flex-col items-center max-h-[90vh]"
             >
               <button
-                onClick={() => setPreviewPhotoUrl(null)}
-                className="absolute top-3 right-3 bg-slate-100 hover:bg-slate-200 text-slate-700 p-1.5 rounded-full transition-colors cursor-pointer"
+                onClick={() => { setPreviewPhotoUrl(null); setPreviewDoc(null); }}
+                className="absolute top-3.5 right-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 p-1.5 rounded-full transition-colors cursor-pointer"
                 title="Tutup Pratinjau"
               >
                 <X className="h-4 w-4" />
               </button>
-              <h3 className="text-sm font-extrabold text-slate-800 mb-3 uppercase tracking-wide flex items-center gap-2">
-                <FileText className="h-4 w-4 text-emerald-600" />
-                Pratinjau Berkas
+              <h3 className="text-sm font-extrabold text-slate-800 mb-3 uppercase tracking-wide flex items-center gap-2 self-start truncate pr-8">
+                <FileText className="h-4 w-4 text-emerald-600 shrink-0" />
+                <span className="truncate">{previewDoc?.title || 'Pratinjau Berkas'}</span>
               </h3>
               
-              <div className="w-full rounded-2xl overflow-hidden border border-slate-200 bg-slate-50 flex items-center justify-center min-h-[200px] max-h-[60vh] p-2">
-                {previewPhotoUrl.startsWith('data:application/pdf') || previewPhotoUrl.endsWith('.pdf') ? (
-                  <iframe 
-                    src={previewPhotoUrl} 
-                    className="w-full h-[350px] rounded-xl border-none" 
-                    title="Pratinjau PDF"
-                  />
-                ) : (
-                  <img 
-                    src={previewPhotoUrl} 
-                    className="max-h-[350px] w-auto max-w-full object-contain rounded-xl shadow-xs" 
-                    alt="Pratinjau Berkas" 
-                    referrerPolicy="no-referrer" 
-                  />
-                )}
+              <div className="w-full rounded-2xl overflow-hidden border border-slate-200 bg-slate-50 flex items-center justify-center h-[55vh] sm:h-[65vh] p-1">
+                {(() => {
+                  const url = previewDoc?.url || previewPhotoUrl || '';
+                  const isPdf = url.toLowerCase().includes('.pdf') || url.startsWith('data:application/pdf');
+                  if (isPdf) {
+                    return (
+                      <iframe 
+                        src={url} 
+                        className="w-full h-full rounded-xl border-none bg-white" 
+                        title="Pratinjau PDF"
+                      />
+                    );
+                  }
+                  return (
+                    <img 
+                      src={url} 
+                      className="max-h-full w-auto max-w-full object-contain rounded-xl shadow-xs" 
+                      alt="Pratinjau Berkas" 
+                      referrerPolicy="no-referrer" 
+                    />
+                  );
+                })()}
               </div>
 
               <div className="flex items-center gap-3 mt-4 w-full justify-end">
                 <button
                   type="button"
                   onClick={() => {
+                    const url = previewDoc?.url || previewPhotoUrl || '';
+                    if (!url) return;
+                    const isPdf = url.toLowerCase().includes('.pdf') || url.startsWith('data:application/pdf');
+                    const ext = isPdf ? 'pdf' : (url.toLowerCase().includes('.png') ? 'png' : 'jpg');
+                    const dlName = previewDoc?.defaultName || `berkas_${(localSantri?.nama || 'santri').replace(/\s+/g, '_')}.${ext}`;
                     const link = document.createElement('a');
-                    link.href = previewPhotoUrl;
-                    link.download = 'berkas_santri';
+                    link.href = url;
+                    link.download = dlName;
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);
@@ -1719,7 +1816,7 @@ export default function SantriDetailModal({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setPreviewPhotoUrl(null)}
+                  onClick={() => { setPreviewPhotoUrl(null); setPreviewDoc(null); }}
                   className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
                 >
                   Tutup

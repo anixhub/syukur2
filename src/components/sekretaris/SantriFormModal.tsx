@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   X, ChevronLeft, ChevronRight, Upload, Trash2, UserPlus, 
-  FileText, User, GraduationCap, CheckCircle2, Eye, AlertTriangle, AlertCircle, Sparkles, RotateCcw, Lock
+  FileText, User, GraduationCap, CheckCircle2, Eye, AlertTriangle, AlertCircle, Sparkles, RotateCcw, Lock, Download
 } from 'lucide-react';
 import { Santri, Lembaga, Kelas, isDefaultClass, isCalonClass } from '../../types';
 import { 
@@ -12,7 +12,7 @@ import {
 } from '../SekretarisHelper';
 import { BirthDatePicker } from './BirthDatePicker';
 import { SearchableSelect } from './SearchableSelect';
-import { uploadFileToStorage, fetchTableData } from '../../lib/api';
+import { uploadFileToStorage, fetchTableData, getApiUrl } from '../../lib/api';
 import { formatBigDigit, processUploadedFile, parseCatatanInvalid, formatCatatanWithInvalid, parseCatatanInvalidParts, formatCatatanParts, isMatchLembagaStrict, getDefaultCalonClassName } from '../../lib/utils';
 
 function escapeHtml(str: string): string {
@@ -980,12 +980,24 @@ export default function SantriFormModal({
           editingSantri.filePasFoto !== PUTRA_AVATAR && 
           editingSantri.filePasFoto !== PUTRI_AVATAR;
 
+        const getCleanDocName = (url?: string, defaultBase = 'dokumen'): string => {
+          if (!url) return '';
+          const isPdf = url.toLowerCase().includes('.pdf') || url.startsWith('data:application/pdf');
+          const isPng = url.toLowerCase().includes('.png');
+          const ext = isPdf ? 'pdf' : (isPng ? 'png' : 'jpg');
+          if (url.includes('/uploads/')) {
+            const raw = url.split('/').pop()?.split('?')[0];
+            if (raw) return raw;
+          }
+          return `${defaultBase}.${ext}`;
+        };
+
         setFileNames({
-          fileKk: editingSantri.fileKk ? 'kartu_keluarga.pdf' : '',
-          fileKtp: editingSantri.fileKtp ? 'ktp_santri.pdf' : '',
-          fileAkta: editingSantri.fileAkta ? 'akta_kelahiran.pdf' : '',
-          fileIjazah: editingSantri.fileIjazah ? 'ijazah.pdf' : '',
-          filePasFoto: hasCustomPasFoto ? 'pas_foto.jpg' : ''
+          fileKk: getCleanDocName(editingSantri.fileKk, 'kartu_keluarga'),
+          fileKtp: getCleanDocName(editingSantri.fileKtp, 'ktp_santri'),
+          fileAkta: getCleanDocName(editingSantri.fileAkta, 'akta_kelahiran'),
+          fileIjazah: getCleanDocName(editingSantri.fileIjazah, 'ijazah'),
+          filePasFoto: hasCustomPasFoto ? getCleanDocName(editingSantri.filePasFoto, 'pas_foto') : ''
         });
       } else {
         let defaultGender: 'Putra' | 'Putri' | '' = '';
@@ -2594,28 +2606,77 @@ export default function SantriFormModal({
                                   <button
                                     type="button"
                                     onClick={() => setPreviewFile({ name: doc.title, url: fileUrl })}
-                                    className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer border-none"
+                                    className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer border-none"
                                     title="Pratinjau Berkas"
                                   >
                                     <Eye className="h-3.5 w-3.5" />
                                     <span className="hidden sm:inline">Lihat</span>
                                   </button>
+
+                                  {/* Ganti Berkas */}
+                                  <label
+                                    className={`px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer border-none ${
+                                      isCompressing[doc.key] ? 'opacity-60 pointer-events-none' : ''
+                                    }`}
+                                    title="Ganti Berkas"
+                                  >
+                                    {isCompressing[doc.key] ? (
+                                      <div className="h-3 w-3 border-2 border-slate-700 border-t-transparent rounded-full animate-spin"></div>
+                                    ) : (
+                                      <Upload className="h-3.5 w-3.5 text-slate-600" />
+                                    )}
+                                    <span className="hidden sm:inline">{isCompressing[doc.key] ? 'Memproses...' : 'Ganti'}</span>
+                                    <input
+                                      type="file"
+                                      accept={doc.accept}
+                                      className="hidden"
+                                      disabled={isCompressing[doc.key]}
+                                      onClick={(e) => {
+                                        (e.target as HTMLInputElement).value = '';
+                                      }}
+                                      onChange={(e) => {
+                                        if (e.target.files && e.target.files[0]) {
+                                          const file = e.target.files[0];
+                                          setIsCompressing(prev => ({ ...prev, [doc.key]: true }));
+                                          processUploadedFile(file)
+                                            .then(async ({ originalUrl }) => {
+                                              const publicUrl = await uploadFileToStorage(originalUrl, file.name, doc.key);
+                                              setForm(f => ({ ...f, [doc.key]: publicUrl }));
+                                              setFileNames(prev => ({ ...prev, [doc.key]: file.name }));
+                                            })
+                                            .catch((err: any) => {
+                                              console.error("Error processing document:", err);
+                                              alert("Gagal memproses berkas: " + err.message);
+                                            })
+                                            .finally(() => {
+                                              setIsCompressing(prev => ({ ...prev, [doc.key]: false }));
+                                            });
+                                        }
+                                        e.target.value = '';
+                                      }}
+                                    />
+                                  </label>
+
                                   <button
                                     type="button"
                                     onClick={() => {
+                                      const isPdf = fileUrl.toLowerCase().includes('.pdf') || fileUrl.startsWith('data:application/pdf');
+                                      const ext = isPdf ? 'pdf' : (fileUrl.toLowerCase().includes('.png') ? 'png' : 'jpg');
+                                      const dlName = fileName || `${doc.key}_${(form.nama || 'santri').replace(/\s+/g, '_')}.${ext}`;
                                       const link = document.createElement('a');
-                                      link.href = fileUrl;
-                                      link.download = fileName || `${doc.key}.png`;
+                                      link.href = getApiUrl(fileUrl);
+                                      link.download = dlName;
                                       document.body.appendChild(link);
                                       link.click();
                                       document.body.removeChild(link);
                                     }}
-                                    className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer border-none"
+                                    className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer border-none"
                                     title="Unduh Berkas"
                                   >
-                                    <Upload className="h-3.5 w-3.5 rotate-180" />
+                                    <Download className="h-3.5 w-3.5" />
                                     <span className="hidden sm:inline">Unduh</span>
                                   </button>
+
                                   <button
                                     type="button"
                                     onClick={() => {
@@ -2651,10 +2712,8 @@ export default function SantriFormModal({
                                         const file = e.target.files[0];
                                         setIsCompressing(prev => ({ ...prev, [doc.key]: true }));
                                         
-                                        // Process file with 5MB threshold logic
                                         processUploadedFile(file)
-                                          .then(async ({ originalUrl, thumbnailUrl }) => {
-                                            // Upload original file to storage
+                                          .then(async ({ originalUrl }) => {
                                             const publicUrl = await uploadFileToStorage(originalUrl, file.name, doc.key);
                                             setForm(f => ({ ...f, [doc.key]: publicUrl }));
                                             setFileNames(prev => ({ ...prev, [doc.key]: file.name }));
@@ -2817,23 +2876,60 @@ export default function SantriFormModal({
               <p className="text-white font-bold text-lg mb-4 text-center tracking-wide">{previewFile.name}</p>
               <div className="relative w-full aspect-[4/3] sm:aspect-[16/10] bg-slate-900 rounded-2xl overflow-hidden border border-white/10 flex items-center justify-center shadow-2xl">
                 {previewFile.url ? (
-                  <img
-                    src={previewFile.url}
-                    alt={previewFile.name}
-                    className="max-w-full max-h-full object-contain"
-                    referrerPolicy="no-referrer"
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none';
-                      const fallback = document.getElementById('preview-doc-fallback');
-                      if (fallback) fallback.classList.remove('hidden');
-                    }}
-                  />
+                  (previewFile.url.toLowerCase().includes('.pdf') || previewFile.url.startsWith('data:application/pdf')) ? (
+                    <iframe
+                      src={getApiUrl(previewFile.url)}
+                      className="w-full h-full border-none rounded-xl bg-white"
+                      title={`Pratinjau ${previewFile.name}`}
+                    />
+                  ) : (
+                    <img
+                      src={getApiUrl(previewFile.url)}
+                      alt={previewFile.name}
+                      className="max-w-full max-h-full object-contain"
+                      referrerPolicy="no-referrer"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        const fallback = document.getElementById('preview-doc-fallback');
+                        if (fallback) fallback.classList.remove('hidden');
+                      }}
+                    />
+                  )
                 ) : null}
                 <div id="preview-doc-fallback" className="hidden flex flex-col items-center text-slate-400 p-8 text-center">
                   <FileText className="h-16 w-16 text-emerald-500 mb-3 animate-pulse" />
                   <p className="font-bold text-slate-200 text-sm">Pratinjau Dokumen {previewFile.name}</p>
                   <p className="text-xs text-slate-400 mt-1 max-w-md">Dokumen berhasil diunggah dengan aman. Sistem verifikasi Sekretaris Pondok Pesantren telah memvalidasi berkas ini.</p>
                 </div>
+              </div>
+              <div className="flex items-center gap-3 mt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (previewFile.url) {
+                      const isPdf = previewFile.url.toLowerCase().includes('.pdf') || previewFile.url.startsWith('data:application/pdf');
+                      const ext = isPdf ? 'pdf' : (previewFile.url.toLowerCase().includes('.png') ? 'png' : 'jpg');
+                      const dlName = `${previewFile.name.replace(/\s+/g, '_')}.${ext}`;
+                      const link = document.createElement('a');
+                      link.href = getApiUrl(previewFile.url);
+                      link.download = dlName;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                    }
+                  }}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Unduh Berkas</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewFile(null)}
+                  className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Tutup
+                </button>
               </div>
             </div>
           </div>

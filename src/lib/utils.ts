@@ -1203,19 +1203,33 @@ export function demoteSantriToCalonPesertaDidik(
 }
 
 // Smart file reader & image processor for documents and photos
-// Threshold: 5 MB (5 * 1024 * 1024 bytes)
+// Threshold: 5 MB (5 * 1024 * 1024 bytes), Max allowed: 20 MB
 const FIVE_MB = 5 * 1024 * 1024;
+const TWENTY_MB = 20 * 1024 * 1024;
 
 export function processUploadedFile(file: File): Promise<{ originalUrl: string; thumbnailUrl: string }> {
   return new Promise((resolve, reject) => {
-    // Non-image files (like PDF)
-    if (!file.type.startsWith('image/')) {
+    if (!file) {
+      return reject(new Error("Tidak ada berkas yang dipilih."));
+    }
+
+    if (file.size > TWENTY_MB) {
+      return reject(new Error(`Ukuran berkas (${(file.size / (1024 * 1024)).toFixed(1)} MB) melebihi batas maksimal 20 MB.`));
+    }
+
+    const isImage = file.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|bmp|svg)$/i.test(file.name);
+
+    // Non-image files (like PDF documents)
+    if (!isImage) {
       const reader = new FileReader();
       reader.onload = () => {
-        const url = reader.result as string;
+        let url = reader.result as string;
+        if (file.name.toLowerCase().endsWith('.pdf') && url.startsWith('data:application/octet-stream;')) {
+          url = url.replace('data:application/octet-stream;', 'data:application/pdf;');
+        }
         resolve({ originalUrl: url, thumbnailUrl: url });
       };
-      reader.onerror = (err) => reject(err);
+      reader.onerror = () => reject(new Error("Gagal membaca berkas dari perangkat."));
       reader.readAsDataURL(file);
       return;
     }
@@ -1226,7 +1240,7 @@ export function processUploadedFile(file: File): Promise<{ originalUrl: string; 
       img.onload = () => {
         const rawBase64 = event.target?.result as string;
 
-        // 1. Generate Thumbnail (always optimized for fast browser profile loading, e.g. max 400x400)
+        // 1. Generate Thumbnail (always optimized for fast browser profile loading, max 400x400)
         const thumbCanvas = document.createElement('canvas');
         let tW = img.width;
         let tH = img.height;
@@ -1248,26 +1262,24 @@ export function processUploadedFile(file: File): Promise<{ originalUrl: string; 
         let thumbnailUrl = rawBase64;
         if (tCtx) {
           tCtx.drawImage(img, 0, 0, tW, tH);
-          thumbnailUrl = thumbCanvas.toDataURL('image/jpeg', 0.80);
+          thumbnailUrl = thumbCanvas.toDataURL('image/jpeg', 0.82);
         }
 
-        // 2. Generate Original file URL (No compression if < 5MB, light compression if >= 5MB)
-        if (file.size < FIVE_MB) {
-          // Keep raw original without quality degradation
+        // 2. Generate Original file URL (keep uncompressed if < 3MB & <= 2560px, smart light compression if larger)
+        const maxDim = 2800; // Optimal ceiling for documents: crisp text yet lightweight
+        if (file.size < 3 * 1024 * 1024 && img.width <= maxDim && img.height <= maxDim) {
           resolve({ originalUrl: rawBase64, thumbnailUrl });
         } else {
-          // Light compression so file becomes < 5MB while preserving full clarity
           const origCanvas = document.createElement('canvas');
           let oW = img.width;
           let oH = img.height;
-          const maxOrigDimension = 3840; // 4K max ceiling
-          if (oW > maxOrigDimension || oH > maxOrigDimension) {
+          if (oW > maxDim || oH > maxDim) {
             if (oW > oH) {
-              oH = Math.round((oH * maxOrigDimension) / oW);
-              oW = maxOrigDimension;
+              oH = Math.round((oH * maxDim) / oW);
+              oW = maxDim;
             } else {
-              oW = Math.round((oW * maxOrigDimension) / oH);
-              oH = maxOrigDimension;
+              oW = Math.round((oW * maxDim) / oH);
+              oH = maxDim;
             }
           }
           origCanvas.width = oW;
@@ -1276,17 +1288,17 @@ export function processUploadedFile(file: File): Promise<{ originalUrl: string; 
           if (oCtx) {
             oCtx.drawImage(img, 0, 0, oW, oH);
             const mime = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
-            const compressedOriginal = origCanvas.toDataURL(mime, 0.92); // Light high-quality compression
+            const compressedOriginal = origCanvas.toDataURL(mime, 0.90);
             resolve({ originalUrl: compressedOriginal, thumbnailUrl });
           } else {
             resolve({ originalUrl: rawBase64, thumbnailUrl });
           }
         }
       };
-      img.onerror = (err) => reject(err);
+      img.onerror = () => reject(new Error("Format gambar tidak didukung atau berkas rusak."));
       img.src = event.target?.result as string;
     };
-    reader.onerror = (err) => reject(err);
+    reader.onerror = () => reject(new Error("Gagal membaca berkas gambar."));
     reader.readAsDataURL(file);
   });
 }

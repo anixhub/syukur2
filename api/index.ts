@@ -99,8 +99,9 @@ app.use((req, res, next) => {
   next();
 });
 
-// Enable JSON parsing with a 10MB limit for compressed base64 photos
-app.use(express.json({ limit: "10mb" }));
+// Enable JSON and URL-encoded parsing with a 50MB limit for high-resolution document scans & photos
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 // Upload Directory Helper (UPLOAD_DIR env variable with fallback to local public/uploads or Hostinger storage)
 const getUploadDir = (): string => {
@@ -708,6 +709,19 @@ app.post("/api/upload", async (req, res) => {
     const targetFilePath = path.join(targetDir, fileName);
     fs.writeFileSync(targetFilePath, buffer);
 
+    // Also mirror to dist/uploads and public/uploads for instant static serving
+    try {
+      const distTargetDir = path.join(process.cwd(), "dist", "uploads", subFolder);
+      if (!fs.existsSync(distTargetDir)) fs.mkdirSync(distTargetDir, { recursive: true });
+      fs.writeFileSync(path.join(distTargetDir, fileName), buffer);
+    } catch (e) {}
+
+    try {
+      const publicTargetDir = path.join(process.cwd(), "public", "uploads", subFolder);
+      if (!fs.existsSync(publicTargetDir)) fs.mkdirSync(publicTargetDir, { recursive: true });
+      fs.writeFileSync(path.join(publicTargetDir, fileName), buffer);
+    } catch (e) {}
+
     const publicUrl = `/api/uploads/${subFolder}/${fileName}`;
 
     res.json({
@@ -729,9 +743,23 @@ app.get("/api/uploads/:category/:fileName", (req, res) => {
     const safeFileName = (fileName || '').replace(/[^a-zA-Z0-9_.-]/g, '_');
 
     const uploadBase = getUploadDir();
-    const targetFilePath = path.join(uploadBase, safeCategory, safeFileName);
+    let targetFilePath = path.join(uploadBase, safeCategory, safeFileName);
+
+    if (!fs.existsSync(targetFilePath)) {
+      const altDist = path.join(process.cwd(), "dist", "uploads", safeCategory, safeFileName);
+      if (fs.existsSync(altDist)) {
+        targetFilePath = altDist;
+      } else {
+        const altPublic = path.join(process.cwd(), "public", "uploads", safeCategory, safeFileName);
+        if (fs.existsSync(altPublic)) {
+          targetFilePath = altPublic;
+        }
+      }
+    }
 
     if (fs.existsSync(targetFilePath)) {
+      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+      res.setHeader("Cache-Control", "public, max-age=86400");
       return res.sendFile(targetFilePath);
     }
 
@@ -763,6 +791,16 @@ function deleteFileByUrlOrPath(fileUrlOrPath: string) {
     if (resolvedFullPath.startsWith(resolvedUploadBase) && fs.existsSync(resolvedFullPath)) {
       fs.unlinkSync(resolvedFullPath);
       console.log(">>> Berhasil auto-delete file dari storage:", resolvedFullPath);
+    }
+
+    // Also remove from dist and public uploads mirror
+    const distFullPath = path.join(process.cwd(), "dist", "uploads", cleanPath);
+    if (fs.existsSync(distFullPath)) {
+      try { fs.unlinkSync(distFullPath); } catch (e) {}
+    }
+    const publicFullPath = path.join(process.cwd(), "public", "uploads", cleanPath);
+    if (fs.existsSync(publicFullPath)) {
+      try { fs.unlinkSync(publicFullPath); } catch (e) {}
     }
   } catch (err: any) {
     console.warn("Gagal auto-delete file dari storage:", err.message);

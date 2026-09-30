@@ -89,6 +89,7 @@ export default function KamarSub({
   // Column Visibility States for Room Detail Table
   const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isExportKompleksModalOpen, setIsExportKompleksModalOpen] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(() => {
     try {
       const saved = localStorage.getItem('smartsantri_kamar_detail_visible_columns');
@@ -1325,8 +1326,118 @@ export default function KamarSub({
     printWindow.document.close();
   };
 
-  // Handle printing PDF for selected Kompleks
-  const handlePrintKompleksPDF = () => {
+  // Export Excel for selected Kompleks
+  const handleExportExcelKompleks = (customFileName?: string) => {
+    if (!selectedKompleks) return;
+    const roomsInKom = activeRooms;
+
+    if (roomsInKom.length === 0) {
+      showToast(`Tidak ada kamar terdaftar pada ${selectedKompleks.nama}.`, 'error');
+      return;
+    }
+
+    const totalStudents = roomsInKom.reduce((acc, r) => acc + getMembersOfRoom(r.nama).length, 0);
+    if (totalStudents === 0) {
+      showToast(`Tidak ada data santri pada ${selectedKompleks.nama} untuk diekspor.`, 'error');
+      return;
+    }
+
+    const activeCols = getActiveKamarExportColumns();
+    const headers = ['No', 'Nama Kamar', ...activeCols.map((c) => c.label)];
+
+    const rows: string[][] = [];
+    let count = 0;
+    roomsInKom.forEach((rm) => {
+      const members = getMembersOfRoom(rm.nama);
+      members.forEach((s) => {
+        count++;
+        rows.push([
+          String(count),
+          rm.nama,
+          ...activeCols.map((c) => c.getValue(s))
+        ]);
+      });
+    });
+
+    let xml = `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Center" ss:WrapText="1"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+   </Borders>
+   <Font ss:FontName="Segoe UI" x:Family="Swiss" ss:Size="10" ss:Color="#334155"/>
+   <Interior/>
+   <NumberFormat/>
+   <Protection/>
+  </Style>
+  <Style ss:ID="Header">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#7C3AED"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#7C3AED"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#7C3AED"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#7C3AED"/>
+   </Borders>
+   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#7C3AED" ss:Pattern="Solid"/>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="Data Kompleks">
+  <Table>
+   <Row ss:Height="26">`;
+
+    headers.forEach((header) => {
+      xml += `\n    <Cell ss:StyleID="Header"><Data ss:Type="String">${header}</Data></Cell>`;
+    });
+    xml += `\n   </Row>`;
+
+    rows.forEach((row) => {
+      xml += `\n   <Row ss:Height="20">`;
+      row.forEach((val) => {
+        const cleanVal = String(val || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&apos;');
+        xml += `\n    <Cell><Data ss:Type="String">${cleanVal}</Data></Cell>`;
+      });
+      xml += `\n   </Row>`;
+    });
+
+    xml += `\n  </Table>
+ </Worksheet>
+</Workbook>`;
+
+    const blob = new Blob([xml], {
+      type: 'application/vnd.ms-excel;charset=utf-8;',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const dateStr = new Date().toISOString().split('T')[0];
+    const defaultName = `Data_Kompleks_${selectedKompleks.nama.replace(/\s+/g, '_')}_${dateStr}.xls`;
+    const finalName = customFileName
+      ? (customFileName.toLowerCase().endsWith('.xls') || customFileName.toLowerCase().endsWith('.xlsx') ? customFileName : `${customFileName}.xls`)
+      : defaultName;
+    link.setAttribute('download', finalName);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Handle printing PDF for selected Kompleks (formatted based on visible columns)
+  const handlePrintKompleksPDF = (customFileName?: string) => {
     if (!selectedKompleks) return;
     const profile = getPesantrenProfile();
     const roomsInKom = activeRooms;
@@ -1348,56 +1459,60 @@ export default function KamarSub({
       year: 'numeric'
     });
 
+    const activeCols = getActiveKamarExportColumns();
+
     let tablesHtml = '';
     roomsInKom.forEach(rm => {
       const members = getMembersOfRoom(rm.nama);
       const rowsHtml = members.map((s, idx) => `
         <tr>
-          <td style="text-align: center;">${idx + 1}</td>
-          <td style="font-family: monospace;">${s.nis || '-'}</td>
-          <td><strong>${s.nama}</strong></td>
-          <td style="text-align: center; font-family: monospace;">${s.nomorLemari || '-'}</td>
-          <td style="text-align: center;">${s.statusKeanggotaan || 'Muqim'}</td>
+          <td style="text-align: center; font-family: monospace;">${idx + 1}</td>
+          ${activeCols.map((c) => {
+            const val = c.getValue(s);
+            const isMono = ['nis', 'nism', 'nisn', 'nik', 'noHp', 'nomorLemari', 'rt', 'rw', 'tanggalLahir', 'tanggalMasuk', 'tanggalKeluar'].includes(c.id);
+            const isCentered = ['gender', 'nomorLemari', 'statusDomisili', 'statusEmis', 'statusVerval', 'statusKeanggotaan'].includes(c.id);
+            return `<td style="${isMono ? 'font-family: monospace;' : ''} ${isCentered ? 'text-align: center;' : ''}">${c.id === 'nama' ? `<strong>${val}</strong>` : val}</td>`;
+          }).join('')}
         </tr>
       `).join('');
 
       tablesHtml += `
-        <div style="margin-top: 15px; margin-bottom: 5px; font-weight: bold; font-size: 11px; color: #7e22ce;">
+        <div style="margin-top: 18px; margin-bottom: 6px; font-weight: bold; font-size: 11px; color: #7e22ce;">
           Kamar: ${rm.nama} (Ketua: ${rm.ketuaKamar || '-'} | Kapasitas: ${rm.kapasitas || 15} Bed | Total: ${members.length} Santri)
         </div>
         <table>
           <thead>
             <tr>
               <th style="width: 30px; text-align: center;">No</th>
-              <th style="width: 100px;">NIS</th>
-              <th>Nama Santri</th>
-              <th style="width: 90px; text-align: center;">No. Lemari</th>
-              <th style="width: 80px; text-align: center;">Status</th>
+              ${activeCols.map((c) => `<th>${c.label}</th>`).join('')}
             </tr>
           </thead>
           <tbody>
-            ${members.length > 0 ? rowsHtml : '<tr><td colspan="5" style="text-align: center; color: #94a3b8; font-style: italic;">Belum ada santri</td></tr>'}
+            ${members.length > 0 ? rowsHtml : `<tr><td colspan="${activeCols.length + 1}" style="text-align: center; color: #94a3b8; font-style: italic;">Belum ada santri di kamar ini</td></tr>`}
           </tbody>
         </table>
       `;
     });
 
+    const docTitle = customFileName ? customFileName.replace(/\.pdf$/i, '') : `DAFTAR SELURUH KAMAR KOMPLEKS ${selectedKompleks.nama.toUpperCase()}`;
+
     const html = `
       <!DOCTYPE html>
       <html>
       <head>
-        <title>DAFTAR KAMAR KOMPLEKS ${selectedKompleks.nama.toUpperCase()}</title>
+        <title>${docTitle}</title>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
         <style>
-          @page { size: A4 portrait; margin: 15mm; }
+          @page { size: ${activeCols.length > 6 ? 'A4 landscape' : 'A4 portrait'}; margin: 12mm; }
           body { font-family: 'Segoe UI', Arial, sans-serif; color: #1e293b; margin: 0; padding: 10px; font-size: 11px; }
           .header { text-align: center; border-bottom: 2px solid #7e22ce; padding-bottom: 10px; margin-bottom: 15px; }
           .header h1 { margin: 0; font-size: 18px; color: #7e22ce; font-weight: bold; }
           .header p { margin: 3px 0 0; font-size: 11px; color: #64748b; }
           .title { text-align: center; font-size: 14px; font-weight: bold; margin-bottom: 15px; text-transform: uppercase; color: #334155; }
-          .info { margin-bottom: 12px; font-size: 11px; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid #e2e8f0; }
+          .info { margin-bottom: 12px; font-size: 11px; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid #e2e8f0; display: flex; justify-content: space-between; }
           table { width: 100%; border-collapse: collapse; margin-top: 5px; }
           th, td { border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 10px; text-align: left; }
-          th { background-color: #f1f5f9; font-weight: bold; color: #334155; text-transform: uppercase; }
+          th { background-color: #7e22ce !important; color: #ffffff !important; font-weight: bold; text-transform: uppercase; text-align: center; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           tr:nth-child(even) { background-color: #f8fafc; }
           .footer { margin-top: 25px; text-align: right; font-size: 10px; color: #64748b; }
         </style>
@@ -1409,8 +1524,8 @@ export default function KamarSub({
         </div>
         <div class="title">DAFTAR SELURUH KAMAR — KOMPLEKS ${selectedKompleks.nama.toUpperCase()}</div>
         <div class="info">
-          <strong>Gender:</strong> Santri ${selectedGender} &nbsp;|&nbsp; 
-          <strong>Total Kamar:</strong> ${roomsInKom.length} Kamar
+          <div><strong>Kompleks:</strong> ${selectedKompleks.nama} &nbsp;|&nbsp; <strong>Gender:</strong> Santri ${selectedGender}</div>
+          <div><strong>Total Kamar:</strong> ${roomsInKom.length} Kamar &nbsp;|&nbsp; <strong>Total Santri:</strong> ${getMembersOfKompleks(selectedKompleks.id).length} Santri</div>
         </div>
         ${tablesHtml}
         <div class="footer">
@@ -1718,11 +1833,11 @@ export default function KamarSub({
                     {/* Action Buttons Row */}
                     <div className="flex items-center justify-center gap-2 pt-1">
                       <button
-                        onClick={() => handlePrintKompleksPDF()}
-                        className="p-2.5 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition-all cursor-pointer shadow-3xs"
-                        title="Cetak PDF Kompleks"
+                        onClick={() => setIsExportKompleksModalOpen(true)}
+                        className="p-2.5 rounded-full border border-slate-200 bg-white hover:bg-purple-50 hover:text-purple-800 hover:border-purple-200 text-slate-600 shadow-2xs transition-all cursor-pointer hover:scale-105 active:scale-95"
+                        title="Ekspor Data Kompleks"
                       >
-                        <Printer className="w-4 h-4" />
+                        <Download className="w-4 h-4" />
                       </button>
                       {canWriteCurrent && selectedKompleks && (
                         <>
@@ -3765,9 +3880,21 @@ export default function KamarSub({
                     onClick={() => {
                       const kom = menuDropdown.data as Kompleks;
                       setMenuDropdown(null);
+                      setSelectedKompleksId(kom.id);
+                      setIsExportKompleksModalOpen(true);
+                    }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-purple-50 text-purple-700 transition-colors cursor-pointer flex items-center justify-between"
+                  >
+                    <span>Ekspor Data</span>
+                    <Download className="w-3.5 h-3.5 text-purple-600" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      const kom = menuDropdown.data as Kompleks;
+                      setMenuDropdown(null);
                       handleOpenEditKompleks(kom);
                     }}
-                    className="w-full text-left px-3 py-1.5 hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
+                    className="w-full text-left px-3 py-1.5 hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer border-t border-slate-100"
                   >
                     Edit
                   </button>
@@ -4131,6 +4258,20 @@ export default function KamarSub({
           defaultFileName={`Data_Kamar_${activeRoomForDetail.nama.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}`}
           onExportExcel={(fileName) => handleExportExcelKamar(fileName)}
           onPrintPDF={(fileName) => handlePrintPDFKamar(fileName)}
+        />
+      )}
+
+      {/* Modal Ekspor Data Kompleks */}
+      {selectedKompleks && (
+        <ExportModal
+          isOpen={isExportKompleksModalOpen}
+          onClose={() => setIsExportKompleksModalOpen(false)}
+          subTab="kamar"
+          title={`Ekspor Data Kompleks ${selectedKompleks.nama}`}
+          description={`Pilih format dokumen untuk mengunduh Excel (.xls) atau mencetak PDF data seluruh kamar santri di kompleks ${selectedKompleks.nama} sesuai dengan kolom yang ditampilkan.`}
+          defaultFileName={`Data_Kompleks_${selectedKompleks.nama.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}`}
+          onExportExcel={(fileName) => handleExportExcelKompleks(fileName)}
+          onPrintPDF={(fileName) => handlePrintKompleksPDF(fileName)}
         />
       )}
 
