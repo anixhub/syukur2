@@ -121,6 +121,9 @@ export default function KamarSub({
 
   const shouldShowColumn = (colKey: string): boolean => {
     if (colKey === 'nama' || colKey === 'aksi') return true;
+    if (colKey === 'jumlahSaudara' || colKey === 'dariBersaudara') {
+      return visibleColumns['dariBersaudara'] ?? visibleColumns['jumlahSaudara'] ?? false;
+    }
     return visibleColumns[colKey] ?? false;
   };
 
@@ -1096,9 +1099,13 @@ export default function KamarSub({
       { id: 'kelasMhd', label: 'Kelas MHD', colKey: 'kelasMhd', isAlwaysVisible: false, getValue: (s: Santri) => s.kelasMhd || '-' },
       { id: 'indukWustho', label: 'Induk Wustho', colKey: 'indukWustho', isAlwaysVisible: false, getValue: (s: Santri) => s.indukWustho || '-' },
       { id: 'indukMhd', label: 'Induk MHD', colKey: 'indukMhd', isAlwaysVisible: false, getValue: (s: Santri) => s.indukMhd || '-' },
+      { id: 'indukUlya', label: 'Induk Ulya', colKey: 'indukUlya', isAlwaysVisible: false, getValue: (s: Santri) => s.indukUlya || '-' },
+      { id: 'noKk', label: 'No. KK', colKey: 'noKk', isAlwaysVisible: false, getValue: (s: Santri) => s.noKk || '-' },
       { id: 'tempatLahir', label: 'Tempat Lahir', colKey: 'tempatLahir', isAlwaysVisible: false, getValue: (s: Santri) => s.tempatLahir || '-' },
       { id: 'tanggalLahir', label: 'Tanggal Lahir', colKey: 'tanggalLahir', isAlwaysVisible: false, getValue: (s: Santri) => formatDateDDMMYYYY(s.tanggalLahir) || '-' },
-      {id: 'anakKe', label: 'Anak Ke', colKey: 'anakKe', isAlwaysVisible: false, getValue: (s: Santri) => s.anakKe ? String(s.anakKe) : '-' },
+      { id: 'pendidikanTerakhir', label: 'Pend. Terakhir', colKey: 'pendidikanTerakhir', isAlwaysVisible: false, getValue: (s: Santri) => s.pendidikanTerakhir || '-' },
+      { id: 'pendidikanFormal', label: 'Pend. Formal', colKey: 'pendidikanFormal', isAlwaysVisible: false, getValue: (s: Santri) => s.pendidikanFormal || '-' },
+      { id: 'anakKe', label: 'Anak Ke', colKey: 'anakKe', isAlwaysVisible: false, getValue: (s: Santri) => s.anakKe ? String(s.anakKe) : '-' },
       { id: 'jumlahSaudara', label: 'Jumlah Saudara', colKey: 'jumlahSaudara', isAlwaysVisible: false, getValue: (s: Santri) => s.dariBersaudara ? String(s.dariBersaudara) : '-' },
       { id: 'namaAyah', label: 'Nama Ayah', colKey: 'namaAyah', isAlwaysVisible: false, getValue: (s: Santri) => s.namaAyah || '-' },
       { id: 'nikAyah', label: 'NIK Ayah', colKey: 'nikAyah', isAlwaysVisible: false, getValue: (s: Santri) => s.nikAyah || '-' },
@@ -2205,11 +2212,23 @@ export default function KamarSub({
                               {shouldShowColumn('indukMhd') && (
                                 <th className="py-3 px-3.5 w-28 font-mono">Induk MHD</th>
                               )}
+                              {shouldShowColumn('indukUlya') && (
+                                <th className="py-3 px-3.5 w-28 font-mono">Induk Ulya</th>
+                              )}
+                              {shouldShowColumn('noKk') && (
+                                <th className="py-3 px-3.5 w-32 font-mono">No. KK</th>
+                              )}
                               {shouldShowColumn('tempatLahir') && (
                                 <th className="py-3 px-3.5 w-32">Tempat Lahir</th>
                               )}
                               {shouldShowColumn('tanggalLahir') && (
                                 <th className="py-3 px-3.5 w-28 text-center">Tgl Lahir</th>
+                              )}
+                              {shouldShowColumn('pendidikanTerakhir') && (
+                                <th className="py-3 px-3.5 w-32">Pend. Terakhir</th>
+                              )}
+                              {shouldShowColumn('pendidikanFormal') && (
+                                <th className="py-3 px-3.5 w-32">Pend. Formal</th>
                               )}
                               {shouldShowColumn('anakKe') && (
                                 <th className="py-3 px-3.5 w-20 text-center">Anak Ke</th>
@@ -2300,11 +2319,12 @@ export default function KamarSub({
                           <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
                             {(() => {
                               let runningSantriCount = 0;
+                              const activeColsCount = AVAILABLE_KAMAR_DETAIL_COLUMNS.filter(c => shouldShowColumn(c.key)).length;
                               const totalVisibleCols = 
                                 1 /* Nama */ + 
                                 1 /* Aksi */ +
                                 (isSelectionMode ? 1 : 0) +
-                                Object.keys(visibleColumns).filter(k => visibleColumns[k] && k !== 'nama' && k !== 'aksi').length;
+                                activeColsCount;
 
                               return slotNumbers.map(slotNum => {
                                 const slotStr = String(slotNum);
@@ -2426,11 +2446,23 @@ export default function KamarSub({
                                         {shouldShowColumn('indukMhd') && (
                                           <td className="py-3 px-3.5 font-mono text-slate-300 text-[11px]">-</td>
                                         )}
+                                        {shouldShowColumn('indukUlya') && (
+                                          <td className="py-3 px-3.5 font-mono text-slate-300 text-[11px]">-</td>
+                                        )}
+                                        {shouldShowColumn('noKk') && (
+                                          <td className="py-3 px-3.5 font-mono text-slate-300 text-[11px]">-</td>
+                                        )}
                                         {shouldShowColumn('tempatLahir') && (
                                           <td className="py-3 px-3.5 text-slate-300 text-[11px]">-</td>
                                         )}
                                         {shouldShowColumn('tanggalLahir') && (
                                           <td className="py-3 px-3.5 text-center text-slate-300 text-[11px]">-</td>
+                                        )}
+                                        {shouldShowColumn('pendidikanTerakhir') && (
+                                          <td className="py-3 px-3.5 text-slate-300 text-[11px]">-</td>
+                                        )}
+                                        {shouldShowColumn('pendidikanFormal') && (
+                                          <td className="py-3 px-3.5 text-slate-300 text-[11px]">-</td>
                                         )}
                                         {shouldShowColumn('anakKe') && (
                                           <td className="py-3 px-3.5 text-center text-slate-300 text-[11px]">-</td>
@@ -2746,6 +2778,16 @@ export default function KamarSub({
                                                   {s.indukMhd || '-'}
                                                 </td>
                                               )}
+                                              {shouldShowColumn('indukUlya') && (
+                                                <td className="py-3 px-3.5 font-mono text-slate-600 text-[11px]">
+                                                  {s.indukUlya || '-'}
+                                                </td>
+                                              )}
+                                              {shouldShowColumn('noKk') && (
+                                                <td className="py-3 px-3.5 font-mono text-slate-600 text-[11px]">
+                                                  {s.noKk || '-'}
+                                                </td>
+                                              )}
                                               {shouldShowColumn('tempatLahir') && (
                                                 <td className="py-3 px-3.5 text-slate-600 text-[11px]">
                                                   {s.tempatLahir || '-'}
@@ -2754,6 +2796,16 @@ export default function KamarSub({
                                               {shouldShowColumn('tanggalLahir') && (
                                                 <td className="py-3 px-3.5 text-center font-mono text-slate-600 text-[11px]">
                                                   {formatDateDDMMYYYY(s.tanggalLahir) || '-'}
+                                                </td>
+                                              )}
+                                              {shouldShowColumn('pendidikanTerakhir') && (
+                                                <td className="py-3 px-3.5 text-slate-600 text-[11px]">
+                                                  {s.pendidikanTerakhir || '-'}
+                                                </td>
+                                              )}
+                                              {shouldShowColumn('pendidikanFormal') && (
+                                                <td className="py-3 px-3.5 text-slate-600 text-[11px]">
+                                                  {s.pendidikanFormal || '-'}
                                                 </td>
                                               )}
                                               {shouldShowColumn('anakKe') && (

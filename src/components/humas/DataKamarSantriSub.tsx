@@ -40,7 +40,23 @@ import { ExportModal } from "../ExportModal";
 import ColumnVisibilityModal from "../sekretaris/ColumnVisibilityModal";
 import { ALL_COLUMNS } from "../../constants/monitoringColumns";
 
-const DEFAULT_DATAKAMAR_COLUMNS = ["nis", "statusDomisili", "kamar", "nomorLemari", "gender", "kelas", "statusKeanggotaan", "noHp"];
+const DEFAULT_DATAKAMAR_COLUMNS = [
+  "kamar",
+  "nomorLemari",
+  "statusDomisili",
+  "nis",
+  "gender",
+  "kelas",
+  "statusKeanggotaan",
+  "noHp",
+];
+
+const AVAILABLE_DATAKAMAR_COLUMNS = [
+  { key: "kamar", label: "Kamar", description: "Asrama Kamar Santri" },
+  { key: "nomorLemari", label: "No. Lemari", description: "Nomor Lemari Inventaris" },
+  { key: "statusDomisili", label: "Status Domisili", description: "Status Mukim / Kampung" },
+  ...ALL_COLUMNS.filter((c) => c.key !== "kamar" && c.key !== "nomorLemari" && c.key !== "statusDomisili"),
+];
 
 interface DataKamarSantriSubProps {
   santriList: Santri[];
@@ -207,6 +223,9 @@ export default function DataKamarSantriSub({
     ALL_COLUMNS.forEach((col) => {
       initial[col.key] = DEFAULT_DATAKAMAR_COLUMNS.includes(col.key);
     });
+    initial["kamar"] = true;
+    initial["nomorLemari"] = true;
+    initial["statusDomisili"] = true;
     return initial;
   });
 
@@ -220,6 +239,9 @@ export default function DataKamarSantriSub({
 
   const shouldShowColumn = (colKey: string): boolean => {
     if (colKey === "nama") return true;
+    if (colKey === "jumlahSaudara" || colKey === "dariBersaudara") {
+      return visibleColumns["dariBersaudara"] ?? visibleColumns["jumlahSaudara"] ?? false;
+    }
     return visibleColumns[colKey] ?? false;
   };
 
@@ -652,10 +674,10 @@ export default function DataKamarSantriSub({
   const getActiveExportColumns = () => {
     const allExportColumns: { id: string; label: string; colKey: string; isAlwaysVisible: boolean; getValue: (s: Santri) => string }[] = [
       { id: 'nama', label: 'Nama Lengkap', colKey: 'nama', isAlwaysVisible: true, getValue: (s: Santri) => s.nama },
-      { id: 'nis', label: 'NIS', colKey: 'nis', isAlwaysVisible: false, getValue: (s: Santri) => s.nis || '-' },
-      { id: 'statusDomisili', label: 'Status Domisili', colKey: 'statusDomisili', isAlwaysVisible: false, getValue: (s: Santri) => s.statusDomisili || 'Muqim' },
       { id: 'kamar', label: 'Kamar', colKey: 'kamar', isAlwaysVisible: false, getValue: (s: Santri) => getKamarFormat(s) || s.kamar || '-' },
       { id: 'nomorLemari', label: 'No. Lemari', colKey: 'nomorLemari', isAlwaysVisible: false, getValue: (s: Santri) => s.nomorLemari || '-' },
+      { id: 'statusDomisili', label: 'Status Domisili', colKey: 'statusDomisili', isAlwaysVisible: false, getValue: (s: Santri) => s.statusDomisili || 'Muqim' },
+      { id: 'nis', label: 'NIS', colKey: 'nis', isAlwaysVisible: false, getValue: (s: Santri) => s.nis || '-' },
       { id: 'gender', label: 'Gender', colKey: 'gender', isAlwaysVisible: false, getValue: (s: Santri) => s.gender || '-' },
       { id: 'nik', label: 'NIK', colKey: 'nik', isAlwaysVisible: false, getValue: (s: Santri) => s.nik || '-' },
       { id: 'nisn', label: 'NISN', colKey: 'nisn', isAlwaysVisible: false, getValue: (s: Santri) => s.nisn || '-' },
@@ -2102,28 +2124,6 @@ export default function DataKamarSantriSub({
                         </div>
                       </td>
 
-                      {/* NIS Cell */}
-                      {shouldShowColumn("nis") && (
-                        <td className="px-6 py-4 whitespace-nowrap font-mono text-xs font-semibold text-slate-700">
-                          {s.nis || "-"}
-                        </td>
-                      )}
-
-                      {/* Status Domisili Cell */}
-                      {shouldShowColumn("statusDomisili") && (
-                        <td className="px-6 py-4 whitespace-nowrap text-xs">
-                          {s.statusDomisili === "Kampung" ? (
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200/80 font-bold text-[11px]">
-                              Kampung
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200/80 font-bold text-[11px]">
-                              Muqim
-                            </span>
-                          )}
-                        </td>
-                      )}
-
                       {/* Clickable Kamar Cell for Direct Inline Editing */}
                       {shouldShowColumn("kamar") && (
                         <td className="px-6 py-4 whitespace-nowrap text-xs">
@@ -2131,7 +2131,6 @@ export default function DataKamarSantriSub({
                             type="button"
                             onClick={(e) => {
                               if (isSelectionMode) {
-                                // Allow bubbling to tr.onClick for selection
                                 return;
                               }
                               e.stopPropagation();
@@ -2150,7 +2149,6 @@ export default function DataKamarSantriSub({
                                 const isUpward = spaceBelow < popupHeight && spaceAbove > spaceBelow;
 
                                 let top = isUpward ? rect.top - popupHeight - 8 : rect.bottom + 8;
-                                // Ensure top is strictly clamped inside visible screen area
                                 top = Math.max(16, Math.min(top, vh - popupHeight - 16));
 
                                 let left = rect.left;
@@ -2211,7 +2209,7 @@ export default function DataKamarSantriSub({
                             setEditingLemariSantriId(s.id);
                             setEditingLemariValue(s.nomorLemari || "");
                           }}
-                          className="px-6 py-4 whitespace-nowrap font-mono text-xs font-semibold text-slate-700 select-none"
+                          className="px-6 py-4 whitespace-nowrap font-mono text-xs font-semibold text-slate-700 select-none text-center"
                           title={
                             isSelectionMode
                               ? undefined
@@ -2281,7 +2279,50 @@ export default function DataKamarSantriSub({
                         </td>
                       )}
 
-                      {/* Additional Columns */}
+                      {/* Status Domisili Cell */}
+                      {shouldShowColumn("statusDomisili") && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-center">
+                          {s.statusDomisili === "Kampung" ? (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200/80 font-bold text-[11px]">
+                              Kampung
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200/80 font-bold text-[11px]">
+                              Muqim
+                            </span>
+                          )}
+                        </td>
+                      )}
+
+                      {/* NIS Cell */}
+                      {shouldShowColumn("nis") && (
+                        <td className="px-6 py-4 whitespace-nowrap font-mono text-xs font-semibold text-slate-700">
+                          {s.nis || "-"}
+                        </td>
+                      )}
+
+                      {/* NISM Cell */}
+                      {shouldShowColumn("nism") && (
+                        <td className="px-6 py-4 whitespace-nowrap font-mono text-xs font-semibold text-slate-700">
+                          {s.nism || "-"}
+                        </td>
+                      )}
+
+                      {/* NISN Cell */}
+                      {shouldShowColumn("nisn") && (
+                        <td className="px-6 py-4 whitespace-nowrap font-mono text-xs font-semibold text-slate-700">
+                          {s.nisn || "-"}
+                        </td>
+                      )}
+
+                      {/* NIK Cell */}
+                      {shouldShowColumn("nik") && (
+                        <td className="px-6 py-4 whitespace-nowrap font-mono text-xs font-semibold text-slate-700">
+                          {s.nik || "-"}
+                        </td>
+                      )}
+
+                      {/* Gender Cell */}
                       {shouldShowColumn("gender") && (
                         <td className="px-6 py-4 whitespace-nowrap text-xs text-center">
                           <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${s.gender === 'Putri' ? 'bg-pink-50 text-pink-700' : 'bg-blue-50 text-blue-700'}`}>
@@ -2289,28 +2330,232 @@ export default function DataKamarSantriSub({
                           </span>
                         </td>
                       )}
-                      {shouldShowColumn("nik") && (
-                        <td className="px-6 py-4 whitespace-nowrap font-mono text-xs font-semibold text-slate-700">
-                          {s.nik || "-"}
-                        </td>
-                      )}
-                      {shouldShowColumn("nisn") && (
-                        <td className="px-6 py-4 whitespace-nowrap font-mono text-xs font-semibold text-slate-700">
-                          {s.nisn || "-"}
-                        </td>
-                      )}
+
+                      {/* Kelas Cell */}
                       {shouldShowColumn("kelas") && (
                         <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-700">
                           {s.kelas || "-"}
                         </td>
                       )}
-                      {shouldShowColumn("statusEmis") && (
-                        <td className="px-6 py-4 whitespace-nowrap text-xs text-center">
-                          <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${s.statusEmis === 'Terdaftar' || (s.statusEmis as any) === 'Sudah' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500'}`}>
-                            {s.statusEmis || "Belum"}
-                          </span>
+
+                      {/* Kelas MHD Cell */}
+                      {shouldShowColumn("kelasMhd") && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-700">
+                          {s.kelasMhd || "-"}
                         </td>
                       )}
+
+                      {/* Induk MHD Cell */}
+                      {shouldShowColumn("indukMhd") && (
+                        <td className="px-6 py-4 whitespace-nowrap font-mono text-xs font-semibold text-slate-700">
+                          {s.indukMhd || "-"}
+                        </td>
+                      )}
+
+                      {/* Induk Wustho Cell */}
+                      {shouldShowColumn("indukWustho") && (
+                        <td className="px-6 py-4 whitespace-nowrap font-mono text-xs font-semibold text-slate-700">
+                          {s.indukWustho || "-"}
+                        </td>
+                      )}
+
+                      {/* Induk Ulya Cell */}
+                      {shouldShowColumn("indukUlya") && (
+                        <td className="px-6 py-4 whitespace-nowrap font-mono text-xs font-semibold text-slate-700">
+                          {s.indukUlya || "-"}
+                        </td>
+                      )}
+
+                      {/* No KK Cell */}
+                      {shouldShowColumn("noKk") && (
+                        <td className="px-6 py-4 whitespace-nowrap font-mono text-xs font-semibold text-slate-700">
+                          {s.noKk || "-"}
+                        </td>
+                      )}
+
+                      {/* Tempat Lahir Cell */}
+                      {shouldShowColumn("tempatLahir") && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-700">
+                          {s.tempatLahir || "-"}
+                        </td>
+                      )}
+
+                      {/* Tanggal Lahir Cell */}
+                      {shouldShowColumn("tanggalLahir") && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-center font-mono text-slate-700">
+                          {formatDateDDMMYYYY(s.tanggalLahir) || "-"}
+                        </td>
+                      )}
+
+                      {/* Pendidikan Terakhir Cell */}
+                      {shouldShowColumn("pendidikanTerakhir") && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-700">
+                          {s.pendidikanTerakhir || "-"}
+                        </td>
+                      )}
+
+                      {/* Pendidikan Formal Cell */}
+                      {shouldShowColumn("pendidikanFormal") && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-700">
+                          {s.pendidikanFormal || "-"}
+                        </td>
+                      )}
+
+                      {/* Anak Ke Cell */}
+                      {shouldShowColumn("anakKe") && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-center text-slate-700">
+                          {s.anakKe !== undefined && s.anakKe !== null ? String(s.anakKe) : "-"}
+                        </td>
+                      )}
+
+                      {/* Jumlah Saudara Cell */}
+                      {(shouldShowColumn("dariBersaudara") || shouldShowColumn("jumlahSaudara")) && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-center text-slate-700">
+                          {s.dariBersaudara !== undefined && s.dariBersaudara !== null ? String(s.dariBersaudara) : "-"}
+                        </td>
+                      )}
+
+                      {/* Nama Ayah Cell */}
+                      {shouldShowColumn("namaAyah") && (
+                        <td className="px-6 py-4 text-xs text-slate-700 truncate max-w-[160px]" title={s.namaAyah || ""}>
+                          {s.namaAyah || "-"}
+                        </td>
+                      )}
+
+                      {/* NIK Ayah Cell */}
+                      {shouldShowColumn("nikAyah") && (
+                        <td className="px-6 py-4 whitespace-nowrap font-mono text-xs font-semibold text-slate-700">
+                          {s.nikAyah || "-"}
+                        </td>
+                      )}
+
+                      {/* Pekerjaan Ayah Cell */}
+                      {shouldShowColumn("pekerjaanAyah") && (
+                        <td className="px-6 py-4 text-xs text-slate-700 truncate max-w-[140px]" title={s.pekerjaanAyah || ""}>
+                          {s.pekerjaanAyah || "-"}
+                        </td>
+                      )}
+
+                      {/* Pendidikan Ayah Cell */}
+                      {shouldShowColumn("pendidikanAyah") && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-700">
+                          {s.pendidikanAyah || "-"}
+                        </td>
+                      )}
+
+                      {/* Nama Ibu Cell */}
+                      {shouldShowColumn("namaIbu") && (
+                        <td className="px-6 py-4 text-xs text-slate-700 truncate max-w-[160px]" title={s.namaIbu || ""}>
+                          {s.namaIbu || "-"}
+                        </td>
+                      )}
+
+                      {/* NIK Ibu Cell */}
+                      {shouldShowColumn("nikIbu") && (
+                        <td className="px-6 py-4 whitespace-nowrap font-mono text-xs font-semibold text-slate-700">
+                          {s.nikIbu || "-"}
+                        </td>
+                      )}
+
+                      {/* Pekerjaan Ibu Cell */}
+                      {shouldShowColumn("pekerjaanIbu") && (
+                        <td className="px-6 py-4 text-xs text-slate-700 truncate max-w-[140px]" title={s.pekerjaanIbu || ""}>
+                          {s.pekerjaanIbu || "-"}
+                        </td>
+                      )}
+
+                      {/* Pendidikan Ibu Cell */}
+                      {shouldShowColumn("pendidikanIbu") && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-700">
+                          {s.pendidikanIbu || "-"}
+                        </td>
+                      )}
+
+                      {/* Alamat Cell */}
+                      {shouldShowColumn("alamat") && (
+                        <td className="px-6 py-4 text-xs text-slate-600 truncate max-w-[200px]" title={s.alamat || ''}>
+                          {s.alamat || "-"}
+                        </td>
+                      )}
+
+                      {/* RT Cell */}
+                      {shouldShowColumn("rt") && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-center font-mono text-slate-700">
+                          {s.rt || "-"}
+                        </td>
+                      )}
+
+                      {/* RW Cell */}
+                      {shouldShowColumn("rw") && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-center font-mono text-slate-700">
+                          {s.rw || "-"}
+                        </td>
+                      )}
+
+                      {/* Desa Cell */}
+                      {shouldShowColumn("desa") && (
+                        <td className="px-6 py-4 text-xs text-slate-600 truncate max-w-[150px]" title={s.desa || ""}>
+                          {s.desa || "-"}
+                        </td>
+                      )}
+
+                      {/* Kecamatan Cell */}
+                      {shouldShowColumn("kecamatan") && (
+                        <td className="px-6 py-4 text-xs text-slate-600 truncate max-w-[150px]" title={s.kecamatan || ""}>
+                          {s.kecamatan || "-"}
+                        </td>
+                      )}
+
+                      {/* Kabupaten Cell */}
+                      {shouldShowColumn("kabupaten") && (
+                        <td className="px-6 py-4 text-xs text-slate-600 truncate max-w-[150px]" title={s.kabupaten || ""}>
+                          {s.kabupaten || "-"}
+                        </td>
+                      )}
+
+                      {/* Provinsi Cell */}
+                      {shouldShowColumn("provinsi") && (
+                        <td className="px-6 py-4 text-xs text-slate-600 truncate max-w-[150px]" title={s.provinsi || ""}>
+                          {s.provinsi || "-"}
+                        </td>
+                      )}
+
+                      {/* Jarak Rumah Cell */}
+                      {shouldShowColumn("jarakRumah") && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-center text-slate-700">
+                          {s.jarakRumah ? `${s.jarakRumah} km` : "-"}
+                        </td>
+                      )}
+
+                      {/* No HP Cell */}
+                      {shouldShowColumn("noHp") && (
+                        <td className="px-6 py-4 whitespace-nowrap font-mono text-xs text-slate-700">
+                          {s.noHp || "-"}
+                        </td>
+                      )}
+
+                      {/* Tahun Masuk Cell */}
+                      {shouldShowColumn("tahunMasuk") && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-center text-slate-700">
+                          {s.tahunMasuk || "-"}
+                        </td>
+                      )}
+
+                      {/* Tanggal Masuk Cell */}
+                      {shouldShowColumn("tanggalMasuk") && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-center font-mono text-slate-700">
+                          {formatDateDDMMYYYY(s.tanggalMasuk) || "-"}
+                        </td>
+                      )}
+
+                      {/* Tanggal Keluar Cell */}
+                      {shouldShowColumn("tanggalKeluar") && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-center font-mono text-slate-700">
+                          {formatDateDDMMYYYY(s.tanggalKeluar) || "-"}
+                        </td>
+                      )}
+
+                      {/* Status Keanggotaan Cell */}
                       {shouldShowColumn("statusKeanggotaan") && (
                         <td className="px-6 py-4 whitespace-nowrap text-xs text-center">
                           <span className="inline-block px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold">
@@ -2318,51 +2563,33 @@ export default function DataKamarSantriSub({
                           </span>
                         </td>
                       )}
-                      {shouldShowColumn("alamat") && (
-                        <td className="px-6 py-4 text-xs text-slate-600 truncate max-w-[200px]" title={s.alamat || ''}>
-                          {s.alamat || "-"}
+
+                      {/* Status EMIS Cell */}
+                      {shouldShowColumn("statusEmis") && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-center">
+                          <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${s.statusEmis === 'Terdaftar' || (s.statusEmis as any) === 'Sudah' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500'}`}>
+                            {s.statusEmis || "Belum"}
+                          </span>
                         </td>
                       )}
-                      {shouldShowColumn("desa") && (
-                        <td className="px-6 py-4 text-xs text-slate-600 truncate max-w-[150px]">
-                          {s.desa || "-"}
+
+                      {/* Status Verval Cell */}
+                      {shouldShowColumn("statusVerval") && (
+                        <td className="px-6 py-4 whitespace-nowrap text-xs text-center">
+                          <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${s.statusVerval === 'Sukses' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500'}`}>
+                            {s.statusVerval || "Proses"}
+                          </span>
                         </td>
                       )}
-                      {shouldShowColumn("kecamatan") && (
-                        <td className="px-6 py-4 text-xs text-slate-600 truncate max-w-[150px]">
-                          {s.kecamatan || "-"}
+
+                      {/* Asal Sekolah Cell */}
+                      {shouldShowColumn("asal") && (
+                        <td className="px-6 py-4 text-xs text-slate-600 truncate max-w-[160px]" title={s.asal || ""}>
+                          {s.asal || "-"}
                         </td>
                       )}
-                      {shouldShowColumn("kabupaten") && (
-                        <td className="px-6 py-4 text-xs text-slate-600 truncate max-w-[150px]">
-                          {s.kabupaten || "-"}
-                        </td>
-                      )}
-                      {shouldShowColumn("provinsi") && (
-                        <td className="px-6 py-4 text-xs text-slate-600 truncate max-w-[150px]">
-                          {s.provinsi || "-"}
-                        </td>
-                      )}
-                      {shouldShowColumn("noHp") && (
-                        <td className="px-6 py-4 whitespace-nowrap font-mono text-xs text-slate-700">
-                          {s.noHp || "-"}
-                        </td>
-                      )}
-                      {shouldShowColumn("tahunMasuk") && (
-                        <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-700">
-                          {s.tahunMasuk || "-"}
-                        </td>
-                      )}
-                      {shouldShowColumn("pendidikanTerakhir") && (
-                        <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-700">
-                          {s.pendidikanTerakhir || "-"}
-                        </td>
-                      )}
-                      {shouldShowColumn("pendidikanFormal") && (
-                        <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-700">
-                          {s.pendidikanFormal || "-"}
-                        </td>
-                      )}
+
+                      {/* Catatan Cell */}
                       {shouldShowColumn("catatan") && (
                         <td className="px-6 py-4 text-xs text-slate-600 truncate max-w-[200px]" title={s.catatan || ''}>
                           {s.catatan || "-"}
@@ -3203,6 +3430,7 @@ export default function DataKamarSantriSub({
         visibleColumns={visibleColumns}
         setVisibleColumns={setVisibleColumns}
         defaultColumns={DEFAULT_DATAKAMAR_COLUMNS}
+        availableColumns={AVAILABLE_DATAKAMAR_COLUMNS}
         title="Atur Visibilitas Kolom Data Kamar"
         description="Pilih kolom data santri yang ingin ditampilkan atau disembunyikan pada tabel data kamar santri"
       />
