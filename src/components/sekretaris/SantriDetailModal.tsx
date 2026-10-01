@@ -31,11 +31,12 @@ import {
   Edit2,
   Save,
   Building2,
-  Info
+  Info,
+  ExternalLink
 } from 'lucide-react';
 import { Santri, BendaharaRecord, KeamananRecord, Kamar, Kompleks, Kelas, Lembaga, KelompokRombel, RombelAssignment, KategoriRombel } from '../../types';
 import { renderSantriAvatar, isCustomPasFoto, calculateRealtimeAge } from '../SekretarisHelper';
-import { uploadFileToStorage, deleteFileFromStorage, updateTableRow, getApiUrl, fetchTableData } from '../../lib/api';
+import { uploadFileToStorage, uploadRawFileToStorage, deleteFileFromStorage, updateTableRow, getApiUrl, fetchTableData } from '../../lib/api';
 import { 
   processUploadedFile, 
   getSantriAcademicPlacements, 
@@ -205,6 +206,7 @@ export default function SantriDetailModal({
   const [isUploadingDoc, setIsUploadingDoc] = useState<Record<string, boolean>>({});
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
   const [previewDoc, setPreviewDoc] = useState<{ title: string; url: string; defaultName?: string } | null>(null);
+  const [isDocPreviewLoading, setIsDocPreviewLoading] = useState(true);
   const [isPhotoPreviewOpen, setIsPhotoPreviewOpen] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
@@ -338,18 +340,29 @@ export default function SantriDetailModal({
     setIsUploadingDoc(prev => ({ ...prev, [fileKey]: true }));
     try {
       const oldUrl = (localSantri as any)[fileKey];
-      const { originalUrl } = await processUploadedFile(file);
-      const publicUrl = await uploadFileToStorage(originalUrl, file.name, fileKey);
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
       
-      const updated = await updateTableRow<Santri>('santri', 'smartsantri_santriList', localSantri.id, {
-        [fileKey]: publicUrl
-      });
+      // High-speed direct binary stream upload (0ms Base64 overhead)
+      let publicUrl = '';
+      if (isPdf) {
+        publicUrl = await uploadRawFileToStorage(file, fileKey);
+      } else {
+        const { originalUrl } = await processUploadedFile(file);
+        publicUrl = await uploadFileToStorage(originalUrl, file.name, fileKey);
+      }
       
+      // Optimistic instant state update for immediate UI feedback
+      const updated = { ...localSantri, [fileKey]: publicUrl };
       setLocalSantri(updated);
       onUpdateSantri?.(updated);
 
+      // Persist to database in background
+      updateTableRow<Santri>('santri', 'smartsantri_santriList', localSantri.id, {
+        [fileKey]: publicUrl
+      }).catch(err => console.warn("Background db update failed:", err));
+
       // Auto-cleanup old file from storage if replaced
-      if (oldUrl && oldUrl !== publicUrl) {
+      if (oldUrl && oldUrl !== publicUrl && oldUrl.includes('/uploads/')) {
         deleteFileFromStorage(oldUrl).catch(() => {});
       }
     } catch (err: any) {
@@ -1054,11 +1067,14 @@ export default function SantriDetailModal({
                               {/* Lihat / Pratinjau */}
                               <button
                                 type="button"
-                                onClick={() => setPreviewDoc({
-                                  title: `${file.label} — ${localSantri.nama}`,
-                                  url: getApiUrl(file.url!),
-                                  defaultName: smartFileName
-                                })}
+                                onClick={() => {
+                                  setIsDocPreviewLoading(true);
+                                  setPreviewDoc({
+                                    title: `${file.label} — ${localSantri.nama}`,
+                                    url: getApiUrl(file.url!),
+                                    defaultName: smartFileName
+                                  });
+                                }}
                                 className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer border-none"
                                 title="Pratinjau Berkas"
                               >
@@ -1769,7 +1785,14 @@ export default function SantriDetailModal({
                 <span className="truncate">{previewDoc?.title || 'Pratinjau Berkas'}</span>
               </h3>
               
-              <div className="w-full rounded-2xl overflow-hidden border border-slate-200 bg-slate-50 flex items-center justify-center h-[55vh] sm:h-[65vh] p-1">
+              <div className="relative w-full rounded-2xl overflow-hidden border border-slate-200 bg-slate-50 flex items-center justify-center h-[55vh] sm:h-[65vh] p-1">
+                {isDocPreviewLoading && (
+                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white/95 backdrop-blur-xs gap-2 select-none">
+                    <div className="h-8 w-8 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                    <span className="text-xs font-bold text-slate-700">Menyiapkan Pratinjau Dokumen...</span>
+                    <span className="text-[10px] text-slate-400">Memuat berkas berkecepatan tinggi...</span>
+                  </div>
+                )}
                 {(() => {
                   const url = previewDoc?.url || previewPhotoUrl || '';
                   const isPdf = url.toLowerCase().includes('.pdf') || url.startsWith('data:application/pdf');
@@ -1777,6 +1800,7 @@ export default function SantriDetailModal({
                     return (
                       <iframe 
                         src={url} 
+                        onLoad={() => setIsDocPreviewLoading(false)}
                         className="w-full h-full rounded-xl border-none bg-white" 
                         title="Pratinjau PDF"
                       />
@@ -1785,6 +1809,7 @@ export default function SantriDetailModal({
                   return (
                     <img 
                       src={url} 
+                      onLoad={() => setIsDocPreviewLoading(false)}
                       className="max-h-full w-auto max-w-full object-contain rounded-xl shadow-xs" 
                       alt="Pratinjau Berkas" 
                       referrerPolicy="no-referrer" 
@@ -1793,7 +1818,17 @@ export default function SantriDetailModal({
                 })()}
               </div>
 
-              <div className="flex items-center gap-3 mt-4 w-full justify-end">
+              <div className="flex items-center gap-2 sm:gap-3 mt-4 w-full justify-end flex-wrap">
+                <a
+                  href={previewDoc?.url || previewPhotoUrl || '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                  title="Buka dokumen di tab baru"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  <span className="hidden sm:inline">Tab Baru</span>
+                </a>
                 <button
                   type="button"
                   onClick={() => {

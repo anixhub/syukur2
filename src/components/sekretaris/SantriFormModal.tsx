@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   X, ChevronLeft, ChevronRight, Upload, Trash2, UserPlus, 
-  FileText, User, GraduationCap, CheckCircle2, Eye, AlertTriangle, AlertCircle, Sparkles, RotateCcw, Lock, Download
+  FileText, User, GraduationCap, CheckCircle2, Eye, AlertTriangle, AlertCircle, Sparkles, RotateCcw, Lock, Download, ExternalLink
 } from 'lucide-react';
 import { Santri, Lembaga, Kelas, isDefaultClass, isCalonClass } from '../../types';
 import { 
@@ -12,7 +12,7 @@ import {
 } from '../SekretarisHelper';
 import { BirthDatePicker } from './BirthDatePicker';
 import { SearchableSelect } from './SearchableSelect';
-import { uploadFileToStorage, fetchTableData, getApiUrl } from '../../lib/api';
+import { uploadFileToStorage, uploadRawFileToStorage, fetchTableData, getApiUrl } from '../../lib/api';
 import { formatBigDigit, processUploadedFile, parseCatatanInvalid, formatCatatanWithInvalid, parseCatatanInvalidParts, formatCatatanParts, isMatchLembagaStrict, getDefaultCalonClassName } from '../../lib/utils';
 
 function escapeHtml(str: string): string {
@@ -493,6 +493,7 @@ export default function SantriFormModal({
   const [stepErrors, setStepErrors] = useState<string[]>([]);
   const [fileNames, setFileNames] = useState<Record<string, string>>({});
   const [previewFile, setPreviewFile] = useState<{ name: string; url: string } | null>(null);
+  const [isDocPreviewLoading, setIsDocPreviewLoading] = useState(true);
   const [isCompressing, setIsCompressing] = useState<Record<string, boolean>>({});
   const [lastGeneratedNis, setLastGeneratedNis] = useState('');
   const [nisAdjustedNotification, setNisAdjustedNotification] = useState<string | null>(null);
@@ -2605,7 +2606,10 @@ export default function SantriFormModal({
                                 <>
                                   <button
                                     type="button"
-                                    onClick={() => setPreviewFile({ name: doc.title, url: fileUrl })}
+                                    onClick={() => {
+                                      setIsDocPreviewLoading(true);
+                                      setPreviewFile({ name: doc.title, url: fileUrl });
+                                    }}
                                     className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer border-none"
                                     title="Pratinjau Berkas"
                                   >
@@ -2638,9 +2642,15 @@ export default function SantriFormModal({
                                         if (e.target.files && e.target.files[0]) {
                                           const file = e.target.files[0];
                                           setIsCompressing(prev => ({ ...prev, [doc.key]: true }));
-                                          processUploadedFile(file)
-                                            .then(async ({ originalUrl }) => {
-                                              const publicUrl = await uploadFileToStorage(originalUrl, file.name, doc.key);
+                                          const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+                                          
+                                          // High-speed direct binary stream for PDFs, image optimization for photos
+                                          const uploadPromise = isPdf
+                                            ? uploadRawFileToStorage(file, doc.key)
+                                            : processUploadedFile(file).then(({ originalUrl }) => uploadFileToStorage(originalUrl, file.name, doc.key));
+
+                                          uploadPromise
+                                            .then((publicUrl) => {
                                               setForm(f => ({ ...f, [doc.key]: publicUrl }));
                                               setFileNames(prev => ({ ...prev, [doc.key]: file.name }));
                                             })
@@ -2711,10 +2721,15 @@ export default function SantriFormModal({
                                       if (e.target.files && e.target.files[0]) {
                                         const file = e.target.files[0];
                                         setIsCompressing(prev => ({ ...prev, [doc.key]: true }));
+                                        const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
                                         
-                                        processUploadedFile(file)
-                                          .then(async ({ originalUrl }) => {
-                                            const publicUrl = await uploadFileToStorage(originalUrl, file.name, doc.key);
+                                        // High-speed direct binary stream for PDFs, image optimization for photos
+                                        const uploadPromise = isPdf
+                                          ? uploadRawFileToStorage(file, doc.key)
+                                          : processUploadedFile(file).then(({ originalUrl }) => uploadFileToStorage(originalUrl, file.name, doc.key));
+
+                                        uploadPromise
+                                          .then((publicUrl) => {
                                             setForm(f => ({ ...f, [doc.key]: publicUrl }));
                                             setFileNames(prev => ({ ...prev, [doc.key]: file.name }));
                                           })
@@ -2875,20 +2890,30 @@ export default function SantriFormModal({
             <div className="w-full max-w-3xl flex flex-col items-center">
               <p className="text-white font-bold text-lg mb-4 text-center tracking-wide">{previewFile.name}</p>
               <div className="relative w-full aspect-[4/3] sm:aspect-[16/10] bg-slate-900 rounded-2xl overflow-hidden border border-white/10 flex items-center justify-center shadow-2xl">
+                {isDocPreviewLoading && (
+                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-900/90 backdrop-blur-xs gap-2 select-none">
+                    <div className="h-8 w-8 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                    <span className="text-xs font-bold text-white">Menyiapkan Pratinjau Dokumen...</span>
+                    <span className="text-[10px] text-white/60">Memuat berkas berkecepatan tinggi...</span>
+                  </div>
+                )}
                 {previewFile.url ? (
                   (previewFile.url.toLowerCase().includes('.pdf') || previewFile.url.startsWith('data:application/pdf')) ? (
                     <iframe
                       src={getApiUrl(previewFile.url)}
+                      onLoad={() => setIsDocPreviewLoading(false)}
                       className="w-full h-full border-none rounded-xl bg-white"
                       title={`Pratinjau ${previewFile.name}`}
                     />
                   ) : (
                     <img
                       src={getApiUrl(previewFile.url)}
+                      onLoad={() => setIsDocPreviewLoading(false)}
                       alt={previewFile.name}
                       className="max-w-full max-h-full object-contain"
                       referrerPolicy="no-referrer"
                       onError={(e) => {
+                        setIsDocPreviewLoading(false);
                         e.currentTarget.style.display = 'none';
                         const fallback = document.getElementById('preview-doc-fallback');
                         if (fallback) fallback.classList.remove('hidden');
@@ -2902,7 +2927,17 @@ export default function SantriFormModal({
                   <p className="text-xs text-slate-400 mt-1 max-w-md">Dokumen berhasil diunggah dengan aman. Sistem verifikasi Sekretaris Pondok Pesantren telah memvalidasi berkas ini.</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3 mt-4">
+              <div className="flex items-center gap-2 sm:gap-3 mt-4 flex-wrap justify-end">
+                <a
+                  href={getApiUrl(previewFile.url)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                  title="Buka dokumen di tab browser baru"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  <span className="hidden sm:inline">Tab Baru</span>
+                </a>
                 <button
                   type="button"
                   onClick={() => {

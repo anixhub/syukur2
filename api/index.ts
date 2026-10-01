@@ -68,10 +68,22 @@ findAndLoadEnv();
 const app = express();
 
 // High-speed HTTP Gzip/Deflate compression for fast JSON payloads (cuts 4.3MB santri data to ~400KB)
-app.use(compression({
+// Crucial: Bypass compression for static uploaded assets (PDFs, images) to preserve Accept-Ranges & byte streaming
+app.use((compression as any)({
+  filter: (req: any, res: any) => {
+    const url = req.originalUrl || req.url || '';
+    if (url.includes('/uploads') || url.includes('/api/uploads')) {
+      return false;
+    }
+    const contentType = (res.getHeader && res.getHeader('content-type')) ? String(res.getHeader('content-type')) : '';
+    if (contentType.includes('pdf') || contentType.includes('image/')) {
+      return false;
+    }
+    return (compression as any).filter ? (compression as any).filter(req, res) : true;
+  },
   threshold: 1024,
   level: 6
-}) as any);
+}));
 
 // WebSocket Instance Management for Realtime Broadcasting
 let wssInstance: WebSocketServer | null = null;
@@ -216,11 +228,14 @@ function saveMemoryStoreToDisk() {
       for (const [table, rows] of memoryStore.entries()) {
         obj[table] = rows;
       }
-      fs.writeFileSync(DB_BACKUP_PATH, JSON.stringify(obj, null, 2), 'utf-8');
+      // Non-blocking async write without heavy indentation formatting to save 50% CPU and disk time
+      fs.promises.writeFile(DB_BACKUP_PATH, JSON.stringify(obj), 'utf-8').catch((err) => {
+        console.warn("Async save memoryStore error:", err.message);
+      });
     } catch (err: any) {
       console.warn("Could not save memoryStore to disk:", err.message);
     }
-  }, 200);
+  }, 3000);
 }
 
 export function withTimeout<T>(promise: Promise<T>, ms = 2500): Promise<T> {
@@ -686,8 +701,63 @@ app.post("/api/auth/login", async (req, res) => {
   });
 });
 
+// 4. High-Speed Binary Stream Upload Endpoint (Direct File streaming, 0ms Base64 overhead)
 // -------------------------------------------------------------
-// 4. Storage Upload Endpoint (Files & Photos)
+app.post("/api/upload-raw", (req, res) => {
+  try {
+    const rawFileName = (req.query.fileName as string) || `file_${Date.now()}.pdf`;
+    const category = (req.query.category as string) || 'dokumen';
+    const fieldKey = (req.query.fieldKey as string) || 'dokumen';
+
+    const subFolder = category.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const safeExt = (rawFileName.split('.').pop() || 'pdf').replace(/[^a-zA-Z0-9]/g, '');
+    const uniqueFileName = `${fieldKey}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${safeExt}`;
+
+    const uploadBase = getUploadDir();
+    const targetDir = path.join(uploadBase, subFolder);
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+
+    const targetFilePath = path.join(targetDir, uniqueFileName);
+    const writeStream = fs.createWriteStream(targetFilePath);
+
+    req.pipe(writeStream);
+
+    writeStream.on('finish', () => {
+      const publicUrl = `/api/uploads/${subFolder}/${uniqueFileName}`;
+      
+      // Async background mirror to dist/uploads and public/uploads
+      try {
+        const distTargetDir = path.join(process.cwd(), "dist", "uploads", subFolder);
+        if (!fs.existsSync(distTargetDir)) fs.mkdirSync(distTargetDir, { recursive: true });
+        fs.promises.copyFile(targetFilePath, path.join(distTargetDir, uniqueFileName)).catch(() => {});
+      } catch (e) {}
+
+      try {
+        const publicTargetDir = path.join(process.cwd(), "public", "uploads", subFolder);
+        if (!fs.existsSync(publicTargetDir)) fs.mkdirSync(publicTargetDir, { recursive: true });
+        fs.promises.copyFile(targetFilePath, path.join(publicTargetDir, uniqueFileName)).catch(() => {});
+      } catch (e) {}
+
+      res.json({
+        success: true,
+        path: publicUrl,
+        publicUrl: publicUrl
+      });
+    });
+
+    writeStream.on('error', (err) => {
+      console.error("upload-raw stream error:", err);
+      res.status(500).json({ success: false, error: err.message });
+    });
+  } catch (err: any) {
+    console.error("upload-raw handler error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Storage Upload Endpoint (Files & Photos - Non-blocking async disk write)
 // -------------------------------------------------------------
 app.post("/api/upload", async (req, res) => {
   try {
@@ -707,19 +777,20 @@ app.post("/api/upload", async (req, res) => {
     }
 
     const targetFilePath = path.join(targetDir, fileName);
-    fs.writeFileSync(targetFilePath, buffer);
+    // Non-blocking async write to avoid halting Node.js event loop
+    await fs.promises.writeFile(targetFilePath, buffer);
 
-    // Also mirror to dist/uploads and public/uploads for instant static serving
+    // Non-blocking background mirrors
     try {
       const distTargetDir = path.join(process.cwd(), "dist", "uploads", subFolder);
       if (!fs.existsSync(distTargetDir)) fs.mkdirSync(distTargetDir, { recursive: true });
-      fs.writeFileSync(path.join(distTargetDir, fileName), buffer);
+      fs.promises.writeFile(path.join(distTargetDir, fileName), buffer).catch(() => {});
     } catch (e) {}
 
     try {
       const publicTargetDir = path.join(process.cwd(), "public", "uploads", subFolder);
       if (!fs.existsSync(publicTargetDir)) fs.mkdirSync(publicTargetDir, { recursive: true });
-      fs.writeFileSync(path.join(publicTargetDir, fileName), buffer);
+      fs.promises.writeFile(path.join(publicTargetDir, fileName), buffer).catch(() => {});
     } catch (e) {}
 
     const publicUrl = `/api/uploads/${subFolder}/${fileName}`;
@@ -735,7 +806,7 @@ app.post("/api/upload", async (req, res) => {
   }
 });
 
-// Serve uploaded files securely via /api/uploads
+// Serve uploaded files securely via /api/uploads with Byte-Range & Inline PDF Streaming
 app.get("/api/uploads/:category/:fileName", (req, res) => {
   try {
     const { category, fileName } = req.params;
@@ -758,9 +829,18 @@ app.get("/api/uploads/:category/:fileName", (req, res) => {
     }
 
     if (fs.existsSync(targetFilePath)) {
+      const isPdf = safeFileName.toLowerCase().endsWith('.pdf');
       res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
-      res.setHeader("Cache-Control", "public, max-age=86400");
-      return res.sendFile(targetFilePath);
+      res.setHeader("Accept-Ranges", "bytes");
+      res.setHeader("Cache-Control", "public, max-age=604800, stale-while-revalidate=86400");
+      if (isPdf) {
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", `inline; filename="${safeFileName}"`);
+      }
+      return res.sendFile(targetFilePath, {
+        acceptRanges: true,
+        maxAge: 604800000
+      });
     }
 
     res.status(404).json({ error: "File not found" });

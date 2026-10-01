@@ -493,6 +493,64 @@ export async function deleteTableRow(table: string, localKey: string, id: string
   return true;
 }
 
+// High-Speed Direct Binary Stream Upload (Bypasses Base64 conversion in RAM, ideal for PDFs)
+export async function uploadRawFileToStorage(file: File | Blob, fieldKey: string, fileNameCustom?: string): Promise<string> {
+  if (!file) return '';
+
+  const name = fileNameCustom || (file instanceof File ? file.name : `${fieldKey}_${Date.now()}.pdf`);
+  let category = 'dokumen';
+  const fk = (fieldKey || '').toLowerCase();
+  if (fk.includes('kk')) category = 'kk';
+  else if (fk.includes('ktp')) category = 'ktp';
+  else if (fk.includes('logo')) category = 'logo_lembaga';
+  else if (fk.includes('avatar') || fk.includes('profil') || fk.includes('user')) category = 'profil_akun';
+  else if (fk.includes('foto') || fk.includes('pasfoto')) category = 'pas_foto';
+  else if (fk.includes('chat') || fk.includes('media') || fk.includes('lampiran')) category = 'media';
+  else if (fk.includes('ijazah')) category = 'ijazah';
+  else if (fk.includes('akta')) category = 'akta';
+  else if (fk.includes('surat')) category = 'surat';
+
+  try {
+    const query = new URLSearchParams({
+      fileName: name,
+      category,
+      fieldKey
+    }).toString();
+
+    const res = await fetch(getApiUrl(`/api/upload-raw?${query}`), {
+      method: 'POST',
+      headers: {
+        'Content-Type': file.type || 'application/octet-stream'
+      },
+      body: file
+    });
+
+    if (res.ok) {
+      const result = await safeJsonParse(res);
+      if (result && result.success && result.publicUrl) {
+        return result.publicUrl;
+      }
+    }
+  } catch (err) {
+    console.warn("Direct stream upload failed, falling back to base64 upload:", err);
+  }
+
+  // Fallback to base64 if streaming endpoint fails
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const url = await uploadFileToStorage(reader.result as string, name, fieldKey);
+        resolve(url);
+      } catch (e) {
+        reject(e);
+      }
+    };
+    reader.onerror = () => reject(new Error("Gagal membaca berkas."));
+    reader.readAsDataURL(file);
+  });
+}
+
 // Upload file to physical server folder (categorized) and return server URL
 export async function uploadFileToStorage(base64DataUrl: string, originalName: string, fieldKey: string): Promise<string> {
   if (!base64DataUrl) return '';
