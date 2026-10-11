@@ -7,11 +7,8 @@ import Sidebar from './components/Sidebar';
 import HelpModal from './components/HelpModal';
 import AdminChatDrawer from './components/AdminChatDrawer';
 import NotificationsPage from './components/NotificationsPage';
-import NotificationPermissionModal from './components/NotificationPermissionModal';
-import { ChatNotificationToast } from './components/ChatNotificationToast';
 import OfflineStatusBanner from './components/OfflineStatusBanner';
 import { fetchTableData, insertTableRow, insertTableRows, updateTableRow, deleteTableRow, subscribeRealtimeChanges, snakeToCamel, safeLocalStorageSetItem } from './lib/api';
-import { sendDeviceNotification } from './lib/notificationHelper';
 
 // Views (Lazy-loaded for code splitting and instant initial page load)
 const HomeView = React.lazy(() => import('./components/HomeView'));
@@ -156,27 +153,7 @@ export default function App() {
   const [hasMentionNotification, setHasMentionNotification] = useState<boolean>(false);
   const [headerSelectedSantri, setHeaderSelectedSantri] = useState<Santri | null>(null);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState<boolean>(false);
-  const [showNotifPermissionModal, setShowNotifPermissionModal] = useState<boolean>(false);
   const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState<boolean>(true);
-
-  // Auto prompt for notification permission on initial load if not yet decided and not dismissed
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search);
-      if (urlParams.get('request_notification') === '1' || urlParams.get('prompt_notif') === '1') {
-        setShowNotifPermissionModal(true);
-        return;
-      }
-      if ('Notification' in window) {
-        if (Notification.permission === 'default' && !localStorage.getItem('smartsantri_notif_modal_dismissed')) {
-          const timer = setTimeout(() => {
-            setShowNotifPermissionModal(true);
-          }, 2200);
-          return () => clearTimeout(timer);
-        }
-      }
-    }
-  }, []);
 
   // Measure physical rendered width of #main-app-container to handle responsive adaptations
   const mainAppContainerRef = useRef<HTMLDivElement>(null);
@@ -436,27 +413,8 @@ export default function App() {
             const rawText = rawMessageText || (msgObj.attachment ? `[Lampiran: ${msgObj.attachment.name || 'File'}]` : 'Mengirim pesan baru.');
             const cleanText = String(rawText).length > 120 ? String(rawText).slice(0, 117) + '...' : String(rawText);
 
-            // Send device notification & emit in-app toast event
-            sendDeviceNotification({
-              title: `${senderName}${role ? ` (${role})` : ''}`,
-              body: cleanText,
-              icon: msgObj.sender_avatar || msgObj.senderAvatar || '/logo.svg',
-              senderAvatar: msgObj.sender_avatar || msgObj.senderAvatar || '/logo.svg',
-              channel: targetChannel,
-              tag: `smartsantri-chat-${msgId || Date.now()}`,
-              url: '/',
-              onClick: () => {
-                setIsChatOpen(true);
-                setUnreadChatCount(0);
-                setHasMentionNotification(false);
-              }
-            });
           }
         });
-
-        if (!isChatOpen && newUnreadCount > 0) {
-          setUnreadChatCount(prev => prev + newUnreadCount);
-        }
       }
     });
 
@@ -1570,21 +1528,6 @@ export default function App() {
 
       {/* Offline & Sync Status Banner */}
       <OfflineStatusBanner />
-
-      {/* Global Notification Permission Pop-up Dialog */}
-      <NotificationPermissionModal
-        isOpen={showNotifPermissionModal}
-        onClose={() => setShowNotifPermissionModal(false)}
-      />
-
-      {/* Realtime In-App Chat Notification Toast Banner */}
-      <ChatNotificationToast 
-        onOpenChat={(channel) => {
-          setIsChatOpen(true);
-          setUnreadChatCount(0);
-          setHasMentionNotification(false);
-        }}
-      />
 
     </div>
   );

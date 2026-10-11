@@ -632,9 +632,6 @@ export default function Sidebar({
                       {/* Icon container - FIXED AT w-12 h-11, center=36px, NEVER moves */}
                       <div className="w-12 h-11 flex items-center justify-center shrink-0 relative">
                         <Icon className={`w-5 h-5 shrink-0 transition-colors ${isActive ? 'text-blue-600' : 'text-gray-600'}`} />
-                        {isChat && unreadChatCount > 0 && (
-                          <span className={`absolute top-2 right-2 flex h-2 w-2 rounded-full ${hasMentionNotification ? 'bg-amber-500 animate-ping' : 'bg-red-500'} ${isOpen ? 'hidden' : 'block'}`} />
-                        )}
                       </div>
 
                       {/* Module Label & Chevron - Sweeps left and fades out when narrowing */}
@@ -651,11 +648,6 @@ export default function Sidebar({
                         <span className={`text-sm font-medium truncate ${isActive ? 'text-blue-600 font-semibold' : 'text-gray-800'}`}>
                           {item.label}
                         </span>
-                        {isChat && unreadChatCount > 0 && (
-                          <span className={`ml-auto mr-2 px-1.5 py-0.5 text-[10px] font-bold rounded-full text-white ${hasMentionNotification ? 'bg-amber-500 animate-pulse' : 'bg-red-500'}`}>
-                            {unreadChatCount > 99 ? '99+' : unreadChatCount}
-                          </span>
-                        )}
                         {hasSubmenus && (
                           <span 
                             className={`text-gray-400 text-sm ml-2 shrink-0 transition-transform duration-200 ${

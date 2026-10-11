@@ -565,11 +565,6 @@ export default function Drawer({
                         <span className={isActive ? 'text-blue-600' : 'text-gray-800'}>
                           {item.label}
                         </span>
-                        {item.id === 'group_chat' && (unreadChatCount > 0 || hasMentionNotification) && (
-                          <span className="ml-auto flex h-5 min-w-[20px] px-1.5 items-center justify-center rounded-full bg-emerald-500 text-white font-bold text-xs shadow-xs animate-pulse">
-                            {hasMentionNotification ? '@' : (unreadChatCount > 99 ? '99+' : unreadChatCount)}
-                          </span>
-                        )}
                         {hasSubmenus && (
                           <span 
                             className={`text-gray-400 text-sm ml-auto transition-transform duration-200 ${
