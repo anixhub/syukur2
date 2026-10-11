@@ -26,7 +26,8 @@ import {
   MoreVertical,
   AlertTriangle,
   UserCheck,
-  GraduationCap
+  GraduationCap,
+  Pencil
 } from 'lucide-react';
 import { Santri, Lembaga, Kelas, KategoriRombel, KelompokRombel, RombelAssignment, isGenderMatch, isClassGenderMatch, isDefaultClass, isCalonClass } from '../../types';
 import { parseCatatanInvalid, cleanWaliKelas, isMatchLembagaStrict, getLembagaJenis, getSantriFormalEducationInfo, getDefaultCalonClassName } from '../../lib/utils';
@@ -198,6 +199,25 @@ export default function DataAkademikSub({
   const [pendingCellValue, setPendingCellValue] = useState<string | null>(null);
   const [editingNisId, setEditingNisId] = useState<string | null>(null);
   const [editingNisVal, setEditingNisVal] = useState<string>('');
+
+  // Inline editing state for NO column
+  const [editingNoSantriId, setEditingNoSantriId] = useState<string | null>(null);
+  const [editingNoValue, setEditingNoValue] = useState<string>('');
+
+  const handleSaveNo = (santriId: string, value: string) => {
+    const target = santriList.find(x => x.id === santriId);
+    if (target) {
+      const trimmed = value.trim();
+      if (trimmed !== (target.noAbsen || '')) {
+        onUpdateSantri({
+          ...target,
+          noAbsen: trimmed || undefined
+        });
+        setToast({ message: `Nomor urut ${target.nama} berhasil diubah.`, type: 'success' });
+      }
+    }
+    setEditingNoSantriId(null);
+  };
 
   // Status EMIS Dropdown States
   const [activeEmisDropdownId, setActiveEmisDropdownId] = useState<string | null>(null);
@@ -1012,6 +1032,14 @@ export default function DataAkademikSub({
       let comparison = 0;
       if (sortKey === 'nama') {
         comparison = a.nama.localeCompare(b.nama, 'id', { sensitivity: 'base', numeric: true });
+      } else if (sortKey === 'no' || sortKey === 'noAbsen') {
+        const numA = parseInt(a.noAbsen || '', 10);
+        const numB = parseInt(b.noAbsen || '', 10);
+        if (!isNaN(numA) && !isNaN(numB)) {
+          comparison = numA - numB;
+        } else {
+          comparison = (a.noAbsen || '').localeCompare(b.noAbsen || '', 'id', { numeric: true });
+        }
       } else if (sortKey === 'statusEmis') {
         const emisA = a.statusEmis || 'Belum';
         const emisB = b.statusEmis || 'Belum';
@@ -1425,7 +1453,7 @@ export default function DataAkademikSub({
       }
 
       return [
-        String(idx + 1),
+        s.noAbsen?.trim() || String(idx + 1),
         s.nama,
         s.nis || '-',
         s.statusEmis || 'Belum',
@@ -1650,10 +1678,10 @@ export default function DataAkademikSub({
         <table>
           <thead>
             <tr>
-              <th style="width: 5%; text-align: center;">No</th>
+              <th style="width: 6%; text-align: center;">No</th>
               <th style="width: 28%;">Nama Lengkap</th>
-              <th style="width: 12%; text-align: center;">NIS</th>
-              <th style="width: 12%; text-align: center;">Status EMIS</th>
+              <th style="width: 13%; text-align: center;">NIS</th>
+              <th style="width: 13%; text-align: center;">Status EMIS</th>
               ${dynamicHeaders.map(hdr => `<th>${hdr}</th>`).join('')}
             </tr>
           </thead>
@@ -1675,7 +1703,7 @@ export default function DataAkademikSub({
 
               return `
                 <tr>
-                  <td class="text-center font-mono">${idx + 1}</td>
+                  <td class="text-center font-mono font-bold">${s.noAbsen?.trim() || (idx + 1)}</td>
                   <td style="font-weight: 600;">${s.nama}</td>
                   <td class="text-center font-mono">${s.nis || '-'}</td>
                   <td class="text-center">${s.statusEmis || 'Belum'}</td>
@@ -1877,13 +1905,30 @@ export default function DataAkademikSub({
           </th>
         )}
 
-        <th style={getStyle()} className={`px-2 py-4 static sm:sticky ${
-          isSelectionMode ? 'sm:left-[48px]' : 'sm:left-0'
-        } z-40 sm:shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r border-slate-100 text-center w-[42px] min-w-[42px] max-w-[42px] font-display text-xs font-bold uppercase tracking-wider ${headerClass}`}>
-          No.
+        <th 
+          style={getStyle()} 
+          onClick={() => {
+            if (sortKey === 'no') {
+              setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+            } else {
+              setSortKey('no');
+              setSortDirection('asc');
+            }
+          }}
+          className={`px-2 py-4 static sm:sticky ${
+            isSelectionMode ? 'sm:left-[48px]' : 'sm:left-0'
+          } z-40 sm:shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r border-slate-100 text-center w-[50px] min-w-[50px] max-w-[50px] font-display text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-slate-200/60 transition-colors select-none ${headerClass}`}
+          title="Urutkan berdasarkan nomor urut"
+        >
+          <div className="flex items-center justify-center gap-1">
+            <span>No.</span>
+            {sortKey === 'no' && (
+              sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-indigo-600" /> : <ArrowDown className="w-3 h-3 text-indigo-600" />
+            )}
+          </div>
         </th>
 
-        {renderSortHeader('nama', 'Nama Lengkap', true, isSelectionMode ? 'sm:left-[90px] sm:shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r border-slate-100 min-w-[240px]' : 'sm:left-[42px] sm:shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r border-slate-100 min-w-[240px]', getStyle())}
+        {renderSortHeader('nama', 'Nama Lengkap', true, isSelectionMode ? 'sm:left-[98px] sm:shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r border-slate-100 min-w-[240px]' : 'sm:left-[50px] sm:shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r border-slate-100 min-w-[240px]', getStyle())}
 
         {renderSortHeader('nis', 'NIS', false, '', getStyle())}
         {renderSortHeader('statusEmis', 'Status EMIS', false, 'min-w-[110px] w-[110px]', getStyle())}
@@ -2618,7 +2663,7 @@ export default function DataAkademikSub({
         {typeof document !== 'undefined' && createPortal(
           <div
             ref={floatingHeaderOuterRef}
-            className="fixed z-[45] bg-slate-50 border border-slate-200 shadow-md rounded-t-2xl overflow-visible"
+            className="fixed z-[30] bg-slate-50 border border-slate-200 shadow-md rounded-t-2xl overflow-visible"
             style={{
               top: `${stickyTop}px`,
               left: `${floatingHeaderStyle.left}px`,
@@ -2939,20 +2984,63 @@ export default function DataAkademikSub({
                         </td>
                       )}
 
-                      {/* Sticky No Cell */}
-                      <td className={`px-2 py-4 static sm:sticky ${
+                      {/* Sticky No Cell - EDITABLE */}
+                      <td className={`px-1 py-3.5 static sm:sticky ${
                         isSelectionMode ? 'sm:left-[48px]' : 'sm:left-0'
-                      } transition-colors z-20 sm:shadow-[2px_0_5px_rgba(0,0,0,0.01)] border-r border-slate-100 text-center font-mono text-xs font-semibold w-[42px] min-w-[42px] max-w-[42px] ${
+                      } transition-colors z-20 sm:shadow-[2px_0_5px_rgba(0,0,0,0.01)] border-r border-slate-100 text-center font-mono text-xs font-semibold w-[50px] min-w-[50px] max-w-[50px] ${
                         isSelectionMode && isSelected
                           ? 'bg-indigo-50 text-indigo-800 font-bold'
                           : 'bg-white text-slate-500 group-hover:bg-slate-50'
                       }`}>
-                        {startIndex + idx + 1}
+                        {editingNoSantriId === s.id ? (
+                          <input
+                            type="text"
+                            autoFocus
+                            value={editingNoValue}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => setEditingNoValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.stopPropagation();
+                                handleSaveNo(s.id, editingNoValue);
+                              } else if (e.key === 'Escape') {
+                                e.stopPropagation();
+                                setEditingNoSantriId(null);
+                              }
+                            }}
+                            onBlur={() => {
+                              handleSaveNo(s.id, editingNoValue);
+                            }}
+                            className="w-10 px-1 py-0.5 text-center font-mono text-xs font-bold rounded border border-indigo-500 bg-white text-slate-800 shadow-xs outline-none focus:ring-1 focus:ring-indigo-500"
+                            placeholder={String(startIndex + idx + 1)}
+                          />
+                        ) : (
+                          <div
+                            onClick={(e) => {
+                              if (canWriteCurrent && !isSelectionMode) {
+                                e.stopPropagation();
+                                setEditingNoSantriId(s.id);
+                                setEditingNoValue(s.noAbsen || String(startIndex + idx + 1));
+                              }
+                            }}
+                            className={`group/no relative flex items-center justify-center font-mono text-xs font-bold ${
+                              canWriteCurrent && !isSelectionMode ? 'cursor-pointer hover:text-indigo-700' : 'text-slate-400'
+                            }`}
+                            title={canWriteCurrent && !isSelectionMode ? `Klik untuk ubah No urut/absen ${s.nama}` : undefined}
+                          >
+                            <span className={s.noAbsen ? 'text-slate-800 font-bold' : 'text-slate-400'}>
+                              {s.noAbsen || startIndex + idx + 1}
+                            </span>
+                            {canWriteCurrent && !isSelectionMode && (
+                              <Pencil className="h-2 w-2 text-slate-400 opacity-0 group-hover/no:opacity-100 transition-opacity ml-0.5 shrink-0" />
+                            )}
+                          </div>
+                        )}
                       </td>
 
                       {/* Sticky Nama Lengkap Cell with Alamat underneath */}
                       <td className={`px-6 py-4 static sm:sticky ${
-                        isSelectionMode ? 'sm:left-[90px]' : 'sm:left-[42px]'
+                        isSelectionMode ? 'sm:left-[98px]' : 'sm:left-[50px]'
                       } transition-colors z-20 sm:shadow-[2px_0_5px_rgba(0,0,0,0.01)] border-r border-slate-50 min-w-[240px] ${
                         isSelectionMode && isSelected
                           ? 'bg-indigo-50'

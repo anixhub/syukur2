@@ -335,7 +335,7 @@ export default function Sidebar({
         width: isOpen ? 288 : 72 
       }}
       transition={{ type: 'tween', ease: [0.25, 1, 0.5, 1], duration: 0.28 }}
-      className="hidden md:flex flex-col h-screen sticky top-0 bg-white border-r border-slate-200/80 z-30 select-none overflow-visible shrink-0"
+      className="hidden md:flex flex-col h-screen sticky top-0 bg-white border-r border-slate-200/80 z-[45] select-none overflow-visible shrink-0"
     >
       <div className={`h-full flex flex-col shrink-0 overflow-visible transition-all duration-280 ease-[cubic-bezier(0.25,1,0.5,1)] ${isOpen ? 'w-72' : 'w-[72px]'}`}>
         {/* Header with Unified Smoothly-Shrinking Search Box */}

@@ -1279,6 +1279,7 @@ export default function SantriTableView({
         {shouldShowColumn('jarakRumah') && renderSortHeader('jarakRumah', 'Jarak (km)', false, 'w-[100px] min-w-[100px]', undefined, getStyle())}
         {shouldShowColumn('noHp') && renderSortHeader('noHp', 'No. HP Wali', false, 'w-[130px] min-w-[130px]', undefined, getStyle())}
         {shouldShowColumn('statusDomisili') && renderSortHeader('statusDomisili', 'Status Domisili', false, 'w-[130px] min-w-[130px]', undefined, getStyle())}
+        {shouldShowColumn('nomorLemari') && renderSortHeader('nomorLemari', 'No. Lemari', false, 'w-[84px] min-w-[84px] max-w-[90px] text-center', undefined, getStyle())}
         {shouldShowColumn('tanggalMasuk') && renderSortHeader('tanggalMasuk', 'Tgl Masuk', false, 'w-[105px] min-w-[105px]', undefined, getStyle())}
         {shouldShowColumn('tanggalKeluar') && renderSortHeader('tanggalKeluar', 'Tgl Keluar', false, 'w-[105px] min-w-[105px]', undefined, getStyle())}
         
@@ -1412,7 +1413,7 @@ export default function SantriTableView({
                     ? 'bg-emerald-50 text-emerald-800 font-bold'
                     : 'bg-white text-slate-500 group-hover:bg-slate-50'
                 }`}>
-                  <div className="flex items-center justify-center gap-2">
+                  <div className="flex items-center justify-center gap-1.5">
                     {isMonitoringMode && (
                       isMonitoringWajibComplete(s, mandatoryKeys) ? (
                         <div 
@@ -1430,7 +1431,11 @@ export default function SantriTableView({
                         </div>
                       )
                     )}
-                    <span>{startIndex + idx + 1}</span>
+                    <div className="flex-1 text-center font-mono">
+                      {renderEditableCell(s, 'noAbsen', s.noAbsen || String(startIndex + idx + 1), {
+                        className: `font-mono text-xs font-semibold text-center cursor-pointer hover:text-emerald-700 ${s.noAbsen ? 'text-slate-800' : 'text-slate-400'}`
+                      })}
+                    </div>
                   </div>
                 </td>
                 {/* Name sticky column (Nama Lengkap) - Sticky on Desktop only */}
@@ -1842,6 +1847,15 @@ export default function SantriTableView({
                     ) : (
                       <span className="text-slate-400 font-mono">-</span>
                     )}
+                  </td>
+                )}
+                {shouldShowColumn('nomorLemari') && (
+                  <td className={`px-2 py-4 whitespace-nowrap text-xs font-semibold text-center w-[84px] min-w-[84px] max-w-[90px] font-mono text-slate-700 ${
+                    isMonitoringMode && isCellEmpty(s, 'nomorLemari') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
+                  }`}>
+                    {renderEditableCell(s, 'nomorLemari', s.nomorLemari || '-', {
+                      className: `font-mono text-xs font-semibold text-center ${!s.nomorLemari ? 'text-slate-300 font-normal' : 'text-slate-700'}`
+                    })}
                   </td>
                 )}
                 {shouldShowColumn('tanggalMasuk') && (
@@ -2828,7 +2842,7 @@ export default function SantriTableView({
       {typeof document !== 'undefined' && createPortal(
         <div
           ref={floatingHeaderOuterRef}
-          className="fixed z-[45] bg-slate-50 border border-slate-100 shadow-md rounded-t-2xl overflow-visible"
+          className="fixed z-[30] bg-slate-50 border border-slate-100 shadow-md rounded-t-2xl overflow-visible"
           style={{
             top: `${stickyTop}px`,
             left: `${floatingHeaderStyle.left}px`,

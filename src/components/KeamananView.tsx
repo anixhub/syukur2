@@ -9519,7 +9519,7 @@ export default function KeamananView({
       {typeof document !== 'undefined' && isScrolled && displayTab === 'catatan' && createPortal(
         <div
           ref={floatingHeaderOuterRef}
-          className="fixed z-[45] bg-slate-50 border border-slate-100 shadow-md rounded-t-2xl overflow-visible"
+          className="fixed z-[30] bg-slate-50 border border-slate-100 shadow-md rounded-t-2xl overflow-visible"
           style={{
             top: `${stickyTop}px`,
             left: `${floatingHeaderStyle.left}px`,

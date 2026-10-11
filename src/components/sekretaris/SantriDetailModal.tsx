@@ -687,7 +687,7 @@ export default function SantriDetailModal({
 
   const modalContent = (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-3 sm:p-4">
+      <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-4">
         {/* Backdrop click handler */}
         <div className="absolute inset-0" onClick={onClose} />
 
@@ -772,7 +772,16 @@ export default function SantriDetailModal({
 
                 {/* NIS & Address */}
                 <p className="text-[11px] sm:text-xs text-slate-500 font-medium mt-1 truncate flex items-center gap-2">
-                  <span className="font-mono text-slate-700 font-extrabold bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">{localSantri.nis}</span>
+                  <span className="font-mono text-slate-700 font-extrabold bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">NIS: {localSantri.nis}</span>
+                  {localSantri.noAbsen && (() => {
+                    const num = parseInt(localSantri.noAbsen.trim(), 10);
+                    const formatted = (!isNaN(num) && num > 0) ? String(num).padStart(2, '0') : localSantri.noAbsen.trim();
+                    return (
+                      <span className="font-mono text-emerald-800 font-extrabold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/80 shadow-2xs">
+                        Absen: {formatted}
+                      </span>
+                    );
+                  })()}
                   <span className="text-slate-400">•</span>
                   <span className="text-slate-600 truncate">{getAddressStr()}</span>
                 </p>
@@ -1543,6 +1552,15 @@ export default function SantriDetailModal({
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
                     {[
+                      { 
+                        label: 'NO. ABSEN', 
+                        val: (() => {
+                          const raw = localSantri.noAbsen?.trim();
+                          if (!raw) return '-';
+                          const num = parseInt(raw, 10);
+                          return (!isNaN(num) && num > 0) ? String(num).padStart(2, '0') : raw;
+                        })()
+                      },
                       { label: 'NISN', val: localSantri.nisn || '-' },
                       { 
                         label: 'KELAS MHD / DINIYYAH', 
@@ -1764,7 +1782,7 @@ export default function SantriDetailModal({
       {/* Photo & Document Preview Overlay */}
       <AnimatePresence>
         {(previewDoc || previewPhotoUrl) && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-5">
+          <div className="fixed inset-0 z-[1000005] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-5">
             <div className="absolute inset-0" onClick={() => { setPreviewPhotoUrl(null); setPreviewDoc(null); }} />
             <motion.div
               initial={{ scale: 0.98, opacity: 0 }}
@@ -1869,7 +1887,7 @@ export default function SantriDetailModal({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[300] bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-4 sm:p-8 select-none"
+            className="fixed inset-0 z-[1000010] bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-4 sm:p-8 select-none"
             onClick={() => setIsPhotoPreviewOpen(false)}
           >
             {/* Top Control Bar */}

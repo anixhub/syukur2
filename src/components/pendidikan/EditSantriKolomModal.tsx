@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Save, User, Hash, Calendar, Heart, ShieldCheck, BookOpen, Layers, Sparkles } from 'lucide-react';
 import { Santri, Lembaga } from '../../types';
@@ -24,6 +25,7 @@ export const EditSantriKolomModal: React.FC<EditSantriKolomModalProps> = ({
   if (!isOpen || !santri) return null;
 
   const [formData, setFormData] = useState({
+    noAbsen: santri.noAbsen || '',
     nism: santri.nism || santri.indukWustho || santri.indukUlya || santri.indukMhd || '',
     indukWustho: santri.indukWustho || '',
     indukUlya: santri.indukUlya || '',
@@ -65,6 +67,7 @@ export const EditSantriKolomModal: React.FC<EditSantriKolomModalProps> = ({
     const cleanNism = formData.nism.trim();
     const updated: Santri = {
       ...santri,
+      noAbsen: formData.noAbsen.trim(),
       nism: cleanNism,
       indukWustho: formData.indukWustho.trim() || (cleanNism.length === 18 && santri.pendidikanFormal?.toLowerCase().includes('wustho') ? cleanNism : santri.indukWustho),
       indukUlya: formData.indukUlya.trim() || (cleanNism.length === 18 && santri.pendidikanFormal?.toLowerCase().includes('ulya') ? cleanNism : santri.indukUlya),
@@ -90,9 +93,9 @@ export const EditSantriKolomModal: React.FC<EditSantriKolomModalProps> = ({
     onClose();
   };
 
-  return (
+  const modalContent = (
     <AnimatePresence>
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs animate-fade-in overflow-y-auto">
+      <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs animate-fade-in overflow-y-auto">
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -186,6 +189,21 @@ export const EditSantriKolomModal: React.FC<EditSantriKolomModalProps> = ({
                       maxLength={15}
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none font-semibold text-slate-800 text-xs"
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
+                      No. Absen
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.noAbsen}
+                      onChange={(e) => setFormData({ ...formData, noAbsen: e.target.value })}
+                      placeholder="Contoh: 01, 1, 2..."
+                      maxLength={10}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none font-mono font-bold text-slate-800 text-xs"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">Nomor absen santri di kelas</p>
                   </div>
 
                   <div className="sm:col-span-3">
@@ -456,6 +474,8 @@ export const EditSantriKolomModal: React.FC<EditSantriKolomModalProps> = ({
       </div>
     </AnimatePresence>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modalContent, document.body) : null;
 };
 
 export default EditSantriKolomModal;

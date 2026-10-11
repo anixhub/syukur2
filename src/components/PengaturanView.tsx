@@ -677,7 +677,7 @@ export default function PengaturanView({
       };
 
       // Calculate exact colspans dynamically
-      const totalBiodataCols = 33;
+      const totalBiodataCols = 34;
       const totalAkademikCols = listLembaga.length + listRombelCategories.length + 1; // +1 is Kamar/Asrama
       const totalDisiplinCols = 2; // Poin Pelanggaran & Jumlah Pelanggaran
       const totalColsCount = totalBiodataCols + totalAkademikCols + totalDisiplinCols;
@@ -758,6 +758,7 @@ export default function PengaturanView({
             <!-- Table Column Headers (Row 2) -->
             <tr>
               <th class="table-th" style="background-color: #f1f5f9; border: 1px solid #cbd5e1; font-weight: bold; text-align: center;">No</th>
+              <th class="table-th" style="background-color: #f1f5f9; border: 1px solid #cbd5e1; font-weight: bold; text-align: center;">No. Absen</th>
               <th class="table-th" style="background-color: #f1f5f9; border: 1px solid #cbd5e1; font-weight: bold; text-align: center;">NIS</th>
               <th class="table-th" style="background-color: #f1f5f9; border: 1px solid #cbd5e1; font-weight: bold; text-align: center;">NISN</th>
               <th class="table-th" style="background-color: #f1f5f9; border: 1px solid #cbd5e1; font-weight: bold; text-align: center;">Induk MHD</th>
@@ -836,9 +837,14 @@ export default function PengaturanView({
             return `<td style="color: #4b5563; border: 1px solid #cbd5e1; background-color: #fffbeb; white-space: nowrap;">${rombelVal}</td>`;
           }).join('\n');
 
+          const rawAbsen = s.noAbsen?.trim();
+          const numAbsen = rawAbsen ? parseInt(rawAbsen, 10) : NaN;
+          const formattedAbsen = (!isNaN(numAbsen) && numAbsen > 0) ? String(numAbsen).padStart(2, '0') : (rawAbsen || '-');
+
           html += `
             <tr style="${rowStyle}">
               <td style="text-align: center; border: 1px solid #cbd5e1;">${idx + 1}</td>
+              <td style="font-family: monospace; border: 1px solid #cbd5e1; text-align: center; mso-number-format:'\\@';">${formattedAbsen}</td>
               <td style="font-family: monospace; border: 1px solid #cbd5e1; text-align: center; mso-number-format:'\\@';">${s.nis || '-'}</td>
               <td style="font-family: monospace; border: 1px solid #cbd5e1; text-align: center; mso-number-format:'\\@';">${s.nisn || '-'}</td>
               <td style="font-family: monospace; border: 1px solid #cbd5e1; text-align: center; mso-number-format:'\\@';">${s.indukMhd || '-'}</td>

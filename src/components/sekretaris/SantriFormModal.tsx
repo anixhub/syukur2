@@ -458,6 +458,7 @@ const initialFormState = {
   statusDomisili: 'Muqim' as 'Muqim' | 'Kampung',
   statusEmis: 'Belum' as 'Terdaftar' | 'Invalid' | 'Belum' | 'Keluar' | 'Lulus',
   statusVerval: 'Proses' as 'Sukses' | 'Proses',
+  noAbsen: '',
   kelas: '',
   kamar: '',
   tanggalMasuk: '',
@@ -960,6 +961,7 @@ export default function SantriFormModal({
           statusDomisili: editingSantri.statusDomisili || 'Muqim',
           statusEmis: editingSantri.statusEmis || 'Belum',
           statusVerval: editingSantri.statusVerval || 'Proses',
+          noAbsen: editingSantri.noAbsen || '',
           kelas: editingSantri.kelas || '',
           kamar: editingSantri.kamar || '',
           tanggalMasuk: editingSantri.tanggalMasuk || '',
@@ -1462,6 +1464,7 @@ export default function SantriFormModal({
     const entry: Santri = {
       id: editingSantri ? editingSantri.id : `S${Date.now()}`,
       nis: generatedNis,
+      noAbsen: form.noAbsen ? form.noAbsen.trim() : undefined,
       nism: editingSantri ? editingSantri.nism : undefined,
       nama: form.nama,
       kelas: finalKelasString,
@@ -1540,7 +1543,7 @@ export default function SantriFormModal({
     <>
       <AnimatePresence>
         {isOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-3 sm:p-4">
+          <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-4">
             <motion.div
               initial={{ scale: 0.98, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -2218,6 +2221,19 @@ export default function SantriFormModal({
                           )}
                         </div>
 
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">No. Absen</label>
+                          <input
+                            type="text"
+                            value={form.noAbsen}
+                            onChange={(e) => setForm(prev => ({ ...prev, noAbsen: e.target.value }))}
+                            placeholder="Contoh: 01, 1, 2..."
+                            maxLength={10}
+                            className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:border-emerald-500 outline-none font-mono font-bold"
+                          />
+                          <p className="text-[10px] text-slate-400 mt-1">Nomor urut absensi santri di kelas</p>
+                        </div>
+
                         {/* Informasi Nomor Induk Lembaga & NISM (Eksklusif Modul Pendidikan) */}
                         <div className="sm:col-span-2 bg-slate-50/90 rounded-2xl p-4 border border-slate-200">
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 mb-3">
@@ -2879,7 +2895,7 @@ export default function SantriFormModal({
       {/* FULL SCREEN FILE PREVIEW MODAL */}
       <AnimatePresence>
         {previewFile && (
-          <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-in fade-in duration-250">
+          <div className="fixed inset-0 z-[1000005] flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 animate-in fade-in duration-250">
             <button
               onClick={() => setPreviewFile(null)}
               className="absolute top-4 right-4 text-white/80 hover:text-white bg-white/10 hover:bg-white/25 p-2 rounded-full transition-all cursor-pointer"
@@ -2973,7 +2989,7 @@ export default function SantriFormModal({
 
       {/* Modal Input Masalah Status EMIS Invalid in Form */}
       {showInvalidModalInForm && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 animate-fadeIn" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[1000010] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-fadeIn" onClick={(e) => e.stopPropagation()}>
           <div className="bg-white rounded-3xl p-5 sm:p-6 max-w-md w-full shadow-2xl border border-slate-100 space-y-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2 text-rose-600">

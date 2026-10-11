@@ -1452,10 +1452,12 @@ async function ensureTableExists(table: string, pool: mysql.Pool) {
           \`kelas\` VARCHAR(100) NULL,
           \`kamar\` VARCHAR(100) NULL,
           \`nis\` VARCHAR(50) NULL,
+          \`no_absen\` VARCHAR(50) NULL,
           \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
       `;
       const santriCols = [
+        'no_absen',
         'nism', 'semester', 'kelas_mhd', 'tahun_lulus',
         'induk_mhd', 'induk_wustho', 'induk_ulya',
         'nisn', 'nik', 'no_kk', 'tempat_lahir', 'tanggal_lahir',
@@ -1465,7 +1467,8 @@ async function ensureTableExists(table: string, pool: mysql.Pool) {
         'desa', 'kecamatan', 'kabupaten', 'provinsi', 'jarak_rumah',
         'no_hp', 'status_keanggotaan', 'status_domisili', 'status_emis',
         'status_verval', 'tanggal_keluar', 'catatan', 'nomor_lemari',
-        'pendidikan_terakhir', 'pendidikan_formal', 'pendidikan_internal', 'kelas_id'
+        'pendidikan_terakhir', 'pendidikan_formal', 'pendidikan_internal', 'kelas_id',
+        'file_kk', 'file_ktp', 'file_akta', 'file_ijazah', 'file_pas_foto'
       ];
       await ensureTableColumnsFast(pool, 'santri', createSql, santriCols);
     } else if (table === 'pesantren_profile') {
