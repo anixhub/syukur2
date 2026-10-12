@@ -458,7 +458,6 @@ const initialFormState = {
   statusDomisili: 'Muqim' as 'Muqim' | 'Kampung',
   statusEmis: 'Belum' as 'Terdaftar' | 'Invalid' | 'Belum' | 'Keluar' | 'Lulus',
   statusVerval: 'Proses' as 'Sukses' | 'Proses',
-  noAbsen: '',
   kelas: '',
   kamar: '',
   tanggalMasuk: '',
@@ -961,7 +960,6 @@ export default function SantriFormModal({
           statusDomisili: editingSantri.statusDomisili || 'Muqim',
           statusEmis: editingSantri.statusEmis || 'Belum',
           statusVerval: editingSantri.statusVerval || 'Proses',
-          noAbsen: editingSantri.noAbsen || '',
           kelas: editingSantri.kelas || '',
           kamar: editingSantri.kamar || '',
           tanggalMasuk: editingSantri.tanggalMasuk || '',
@@ -1464,7 +1462,6 @@ export default function SantriFormModal({
     const entry: Santri = {
       id: editingSantri ? editingSantri.id : `S${Date.now()}`,
       nis: generatedNis,
-      noAbsen: form.noAbsen ? form.noAbsen.trim() : undefined,
       nism: editingSantri ? editingSantri.nism : undefined,
       nama: form.nama,
       kelas: finalKelasString,
@@ -2219,19 +2216,6 @@ export default function SantriFormModal({
                               *Harap atur tanggal masuk terlebih dahulu untuk men-generate NIS.
                             </p>
                           )}
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">No. Absen</label>
-                          <input
-                            type="text"
-                            value={form.noAbsen}
-                            onChange={(e) => setForm(prev => ({ ...prev, noAbsen: e.target.value }))}
-                            placeholder="Contoh: 01, 1, 2..."
-                            maxLength={10}
-                            className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:border-emerald-500 outline-none font-mono font-bold"
-                          />
-                          <p className="text-[10px] text-slate-400 mt-1">Nomor urut absensi santri di kelas</p>
                         </div>
 
                         {/* Informasi Nomor Induk Lembaga & NISM (Eksklusif Modul Pendidikan) */}

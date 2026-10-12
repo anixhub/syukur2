@@ -387,25 +387,6 @@ export default function LembagaKelasSub({
   // Edit student column modal state
   const [editingSantriForKolom, setEditingSantriForKolom] = useState<Santri | null>(null);
 
-  // Inline editing state for NO column
-  const [editingNoSantriId, setEditingNoSantriId] = useState<string | null>(null);
-  const [editingNoValue, setEditingNoValue] = useState<string>('');
-
-  const handleSaveNo = (santriId: string, value: string) => {
-    const target = santriList.find(x => x.id === santriId);
-    if (target) {
-      const trimmed = value.trim();
-      if (trimmed !== (target.noAbsen || '')) {
-        onUpdateSantri?.({
-          ...target,
-          noAbsen: trimmed || undefined
-        });
-        showToast(`Nomor urut ${target.nama} berhasil diubah.`);
-      }
-    }
-    setEditingNoSantriId(null);
-  };
-
   // Batas Usia states for Calon Pelajar
   const [kelBatasUsiaHari, setKelBatasUsiaHari] = useState<number>(1);
   const [kelBatasUsiaBulan, setKelBatasUsiaBulan] = useState<number>(7);
@@ -536,7 +517,6 @@ export default function LembagaKelasSub({
 
     const shouldShowColumnLocal = (colKey: string): boolean => {
       if (colKey === 'nama') return true;
-      if (colKey === 'noAbsen') return visibleColumns['noAbsen'] ?? true;
       if (colKey === 'statusEmis') {
         if (isCalonPelajarPage) {
           return visibleColumns['statusEmis'] ?? true;
@@ -2504,7 +2484,6 @@ export default function LembagaKelasSub({
 
   const shouldShowColumn = (colKey: string): boolean => {
     if (colKey === 'nama') return true;
-    if (colKey === 'noAbsen') return visibleColumns['noAbsen'] ?? true;
     if (colKey === 'statusEmis') {
       if (isCalonPelajarPage) {
         // khusus kelas calon di masing lembaga formal tolong tampilkan kolom keterangan emis
@@ -2722,7 +2701,6 @@ export default function LembagaKelasSub({
 
     const shouldShowColumnLocal = (colKey: string): boolean => {
       if (colKey === 'nama') return true;
-      if (colKey === 'noAbsen') return visibleColumns['noAbsen'] ?? true;
       if (colKey === 'statusEmis') {
         if (isCalonPelajarPage) {
           return visibleColumns['statusEmis'] ?? true;
@@ -2812,7 +2790,7 @@ export default function LembagaKelasSub({
     const headers = ['NO', ...activeCols.map(c => c.label)];
 
     const rows = studentsToExport.map((s, idx) => [
-      s.noAbsen || idx + 1,
+      idx + 1,
       ...activeCols.map(c => c.getValue(s))
     ]);
 
@@ -2960,7 +2938,7 @@ export default function LembagaKelasSub({
 
     const rowsHtml = studentsToPrint.map((s, idx) => `
       <tr>
-        <td style="text-align: center;">${escapeXml(s.noAbsen || String(idx + 1))}</td>
+        <td style="text-align: center;">${idx + 1}</td>
         ${activeCols.map(c => {
           const val = c.getValue(s);
           const isMono = c.isMono ? 'font-family: monospace; font-size: 8.5px;' : '';
@@ -4343,51 +4321,10 @@ export default function LembagaKelasSub({
                                           onChange={() => handleToggleStudentSelection(s.id)}
                                           className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer h-3.5 w-3.5"
                                         />
-                                      ) : editingNoSantriId === s.id ? (
-                                        <input
-                                          type="text"
-                                          autoFocus
-                                          value={editingNoValue}
-                                          onClick={(e) => e.stopPropagation()}
-                                          onChange={(e) => {
-                                            setEditingNoValue(e.target.value);
-                                          }}
-                                          onKeyDown={(e) => {
-                                            if (e.key === 'Enter') {
-                                              e.stopPropagation();
-                                              handleSaveNo(s.id, editingNoValue);
-                                            } else if (e.key === 'Escape') {
-                                              e.stopPropagation();
-                                              setEditingNoSantriId(null);
-                                            }
-                                          }}
-                                          onBlur={() => {
-                                            handleSaveNo(s.id, editingNoValue);
-                                          }}
-                                          className="w-10 px-1 py-0.5 text-center font-mono text-xs font-bold rounded border border-emerald-500 bg-white text-slate-800 shadow-xs outline-none focus:ring-1 focus:ring-emerald-500"
-                                          placeholder={String(startIndex + idx + 1)}
-                                        />
                                       ) : (
-                                        <div
-                                          onClick={(e) => {
-                                            if (canWriteCurrent && !isSelectionMode) {
-                                              e.stopPropagation();
-                                              setEditingNoSantriId(s.id);
-                                              setEditingNoValue(s.noAbsen || String(startIndex + idx + 1));
-                                            }
-                                          }}
-                                          className={`group/no relative flex items-center justify-center font-mono text-xs font-bold ${
-                                            canWriteCurrent && !isSelectionMode ? 'cursor-pointer hover:text-emerald-700' : 'text-slate-400'
-                                          }`}
-                                          title={canWriteCurrent && !isSelectionMode ? `Klik untuk ubah No urut/absen ${s.nama}` : undefined}
-                                        >
-                                          <span className={s.noAbsen ? 'text-slate-700' : 'text-slate-400'}>
-                                            {s.noAbsen || startIndex + idx + 1}
-                                          </span>
-                                          {canWriteCurrent && !isSelectionMode && (
-                                            <Pencil className="h-2 w-2 text-slate-400 opacity-0 group-hover/no:opacity-100 transition-opacity ml-0.5 shrink-0" />
-                                          )}
-                                        </div>
+                                        <span className="font-mono text-xs font-semibold text-slate-700">
+                                          {startIndex + idx + 1}
+                                        </span>
                                       )}
                                     </td>
 

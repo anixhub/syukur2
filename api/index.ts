@@ -1452,12 +1452,10 @@ async function ensureTableExists(table: string, pool: mysql.Pool) {
           \`kelas\` VARCHAR(100) NULL,
           \`kamar\` VARCHAR(100) NULL,
           \`nis\` VARCHAR(50) NULL,
-          \`no_absen\` VARCHAR(50) NULL,
           \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
       `;
       const santriCols = [
-        'no_absen',
         'nism', 'semester', 'kelas_mhd', 'tahun_lulus',
         'induk_mhd', 'induk_wustho', 'induk_ulya',
         'nisn', 'nik', 'no_kk', 'tempat_lahir', 'tanggal_lahir',
@@ -1471,6 +1469,22 @@ async function ensureTableExists(table: string, pool: mysql.Pool) {
         'file_kk', 'file_ktp', 'file_akta', 'file_ijazah', 'file_pas_foto'
       ];
       await ensureTableColumnsFast(pool, 'santri', createSql, santriCols);
+
+      // Migrasi Hostinger MySQL: Hapus kolom no_absen dari tabel santri dan hapus tabel absen/absensi jika ada
+      try {
+        const [chkCol]: any = await withTimeout(
+          pool.query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'santri' AND COLUMN_NAME = 'no_absen'`),
+          2000
+        );
+        if (Array.isArray(chkCol) && chkCol.length > 0) {
+          await withTimeout(pool.query(`ALTER TABLE \`santri\` DROP COLUMN \`no_absen\``), 3000);
+          console.log('[Hostinger DB] Berhasil drop kolom no_absen dari tabel santri');
+        }
+      } catch (e: any) {}
+
+      try {
+        await withTimeout(pool.query(`DROP TABLE IF EXISTS \`absen\`, \`absensi\`, \`no_absen\``), 3000);
+      } catch (e: any) {}
     } else if (table === 'pesantren_profile') {
       const createSql = `
         CREATE TABLE IF NOT EXISTS \`pesantren_profile\` (

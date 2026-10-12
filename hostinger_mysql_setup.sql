@@ -17,6 +17,13 @@
 
 SET FOREIGN_KEY_CHECKS = 0;
 
+-- ==============================================================================
+-- PEMBERSIHAN TABEL & KOLOM NO. ABSEN
+-- ==============================================================================
+DROP TABLE IF EXISTS `absen`;
+DROP TABLE IF EXISTS `absensi`;
+DROP TABLE IF EXISTS `no_absen`;
+
 -- 1. TABEL SANTRI
 CREATE TABLE IF NOT EXISTS `santri` (
   `id` VARCHAR(50) NOT NULL PRIMARY KEY,
@@ -77,6 +84,21 @@ CREATE TABLE IF NOT EXISTS `santri` (
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Hapus kolom no_absen jika ada pada tabel santri
+SET @drop_col_santri = (
+  SELECT IF(
+    EXISTS (
+      SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'santri' AND COLUMN_NAME = 'no_absen'
+    ),
+    'ALTER TABLE `santri` DROP COLUMN `no_absen`;',
+    'DO 0;'
+  )
+);
+PREPARE stmt_drop_col FROM @drop_col_santri;
+EXECUTE stmt_drop_col;
+DEALLOCATE PREPARE stmt_drop_col;
 
 -- 2. TABEL LEMBAGA
 CREATE TABLE IF NOT EXISTS `lembaga` (

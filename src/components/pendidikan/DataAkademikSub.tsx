@@ -200,25 +200,6 @@ export default function DataAkademikSub({
   const [editingNisId, setEditingNisId] = useState<string | null>(null);
   const [editingNisVal, setEditingNisVal] = useState<string>('');
 
-  // Inline editing state for NO column
-  const [editingNoSantriId, setEditingNoSantriId] = useState<string | null>(null);
-  const [editingNoValue, setEditingNoValue] = useState<string>('');
-
-  const handleSaveNo = (santriId: string, value: string) => {
-    const target = santriList.find(x => x.id === santriId);
-    if (target) {
-      const trimmed = value.trim();
-      if (trimmed !== (target.noAbsen || '')) {
-        onUpdateSantri({
-          ...target,
-          noAbsen: trimmed || undefined
-        });
-        setToast({ message: `Nomor urut ${target.nama} berhasil diubah.`, type: 'success' });
-      }
-    }
-    setEditingNoSantriId(null);
-  };
-
   // Status EMIS Dropdown States
   const [activeEmisDropdownId, setActiveEmisDropdownId] = useState<string | null>(null);
   const [emisDropdownPos, setEmisDropdownPos] = useState<{ top: number; left: number; isUpward?: boolean } | null>(null);
@@ -1032,14 +1013,8 @@ export default function DataAkademikSub({
       let comparison = 0;
       if (sortKey === 'nama') {
         comparison = a.nama.localeCompare(b.nama, 'id', { sensitivity: 'base', numeric: true });
-      } else if (sortKey === 'no' || sortKey === 'noAbsen') {
-        const numA = parseInt(a.noAbsen || '', 10);
-        const numB = parseInt(b.noAbsen || '', 10);
-        if (!isNaN(numA) && !isNaN(numB)) {
-          comparison = numA - numB;
-        } else {
-          comparison = (a.noAbsen || '').localeCompare(b.noAbsen || '', 'id', { numeric: true });
-        }
+      } else if (sortKey === 'no') {
+        comparison = 0;
       } else if (sortKey === 'statusEmis') {
         const emisA = a.statusEmis || 'Belum';
         const emisB = b.statusEmis || 'Belum';
@@ -1453,7 +1428,7 @@ export default function DataAkademikSub({
       }
 
       return [
-        s.noAbsen?.trim() || String(idx + 1),
+        String(idx + 1),
         s.nama,
         s.nis || '-',
         s.statusEmis || 'Belum',
@@ -1703,7 +1678,7 @@ export default function DataAkademikSub({
 
               return `
                 <tr>
-                  <td class="text-center font-mono font-bold">${s.noAbsen?.trim() || (idx + 1)}</td>
+                  <td class="text-center font-mono font-bold">${idx + 1}</td>
                   <td style="font-weight: 600;">${s.nama}</td>
                   <td class="text-center font-mono">${s.nis || '-'}</td>
                   <td class="text-center">${s.statusEmis || 'Belum'}</td>
@@ -2984,7 +2959,7 @@ export default function DataAkademikSub({
                         </td>
                       )}
 
-                      {/* Sticky No Cell - EDITABLE */}
+                      {/* Sticky No Cell */}
                       <td className={`px-1 py-3.5 static sm:sticky ${
                         isSelectionMode ? 'sm:left-[48px]' : 'sm:left-0'
                       } transition-colors z-20 sm:shadow-[2px_0_5px_rgba(0,0,0,0.01)] border-r border-slate-100 text-center font-mono text-xs font-semibold w-[50px] min-w-[50px] max-w-[50px] ${
@@ -2992,50 +2967,9 @@ export default function DataAkademikSub({
                           ? 'bg-indigo-50 text-indigo-800 font-bold'
                           : 'bg-white text-slate-500 group-hover:bg-slate-50'
                       }`}>
-                        {editingNoSantriId === s.id ? (
-                          <input
-                            type="text"
-                            autoFocus
-                            value={editingNoValue}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => setEditingNoValue(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.stopPropagation();
-                                handleSaveNo(s.id, editingNoValue);
-                              } else if (e.key === 'Escape') {
-                                e.stopPropagation();
-                                setEditingNoSantriId(null);
-                              }
-                            }}
-                            onBlur={() => {
-                              handleSaveNo(s.id, editingNoValue);
-                            }}
-                            className="w-10 px-1 py-0.5 text-center font-mono text-xs font-bold rounded border border-indigo-500 bg-white text-slate-800 shadow-xs outline-none focus:ring-1 focus:ring-indigo-500"
-                            placeholder={String(startIndex + idx + 1)}
-                          />
-                        ) : (
-                          <div
-                            onClick={(e) => {
-                              if (canWriteCurrent && !isSelectionMode) {
-                                e.stopPropagation();
-                                setEditingNoSantriId(s.id);
-                                setEditingNoValue(s.noAbsen || String(startIndex + idx + 1));
-                              }
-                            }}
-                            className={`group/no relative flex items-center justify-center font-mono text-xs font-bold ${
-                              canWriteCurrent && !isSelectionMode ? 'cursor-pointer hover:text-indigo-700' : 'text-slate-400'
-                            }`}
-                            title={canWriteCurrent && !isSelectionMode ? `Klik untuk ubah No urut/absen ${s.nama}` : undefined}
-                          >
-                            <span className={s.noAbsen ? 'text-slate-800 font-bold' : 'text-slate-400'}>
-                              {s.noAbsen || startIndex + idx + 1}
-                            </span>
-                            {canWriteCurrent && !isSelectionMode && (
-                              <Pencil className="h-2 w-2 text-slate-400 opacity-0 group-hover/no:opacity-100 transition-opacity ml-0.5 shrink-0" />
-                            )}
-                          </div>
-                        )}
+                        <span className="font-mono text-xs font-semibold text-slate-700">
+                          {startIndex + idx + 1}
+                        </span>
                       </td>
 
                       {/* Sticky Nama Lengkap Cell with Alamat underneath */}

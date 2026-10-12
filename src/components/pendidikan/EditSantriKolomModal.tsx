@@ -25,7 +25,6 @@ export const EditSantriKolomModal: React.FC<EditSantriKolomModalProps> = ({
   if (!isOpen || !santri) return null;
 
   const [formData, setFormData] = useState({
-    noAbsen: santri.noAbsen || '',
     nism: santri.nism || santri.indukWustho || santri.indukUlya || santri.indukMhd || '',
     indukWustho: santri.indukWustho || '',
     indukUlya: santri.indukUlya || '',
@@ -67,7 +66,6 @@ export const EditSantriKolomModal: React.FC<EditSantriKolomModalProps> = ({
     const cleanNism = formData.nism.trim();
     const updated: Santri = {
       ...santri,
-      noAbsen: formData.noAbsen.trim(),
       nism: cleanNism,
       indukWustho: formData.indukWustho.trim() || (cleanNism.length === 18 && santri.pendidikanFormal?.toLowerCase().includes('wustho') ? cleanNism : santri.indukWustho),
       indukUlya: formData.indukUlya.trim() || (cleanNism.length === 18 && santri.pendidikanFormal?.toLowerCase().includes('ulya') ? cleanNism : santri.indukUlya),
@@ -191,20 +189,7 @@ export const EditSantriKolomModal: React.FC<EditSantriKolomModalProps> = ({
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
-                      No. Absen
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.noAbsen}
-                      onChange={(e) => setFormData({ ...formData, noAbsen: e.target.value })}
-                      placeholder="Contoh: 01, 1, 2..."
-                      maxLength={10}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none font-mono font-bold text-slate-800 text-xs"
-                    />
-                    <p className="text-[10px] text-slate-400 mt-1">Nomor absen santri di kelas</p>
-                  </div>
+
 
                   <div className="sm:col-span-3">
                     <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">

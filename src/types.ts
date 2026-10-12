@@ -1,7 +1,6 @@
 export interface Santri {
   id: string;
   nis: string;
-  noAbsen?: string;
   nama: string;
   kelas: string;
   kamar: string;

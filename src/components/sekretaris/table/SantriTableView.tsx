@@ -1431,10 +1431,8 @@ export default function SantriTableView({
                         </div>
                       )
                     )}
-                    <div className="flex-1 text-center font-mono">
-                      {renderEditableCell(s, 'noAbsen', s.noAbsen || String(startIndex + idx + 1), {
-                        className: `font-mono text-xs font-semibold text-center cursor-pointer hover:text-emerald-700 ${s.noAbsen ? 'text-slate-800' : 'text-slate-400'}`
-                      })}
+                    <div className="flex-1 text-center font-mono text-xs font-semibold text-slate-700">
+                      {startIndex + idx + 1}
                     </div>
                   </div>
                 </td>
