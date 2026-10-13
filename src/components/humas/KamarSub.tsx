@@ -3475,7 +3475,8 @@ export default function KamarSub({
                                                     e.stopPropagation();
                                                     setSelectedSantriForDetail(s);
                                                   }}
-                                                  title="Klik untuk melihat detail santri"
+                                                  data-tooltip={s.nama}
+                                                  data-tooltip-hint="Klik untuk melihat detail santri"
                                                 >
                                                   {s.nama}
                                                 </span>

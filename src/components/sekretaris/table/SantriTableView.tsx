@@ -688,7 +688,7 @@ export default function SantriTableView({
           handleCellDoubleClick(e, s, field);
         }}
         title={canWrite && !isSelectionMode ? "Double-click untuk edit cepat" : undefined}
-        className={`group/cell relative flex items-center justify-between rounded px-1.5 py-0.5 transition-colors ${
+        className={`group/cell relative flex items-center justify-between rounded px-1.5 py-0.5 transition-colors min-w-0 w-full ${
           isSelectionMode
             ? 'pointer-events-none opacity-80'
             : canWrite
@@ -696,7 +696,7 @@ export default function SantriTableView({
               : ''
         } ${options?.className || ''}`}
       >
-        <span className="truncate">{displayValue}</span>
+        <span className="truncate min-w-0 flex-1">{displayValue}</span>
         {canWrite && !isSelectionMode && (
           <Pencil className="h-2.5 w-2.5 text-slate-400 opacity-0 group-hover/cell:opacity-100 transition-opacity shrink-0 ml-1" />
         )}

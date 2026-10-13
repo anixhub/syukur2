@@ -8,6 +8,7 @@ import HelpModal from './components/HelpModal';
 import AdminChatDrawer from './components/AdminChatDrawer';
 import NotificationsPage from './components/NotificationsPage';
 import OfflineStatusBanner from './components/OfflineStatusBanner';
+import SmartTooltip from './components/SmartTooltip';
 import { fetchTableData, insertTableRow, insertTableRows, updateTableRow, deleteTableRow, subscribeRealtimeChanges, snakeToCamel, safeLocalStorageSetItem } from './lib/api';
 
 // Views (Lazy-loaded for code splitting and instant initial page load)
@@ -1528,6 +1529,9 @@ export default function App() {
 
       {/* Offline & Sync Status Banner */}
       <OfflineStatusBanner />
+
+      {/* Universal Smart Tooltip for Truncated Text & Informational Badges */}
+      <SmartTooltip />
 
     </div>
   );

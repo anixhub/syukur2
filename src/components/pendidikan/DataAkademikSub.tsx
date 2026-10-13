@@ -2915,7 +2915,7 @@ export default function DataAkademikSub({
 
                   return (
                     <tr 
-                      key={s.id} 
+                      key={`${s.id}-${idx}`} 
                       onClick={() => {
                         if (isSelectionMode) {
                           if (isSelected) {
@@ -2997,7 +2997,8 @@ export default function DataAkademikSub({
                                   if (!isSelectionMode) setSelectedSantri(s);
                                 }}
                                 className={`font-display text-sm font-bold text-slate-900 leading-tight transition-colors truncate ${!isSelectionMode ? 'hover:text-indigo-600 cursor-pointer' : 'cursor-default'}`}
-                                title={!isSelectionMode ? "Klik untuk lihat biodata lengkap" : undefined}
+                                data-tooltip={s.nama}
+                                data-tooltip-hint={!isSelectionMode ? "Klik untuk lihat biodata lengkap" : undefined}
                               >
                                 {s.nama}
                               </p>

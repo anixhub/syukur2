@@ -17,11 +17,26 @@ try {
 
 dotenv.config();
 
-const PORT = Number(process.env.PORT) || 3000;
+// Runtime environment constraint: Dev server must run on port 3000
+const args = process.argv.slice(2);
+let argPort: number | null = null;
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === "--port" && args[i + 1]) {
+    argPort = Number(args[i + 1]);
+  }
+}
+const PORT = argPort || 3000;
 
 async function startServer() {
   const httpServer = http.createServer(app);
+  httpServer.on("error", (err: any) => {
+    console.error("HTTP Server error:", err.message);
+  });
+
   const wss = new WebSocketServer({ server: httpServer });
+  wss.on("error", (err: any) => {
+    console.error("WebSocket Server error:", err.message);
+  });
 
   setWssInstance(wss);
 

@@ -6124,8 +6124,8 @@ export default function KeamananView({
                   <div className={`${groupedRiwayatByDate.length > 0 ? 'min-h-[350px]' : ''}`}>
                     {groupedRiwayatByDate.length > 0 ? (
                       <div className="space-y-4">
-                        {groupedRiwayatByDate.map((group) => (
-                          <div key={group.date} className="flex flex-col bg-white border border-slate-200/60 rounded-xl overflow-hidden shadow-none">
+                        {groupedRiwayatByDate.map((group, gIdx) => (
+                          <div key={`group-${group.date || ''}-${gIdx}`} className="flex flex-col bg-white border border-slate-200/60 rounded-xl overflow-hidden shadow-none">
                             {/* Segment header per date - centered and colored non-gray (indigo) */}
                             <div className="flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-50 text-[10px] font-black text-indigo-700 uppercase tracking-wider select-none">
                               <Calendar size={13} className="text-indigo-500" />
@@ -6134,7 +6134,7 @@ export default function KeamananView({
                             
                             {/* Segment items list */}
                             <div className="bg-white">
-                              {group.records.map((rec) => {
+                              {group.records.map((rec, rIdx) => {
                                 const matchedCat = katalog.find(k => k.nama.toLowerCase() === rec.jenisPelanggaran.toLowerCase());
                                 const student = santriList.find(s => s.nama.toLowerCase() === rec.namaSantri.toLowerCase());
 
@@ -6154,7 +6154,7 @@ export default function KeamananView({
 
                                 return (
                                   <div
-                                    key={rec.id}
+                                    key={`riwayat-rec-${rec.id || ''}-${rIdx}`}
                                     id={`riwayat-row-${rec.id}`}
                                     onClick={() => {
                                       if (isSelectionMode) {
@@ -6996,9 +6996,9 @@ export default function KeamananView({
                           
                           {/* List of items inside this group */}
                           <div className="divide-y divide-slate-100">
-                            {group.items.map((rec) => (
+                            {group.items.map((rec, rIdx) => (
                               <RiwayatIzinRow
-                                key={rec.id}
+                                key={`riwayat-row-${rec.id || ''}-${rIdx}`}
                                 rec={rec}
                                 santriList={santriList}
                               />
@@ -7076,9 +7076,9 @@ export default function KeamananView({
 
                   return (
                     <div className="space-y-3 flex-1 min-h-0 overflow-y-auto pr-1">
-                      {activePermits.map((rec) => (
+                      {activePermits.map((rec, aIdx) => (
                         <ActiveSantriIzinCard
-                          key={rec.id}
+                          key={`active-permit-${rec.id || ''}-${aIdx}`}
                           rec={rec}
                           santriList={santriList}
                           handleReturnToPondok={handleReturnToPondok}
@@ -7290,7 +7290,7 @@ export default function KeamananView({
                           </thead>
                           <tbody className="divide-y divide-slate-200 font-medium text-slate-700">
                             {stats.records.map((rec, i) => (
-                              <tr key={rec.id}>
+                              <tr key={`stat-rec-${rec.id || ''}-${i}`}>
                                 <td className="p-2 border border-slate-200 text-center font-mono">{i + 1}</td>
                                 <td className="p-2 border border-slate-200 font-mono whitespace-nowrap">{rec.tanggal}</td>
                                 <td className="p-2 border border-slate-200 font-bold text-slate-800">{rec.jenisPelanggaran}</td>
@@ -7432,9 +7432,9 @@ export default function KeamananView({
                       {showSantriDropdown && logSearchSantri.trim() !== '' && (
                         <div className="absolute left-0 right-0 mt-1.5 z-35 max-h-48 overflow-y-auto rounded-xl bg-white shadow-2xl py-1 border border-slate-100">
                           {searchedSantris.length > 0 ? (
-                            searchedSantris.map((s) => (
+                            searchedSantris.map((s, sIdx) => (
                               <button
-                                key={s.id}
+                                key={`search-s-${s.id || ''}-${sIdx}`}
                                 type="button"
                                 onClick={() => {
                                   setSelectedSantri(s);
@@ -8203,11 +8203,11 @@ export default function KeamananView({
                 <div className="p-5 pt-3 space-y-4">
                   {/* List - No outline borders */}
                   <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
-                    {periodes.map((p) => {
+                    {periodes.map((p, pIdx) => {
                       const isPendingSelected = pendingSelectedPeriode === p.id;
                       return (
                         <div
-                          key={p.id}
+                          key={`periode-${p.id || ''}-${pIdx}`}
                           className={`w-full flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-xl transition-all duration-200 ${
                             isPendingSelected 
                               ? 'bg-indigo-50/50' 
@@ -9112,10 +9112,10 @@ export default function KeamananView({
                   {/* Log Content Area */}
                   <div className="px-6 py-6 flex-1 overflow-y-auto space-y-4">
                     {violations.length > 0 ? (
-                      violations.map((rec) => {
+                      violations.map((rec, vIdx) => {
                         const isExpanded = expandedViolationId === rec.id;
                         return (
-                          <div key={rec.id} className="bg-[#f8fafc] border border-slate-200/80 rounded-2xl p-5 hover:border-slate-300 hover:bg-slate-50/80 transition-all flex flex-col gap-3">
+                          <div key={`modal-viol-${rec.id || ''}-${vIdx}`} className="bg-[#f8fafc] border border-slate-200/80 rounded-2xl p-5 hover:border-slate-300 hover:bg-slate-50/80 transition-all flex flex-col gap-3">
                             <div className="flex items-center justify-between gap-4">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-xs font-semibold text-slate-400 shrink-0">{rec.tanggal}</span>

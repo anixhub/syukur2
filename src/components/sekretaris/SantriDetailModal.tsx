@@ -32,7 +32,8 @@ import {
   Save,
   Building2,
   Info,
-  ExternalLink
+  ExternalLink,
+  Copy
 } from 'lucide-react';
 import { Santri, BendaharaRecord, KeamananRecord, Kamar, Kompleks, Kelas, Lembaga, KelompokRombel, RombelAssignment, KategoriRombel } from '../../types';
 import { renderSantriAvatar, isCustomPasFoto, calculateRealtimeAge } from '../SekretarisHelper';
@@ -418,10 +419,12 @@ export default function SantriDetailModal({
     };
   }, [selectedSantri]);
 
-  // Handle outside click or Escape key
+  // Handle Escape key
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        onClose();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -597,6 +600,51 @@ export default function SantriDetailModal({
     return Math.max(15, Math.min(85, 85 - (pts * 0.8)));
   }, [displayPoints]);
 
+  // Structured full address details for popup modal
+  const fullAddressDetails = useMemo(() => {
+    if (!localSantri) return { text: '', parts: [] as { label: string; val: string }[] };
+    const parts: { label: string; val: string }[] = [];
+    if (localSantri.alamat && localSantri.alamat.trim() !== '') {
+      parts.push({ label: 'Jalan / Dusun', val: localSantri.alamat.trim() });
+    }
+    const rtRw = (localSantri.rt || localSantri.rw) 
+      ? `RT ${localSantri.rt || '-'} / RW ${localSantri.rw || '-'}` 
+      : '';
+    if (rtRw) {
+      parts.push({ label: 'RT / RW', val: rtRw });
+    }
+    if (localSantri.desa && localSantri.desa.trim() !== '') {
+      parts.push({ label: 'Desa / Kelurahan', val: localSantri.desa.trim() });
+    }
+    if (localSantri.kecamatan && localSantri.kecamatan.trim() !== '') {
+      parts.push({ label: 'Kecamatan', val: localSantri.kecamatan.trim() });
+    }
+    if (localSantri.kabupaten && localSantri.kabupaten.trim() !== '') {
+      parts.push({ label: 'Kabupaten / Kota', val: localSantri.kabupaten.trim() });
+    }
+    if (localSantri.provinsi && localSantri.provinsi.trim() !== '') {
+      parts.push({ label: 'Provinsi', val: localSantri.provinsi.trim() });
+    }
+    if (localSantri.asal && localSantri.asal.trim() !== '') {
+      parts.push({ label: 'Asal Daerah', val: localSantri.asal.trim() });
+    }
+
+    const stringParts = [
+      localSantri.alamat?.trim(),
+      rtRw,
+      localSantri.desa?.trim() ? `Desa ${localSantri.desa.trim()}` : '',
+      localSantri.kecamatan?.trim() ? `Kec. ${localSantri.kecamatan.trim()}` : '',
+      localSantri.kabupaten?.trim() ? `Kab. ${localSantri.kabupaten.trim()}` : '',
+      localSantri.provinsi?.trim()
+    ].filter(Boolean);
+
+    const fullText = stringParts.length > 0 
+      ? stringParts.join(', ') 
+      : (localSantri.asal || 'Belum ada data alamat lengkap');
+
+    return { text: fullText, parts };
+  }, [localSantri]);
+
   const handleUploadPasFoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!localSantri) return;
     if (e.target.files && e.target.files[0]) {
@@ -686,16 +734,17 @@ export default function SantriDetailModal({
   };
 
   const modalContent = (
-    <AnimatePresence>
+    <>
       <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-4">
         {/* Backdrop click handler */}
         <div className="absolute inset-0" onClick={onClose} />
 
-        <motion.div
-          initial={{ opacity: 0, scale: 0.98 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.98 }}
-          transition={{ duration: 0.05, ease: 'linear' }}
+      <motion.div
+        key="santri-detail-main-dialog"
+        initial={{ opacity: 0, scale: 0.98 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.98 }}
+        transition={{ duration: 0.05, ease: 'linear' }}
           className="relative flex flex-col w-full max-w-2xl h-[85vh] bg-[#e6ecea] rounded-[24px] shadow-2xl overflow-hidden border border-slate-200"
         >
           {/* Header Card (White Segment exactly like image) */}
@@ -771,11 +820,14 @@ export default function SantriDetailModal({
                 </h2>
 
                 {/* NIS & Address */}
-                <p className="text-[11px] sm:text-xs text-slate-500 font-medium mt-1 truncate flex items-center gap-2">
+                <div className="text-[11px] sm:text-xs text-slate-500 font-medium mt-1 flex items-center gap-2 flex-wrap">
                   <span className="font-mono text-slate-700 font-extrabold bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">NIS: {localSantri.nis}</span>
                   <span className="text-slate-400">•</span>
-                  <span className="text-slate-600 truncate">{getAddressStr()}</span>
-                </p>
+                  <span className="flex items-center gap-1 text-slate-600">
+                    <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 inline" />
+                    <span className="truncate max-w-[220px] sm:max-w-[340px]">{getAddressStr()}</span>
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -901,7 +953,7 @@ export default function SantriDetailModal({
                         { label: 'Pekerjaan', val: localSantri.pekerjaanAyah || '-' },
                         { label: 'Pendidikan', val: localSantri.pendidikanAyah || '-' },
                       ].map((item, idx) => (
-                        <div key={idx} className="bg-white px-3 py-2 rounded-xl shadow-2xs border border-slate-100 flex items-center justify-between gap-2 text-xs">
+                        <div key={`ayah-${item.label}-${idx}`} className="bg-white px-3 py-2 rounded-xl shadow-2xs border border-slate-100 flex items-center justify-between gap-2 text-xs">
                           <span className="font-bold text-slate-500">{item.label}</span>
                           <span className="bg-[#ffe4a0] text-slate-900 font-extrabold px-2 py-0.5 rounded-md text-right truncate max-w-[140px]">
                             {item.val}
@@ -921,7 +973,7 @@ export default function SantriDetailModal({
                         { label: 'Pekerjaan', val: localSantri.pekerjaanIbu || '-' },
                         { label: 'Pendidikan', val: localSantri.pendidikanIbu || '-' },
                       ].map((item, idx) => (
-                        <div key={idx} className="bg-white px-3 py-2 rounded-xl shadow-2xs border border-slate-100 flex items-center justify-between gap-2 text-xs">
+                        <div key={`ibu-${item.label}-${idx}`} className="bg-white px-3 py-2 rounded-xl shadow-2xs border border-slate-100 flex items-center justify-between gap-2 text-xs">
                           <span className="font-bold text-slate-500">{item.label}</span>
                           <span className="bg-[#ffe4a0] text-slate-900 font-extrabold px-2 py-0.5 rounded-md text-right truncate max-w-[140px]">
                             {item.val}
@@ -940,21 +992,26 @@ export default function SantriDetailModal({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {/* Column 1: Detail Alamat */}
                     <div className="bg-white/80 p-3.5 rounded-2xl border border-slate-100/80 space-y-2">
-                      <p className="font-extrabold text-xs text-emerald-900 border-b border-slate-100 pb-1 mb-2">
+                      <p className="font-extrabold text-xs text-emerald-900 border-b border-slate-100 pb-1 mb-2 flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-emerald-700" />
                         Alamat Domisili Asal
                       </p>
-                      <div className="bg-white p-2.5 rounded-xl border border-slate-100 mb-2">
-                        <span className="text-[10px] text-slate-400 font-bold uppercase block">Alamat Lengkap</span>
-                        <span className="font-bold text-slate-800 text-xs block mt-0.5">{localSantri.alamat || '-'}</span>
+
+                      <div className="bg-white px-3 py-2 rounded-xl shadow-2xs border border-slate-100 flex flex-col gap-0.5 text-xs mb-2">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase">Alamat Lengkap</span>
+                        <p className="font-bold text-slate-800 text-xs leading-relaxed">
+                          {localSantri.alamat || fullAddressDetails.text || '-'}
+                        </p>
                       </div>
+
                       {[
                         { label: 'RT / RW', val: `RT ${localSantri.rt || '-'} / RW ${localSantri.rw || '-'}` },
                         { label: 'Desa / Kec', val: `${localSantri.desa || '-'}${localSantri.kecamatan ? `, ${localSantri.kecamatan}` : ''}` },
                         { label: 'Kab / Prov', val: `${localSantri.kabupaten || '-'}${localSantri.provinsi ? `, ${localSantri.provinsi}` : ''}` },
                       ].map((item, idx) => (
-                        <div key={idx} className="bg-white px-3 py-2 rounded-xl shadow-2xs border border-slate-100 flex items-center justify-between gap-2 text-xs">
+                        <div key={`domisili-${item.label}-${idx}`} className="bg-white px-3 py-2 rounded-xl shadow-2xs border border-slate-100 flex items-center justify-between gap-2 text-xs">
                           <span className="font-bold text-slate-500">{item.label}</span>
-                          <span className="bg-[#ffe4a0] text-slate-900 font-extrabold px-2 py-0.5 rounded-md text-right truncate max-w-[140px]">
+                          <span className="bg-[#ffe4a0] text-slate-900 font-extrabold px-2 py-0.5 rounded-md text-right truncate max-w-[150px]">
                             {item.val}
                           </span>
                         </div>
@@ -972,7 +1029,7 @@ export default function SantriDetailModal({
                         { label: 'Hubungan Wali', val: localSantri.hubunganWali || '-' },
                         { label: 'Jarak Rumah', val: localSantri.jarakRumah && localSantri.jarakRumah !== 0 ? `${localSantri.jarakRumah} km` : '-' },
                       ].map((item, idx) => (
-                        <div key={idx} className="bg-white px-3 py-2 rounded-xl shadow-2xs border border-slate-100 flex items-center justify-between gap-2 text-xs">
+                        <div key={`wali-${item.label}-${idx}`} className="bg-white px-3 py-2 rounded-xl shadow-2xs border border-slate-100 flex items-center justify-between gap-2 text-xs">
                           <span className="font-bold text-slate-500">{item.label}</span>
                           <span className="bg-[#ffe4a0] text-slate-900 font-extrabold px-2 py-0.5 rounded-md text-right truncate max-w-[140px]">
                             {item.val}
@@ -1037,7 +1094,7 @@ export default function SantriDetailModal({
                       const smartFileName = `${file.defaultName}_${(localSantri.nama || 'santri').replace(/\s+/g, '_')}.${ext}`;
 
                       return (
-                        <div key={i} className="flex items-center justify-between p-3 sm:p-3.5 rounded-2xl bg-white border border-slate-200/80 shadow-2xs hover:border-slate-300 transition-all gap-3">
+                        <div key={`dokumen-${file.key}-${i}`} className="flex items-center justify-between p-3 sm:p-3.5 rounded-2xl bg-white border border-slate-200/80 shadow-2xs hover:border-slate-300 transition-all gap-3">
                           <div className="flex items-center gap-3 min-w-0 flex-1">
                             <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-slate-50 border border-slate-200/70 flex items-center justify-center shrink-0 text-slate-600">
                               <file.icon className="h-4 w-4 sm:h-5 sm:w-5" />
@@ -1252,7 +1309,7 @@ export default function SantriDetailModal({
                               const computedYear = parseTanggalMasukToYear(rawDate || '2024');
 
                               return (
-                                <tr key={item.lembagaId || idx} className="hover:bg-slate-50/80 transition-colors">
+                                <tr key={`academic-placement-${item.lembagaId || item.lembagaNama || 'lem'}-${idx}`} className="hover:bg-slate-50/80 transition-colors">
                                   {/* 1. NO */}
                                   <td className="py-3 px-3 text-center font-bold text-slate-400 border-r border-slate-100">
                                     {idx + 1}
@@ -1392,7 +1449,7 @@ export default function SantriDetailModal({
                               const computedYear = parseTanggalMasukToYear(rawDate || '2024');
 
                               return (
-                                <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+                                <tr key={`default-jenjang-${item.id}-${idx}`} className="hover:bg-slate-50/80 transition-colors">
                                   <td className="py-3 px-3 text-center font-bold text-slate-400 border-r border-slate-100">
                                     {idx + 1}
                                   </td>
@@ -1457,7 +1514,7 @@ export default function SantriDetailModal({
                       {academicClasses.length > 0 ? (
                         academicClasses.map((cls, idx) => (
                           <div 
-                            key={idx} 
+                            key={`academic-class-${cls.lembaga}-${cls.kelas}-${idx}`} 
                             className="bg-white px-4 py-2.5 rounded-2xl shadow-xs border border-slate-100 flex items-center justify-between gap-3 text-xs"
                           >
                             <div className="flex items-center gap-2 min-w-0">
@@ -1507,7 +1564,7 @@ export default function SantriDetailModal({
                       {academicRombels.length > 0 ? (
                         academicRombels.map((rom, idx) => (
                           <div 
-                            key={idx} 
+                            key={`academic-rombel-${rom.groupId || rom.category}-${rom.group}-${idx}`} 
                             className="bg-white px-4 py-2.5 rounded-2xl shadow-xs border border-slate-100 flex items-center justify-between gap-3 text-xs"
                           >
                             <div className="min-w-0">
@@ -1566,7 +1623,7 @@ export default function SantriDetailModal({
                       { label: 'STATUS KEANGGOTAAN', val: localSantri.statusKeanggotaan || 'Aktif' }
                     ].map((item, idx) => (
                       <div 
-                        key={idx} 
+                        key={`academic-summary-${item.label}-${idx}`} 
                         className="bg-white px-3.5 py-2.5 rounded-xl shadow-xs border border-slate-100 flex flex-col justify-between gap-1 text-xs"
                       >
                         <span className="font-extrabold text-slate-400 text-[10px] uppercase tracking-wider">
@@ -1764,7 +1821,13 @@ export default function SantriDetailModal({
       {/* Photo & Document Preview Overlay */}
       <AnimatePresence>
         {(previewDoc || previewPhotoUrl) && (
-          <div className="fixed inset-0 z-[1000005] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-5">
+          <motion.div 
+            key="doc-preview-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[1000005] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-5"
+          >
             <div className="absolute inset-0" onClick={() => { setPreviewPhotoUrl(null); setPreviewDoc(null); }} />
             <motion.div
               initial={{ scale: 0.98, opacity: 0 }}
@@ -1858,7 +1921,7 @@ export default function SantriDetailModal({
                 </button>
               </div>
             </motion.div>
-          </div>
+          </motion.div>
         )}
       </AnimatePresence>
 
@@ -1866,6 +1929,7 @@ export default function SantriDetailModal({
       <AnimatePresence>
         {isPhotoPreviewOpen && isCustomPasFoto(localSantri.filePasFoto) && (
           <motion.div
+            key="photo-preview-fullscreen"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -1933,7 +1997,8 @@ export default function SantriDetailModal({
           </motion.div>
         )}
       </AnimatePresence>
-    </AnimatePresence>
+
+    </>
   );
 
   return typeof document !== 'undefined' ? createPortal(modalContent, document.body) : null;

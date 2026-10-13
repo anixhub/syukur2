@@ -1509,7 +1509,7 @@ export default function RombelSub({
                             const isStudentSelected = selectedStudentIds.includes(s.id);
                             return (
                               <div
-                                key={`desktop-mem-${s.id}`}
+                                key={`desktop-mem-${s.id}-${idx}`}
                                 onClick={() => {
                                   if (selectedStudentIds.length > 0) {
                                     setSelectedStudentIds(prev =>
@@ -1939,7 +1939,7 @@ export default function RombelSub({
                         const isStudentSelected = selectedStudentIds.includes(s.id);
                         return (
                           <div
-                            key={`mobile-drawer-mem-${s.id}`}
+                            key={`mobile-drawer-mem-${s.id}-${idx}`}
                             onClick={() => {
                               if (selectedStudentIds.length > 0) {
                                 setSelectedStudentIds(prev =>
@@ -2590,7 +2590,7 @@ export default function RombelSub({
                                 </div>
 
                                 {/* Section Items */}
-                                {!isCollapsed && visibleItems.map(s => {
+                                {!isCollapsed && visibleItems.map((s, idx) => {
                                   const isChecked = selectedModalStudentIds.includes(s.id);
                                   const isAssignedToOtherGroupInCat = assignmentsList.some(a => a.santriId === s.id && a.kategoriId === selectedCategoryId && a.kelompokId !== activeGroupForDetail.id);
                                   
@@ -2605,7 +2605,7 @@ export default function RombelSub({
 
                                   return (
                                     <div
-                                      key={`eligible-${s.id}`}
+                                      key={`eligible-${s.id}-${idx}`}
                                       onClick={() => {
                                         setSelectedModalStudentIds(prev =>
                                           prev.includes(s.id) ? prev.filter(id => id !== s.id) : [...prev, s.id]
