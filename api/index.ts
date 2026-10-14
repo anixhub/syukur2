@@ -722,9 +722,23 @@ app.post("/api/upload-raw", (req, res) => {
     const targetFilePath = path.join(targetDir, uniqueFileName);
     const writeStream = fs.createWriteStream(targetFilePath);
 
-    req.pipe(writeStream);
+    req.on('error', (err) => {
+      console.error("upload-raw req error:", err);
+      writeStream.destroy(err);
+      if (!res.headersSent) {
+        res.status(500).json({ success: false, error: err.message });
+      }
+    });
+
+    writeStream.on('error', (err) => {
+      console.error("upload-raw stream error:", err);
+      if (!res.headersSent) {
+        res.status(500).json({ success: false, error: err.message });
+      }
+    });
 
     writeStream.on('finish', () => {
+      if (res.headersSent) return;
       const publicUrl = `/api/uploads/${subFolder}/${uniqueFileName}`;
       
       // Async background mirror to dist/uploads and public/uploads
@@ -747,10 +761,7 @@ app.post("/api/upload-raw", (req, res) => {
       });
     });
 
-    writeStream.on('error', (err) => {
-      console.error("upload-raw stream error:", err);
-      res.status(500).json({ success: false, error: err.message });
-    });
+    req.pipe(writeStream);
   } catch (err: any) {
     console.error("upload-raw handler error:", err);
     res.status(500).json({ success: false, error: err.message });
@@ -921,12 +932,31 @@ function extractAndCleanFilesFromRecord(record: any) {
 }
 
 function cleanupReplacedFiles(oldRecord: any, newRecord: any) {
-  if (!oldRecord || !newRecord) return;
-  const oldUrls = collectFileUrls(oldRecord);
-  const newUrls = collectFileUrls(newRecord);
-  for (const url of oldUrls) {
-    if (!newUrls.has(url)) {
-      deleteFileByUrlOrPath(url);
+  if (!oldRecord || !newRecord || typeof oldRecord !== 'object' || typeof newRecord !== 'object') return;
+  
+  // NEVER delete files on partial updates.
+  // Only if an explicit file attribute key (e.g. file_kk, file_ktp, logo, avatar_url)
+  // is provided in newRecord with a different non-empty URL, clean up the previous file.
+  const fileKeys = [
+    'file_kk', 'file_ktp', 'file_akta', 'file_ijazah', 'file_pas_foto',
+    'fileKk', 'fileKtp', 'fileAkta', 'fileIjazah', 'filePasFoto',
+    'logo', 'logo_url', 'avatar_url', 'avatarUrl', 'lampiran', 'attachment'
+  ];
+
+  for (const k of fileKeys) {
+    if (Object.prototype.hasOwnProperty.call(newRecord, k)) {
+      const oldVal = oldRecord[k];
+      const newVal = newRecord[k];
+      if (
+        typeof oldVal === 'string' &&
+        typeof newVal === 'string' &&
+        oldVal.trim() !== '' &&
+        newVal.trim() !== '' &&
+        oldVal.trim() !== newVal.trim() &&
+        (oldVal.includes('/uploads/') || oldVal.includes('/api/uploads/'))
+      ) {
+        deleteFileByUrlOrPath(oldVal);
+      }
     }
   }
 }

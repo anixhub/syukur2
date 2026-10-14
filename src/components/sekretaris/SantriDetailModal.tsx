@@ -203,6 +203,8 @@ export default function SantriDetailModal({
 }: SantriDetailModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>('biodata');
   const [localSantri, setLocalSantri] = useState<Santri | null>(selectedSantri);
+  const localSantriRef = React.useRef<Santri | null>(selectedSantri);
+  localSantriRef.current = localSantri;
   const [isUploadingPasFoto, setIsUploadingPasFoto] = useState(false);
   const [isUploadingDoc, setIsUploadingDoc] = useState<Record<string, boolean>>({});
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
@@ -337,10 +339,11 @@ export default function SantriDetailModal({
   }, []);
 
   const handleUploadDoc = async (fileKey: string, file: File) => {
-    if (!localSantri) return;
+    const currentBase = localSantriRef.current || localSantri;
+    if (!currentBase) return;
     setIsUploadingDoc(prev => ({ ...prev, [fileKey]: true }));
     try {
-      const oldUrl = (localSantri as any)[fileKey];
+      const oldUrl = (currentBase as any)[fileKey];
       const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
       
       // High-speed direct binary stream upload (0ms Base64 overhead)
@@ -351,18 +354,24 @@ export default function SantriDetailModal({
         const { originalUrl } = await processUploadedFile(file);
         publicUrl = await uploadFileToStorage(originalUrl, file.name, fileKey);
       }
+
+      if (!publicUrl) {
+        throw new Error("Server tidak mengembalikan URL berkas yang diunggah.");
+      }
       
-      // Optimistic instant state update for immediate UI feedback
-      const updated = { ...localSantri, [fileKey]: publicUrl };
+      // Merge with latest state snapshot from localSantriRef to prevent race conditions when uploading multiple documents
+      const latest = localSantriRef.current || currentBase;
+      const updated = { ...latest, [fileKey]: publicUrl };
+      localSantriRef.current = updated;
       setLocalSantri(updated);
       onUpdateSantri?.(updated);
 
-      // Persist to database in background
-      updateTableRow<Santri>('santri', 'smartsantri_santriList', localSantri.id, {
+      // Persist to database
+      await updateTableRow<Santri>('santri', 'smartsantri_santriList', latest.id, {
         [fileKey]: publicUrl
       }).catch(err => console.warn("Background db update failed:", err));
 
-      // Auto-cleanup old file from storage if replaced
+      // Auto-cleanup old file from storage only if replaced with a different file
       if (oldUrl && oldUrl !== publicUrl && oldUrl.includes('/uploads/')) {
         deleteFileFromStorage(oldUrl).catch(() => {});
       }
@@ -375,21 +384,25 @@ export default function SantriDetailModal({
   };
 
   const handleDeleteDoc = async (fileKey: string, docLabel: string) => {
-    if (!localSantri) return;
-    const oldUrl = (localSantri as any)[fileKey];
+    const current = localSantriRef.current || localSantri;
+    if (!current) return;
+    const oldUrl = (current as any)[fileKey];
     if (!oldUrl) return;
 
-    if (!window.confirm(`Apakah Anda yakin ingin menghapus berkas ${docLabel} santri ${localSantri.nama}?`)) {
+    if (!window.confirm(`Apakah Anda yakin ingin menghapus berkas ${docLabel} santri ${current.nama}?`)) {
       return;
     }
 
     setIsUploadingDoc(prev => ({ ...prev, [fileKey]: true }));
     try {
-      const updated = await updateTableRow<Santri>('santri', 'smartsantri_santriList', localSantri.id, {
-        [fileKey]: ''
-      });
+      const updated = { ...current, [fileKey]: '' };
+      localSantriRef.current = updated;
       setLocalSantri(updated);
       onUpdateSantri?.(updated);
+
+      await updateTableRow<Santri>('santri', 'smartsantri_santriList', current.id, {
+        [fileKey]: ''
+      });
       deleteFileFromStorage(oldUrl).catch(() => {});
     } catch (err: any) {
       console.error(`Gagal menghapus berkas ${fileKey}:`, err);
@@ -402,8 +415,10 @@ export default function SantriDetailModal({
   React.useEffect(() => {
     if (selectedSantri) {
       setLocalSantri(selectedSantri);
+      localSantriRef.current = selectedSantri;
     } else {
       setLocalSantri(null);
+      localSantriRef.current = null;
     }
   }, [selectedSantri]);
 

@@ -1312,6 +1312,14 @@ export default function SantriFormModal({
 
   const handleFormSubmit = (e: React.FormEvent) => {
     if (e) e.preventDefault();
+
+    // Check if any document is currently uploading
+    const isUploadingAny = Object.values(isCompressing).some(Boolean);
+    if (isUploadingAny) {
+      alert("Harap tunggu sebentar, berkas sedang diproses/diunggah ke server...");
+      return;
+    }
+
     const errors: string[] = [];
 
     // Step 1 validation - Nama Lengkap & Jenis Kelamin wajib
@@ -1512,11 +1520,11 @@ export default function SantriFormModal({
       catatan: form.catatan || undefined,
       pendidikanTerakhir: form.pendidikanTerakhir,
 
-      fileKk: form.fileKk || undefined,
-      fileKtp: form.fileKtp || undefined,
-      fileAkta: form.fileAkta || undefined,
-      fileIjazah: form.fileIjazah || undefined,
-      filePasFoto: form.filePasFoto || '',
+      fileKk: form.fileKk || (editingSantri ? editingSantri.fileKk : '') || '',
+      fileKtp: form.fileKtp || (editingSantri ? editingSantri.fileKtp : '') || '',
+      fileAkta: form.fileAkta || (editingSantri ? editingSantri.fileAkta : '') || '',
+      fileIjazah: form.fileIjazah || (editingSantri ? editingSantri.fileIjazah : '') || '',
+      filePasFoto: form.filePasFoto || (editingSantri ? editingSantri.filePasFoto : '') || '',
       pendidikanInternal: form.pendidikanInternal || undefined,
       pendidikanFormal: formalStr
     };
@@ -2822,10 +2830,24 @@ export default function SantriFormModal({
                       <button
                         type="button"
                         onClick={handleFormSubmit}
-                        className="inline-flex items-center gap-1.5 rounded-full bg-emerald-800 px-6 py-2 text-xs font-bold text-white hover:bg-emerald-900 transition-all shadow-md active:scale-95 cursor-pointer"
+                        disabled={Object.values(isCompressing).some(Boolean)}
+                        className={`inline-flex items-center gap-1.5 rounded-full px-6 py-2 text-xs font-bold text-white transition-all shadow-md active:scale-95 ${
+                          Object.values(isCompressing).some(Boolean)
+                            ? 'bg-emerald-600 opacity-60 cursor-not-allowed'
+                            : 'bg-emerald-800 hover:bg-emerald-900 cursor-pointer'
+                        }`}
                       >
-                        <UserPlus className="h-4 w-4" />
-                        Simpan
+                        {Object.values(isCompressing).some(Boolean) ? (
+                          <>
+                            <div className="h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            <span>Menyimpan Berkas...</span>
+                          </>
+                        ) : (
+                          <>
+                            <UserPlus className="h-4 w-4" />
+                            <span>Simpan</span>
+                          </>
+                        )}
                       </button>
                     )}
                   </div>
@@ -2861,11 +2883,25 @@ export default function SantriFormModal({
                   <button
                     type="button"
                     onClick={handleFormSubmit}
-                    className="flex-1 h-10 inline-flex items-center justify-center gap-1.5 rounded-full bg-emerald-800 text-xs font-bold text-white hover:bg-emerald-900 shadow-md active:scale-95 transition-all cursor-pointer"
+                    disabled={Object.values(isCompressing).some(Boolean)}
+                    className={`flex-1 h-10 inline-flex items-center justify-center gap-1.5 rounded-full text-xs font-bold text-white shadow-md active:scale-95 transition-all ${
+                      Object.values(isCompressing).some(Boolean)
+                        ? 'bg-emerald-600 opacity-60 cursor-not-allowed'
+                        : 'bg-emerald-800 hover:bg-emerald-900 cursor-pointer'
+                    }`}
                     title="Simpan Data Santri"
                   >
-                    <UserPlus className="h-4 w-4" />
-                    Simpan
+                    {Object.values(isCompressing).some(Boolean) ? (
+                      <>
+                        <div className="h-3 w-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        <span>Menyimpan...</span>
+                      </>
+                    ) : (
+                      <>
+                        <UserPlus className="h-4 w-4" />
+                        <span>Simpan</span>
+                      </>
+                    )}
                   </button>
                 </div>
 
