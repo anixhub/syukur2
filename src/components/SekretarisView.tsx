@@ -533,15 +533,30 @@ export default function SekretarisView({
     // Ambil kolom yang persis sesuai dengan tampilan tabel saat ini
     const activeColumns = getActiveTableExportColumns();
 
+    // Jika fitur pilih aktif dan ada santri yang dipilih, hanya ekspor data santri yang dipilih
+    const isExportingSelected = isSelectionMode && selectedSantriIds.length > 0;
+    const targetSantriList = isExportingSelected
+      ? [
+          ...sortedSantri.filter(s => selectedSantriIds.includes(s.id)),
+          ...santriList.filter(s => selectedSantriIds.includes(s.id) && !sortedSantri.some(ss => ss.id === s.id))
+        ]
+      : sortedSantri;
+
     const headers = ['No', ...activeColumns.map(col => col.label)];
-    const rows = sortedSantri.map((s, idx) => [String(idx + 1), ...activeColumns.map(col => col.getValue(s))]);
+    const rows = targetSantriList.map((s, idx) => [String(idx + 1), ...activeColumns.map(col => col.getValue(s))]);
 
     const dateStr = new Date().toISOString().split('T')[0];
-    const defaultName = `Data_Santri_${dateStr}.xls`;
+    const defaultName = isExportingSelected
+      ? `Data_Santri_Terpilih_${targetSantriList.length}_${dateStr}.xls`
+      : `Data_Santri_${dateStr}.xls`;
     const finalName = customFileName
       ? (customFileName.toLowerCase().endsWith('.xls') || customFileName.toLowerCase().endsWith('.xlsx') ? customFileName : `${customFileName}.xls`)
       : defaultName;
-    handleExportExcelXML(finalName, 'Data Santri', headers, rows);
+    const sheetTitle = isExportingSelected
+      ? `Santri Terpilih (${targetSantriList.length})`
+      : 'Data Santri';
+
+    handleExportExcelXML(finalName, sheetTitle, headers, rows);
   };
 
 
@@ -1069,7 +1084,16 @@ export default function SekretarisView({
   };
 
   const handlePrintPDFSantri = (customFileName?: string) => {
-    printBulkSantri(sortedSantri, customFileName);
+    // Jika fitur pilih aktif dan ada santri yang dipilih, hanya cetak data santri yang dipilih
+    const isExportingSelected = isSelectionMode && selectedSantriIds.length > 0;
+    const targetSantriList = isExportingSelected
+      ? [
+          ...sortedSantri.filter(s => selectedSantriIds.includes(s.id)),
+          ...santriList.filter(s => selectedSantriIds.includes(s.id) && !sortedSantri.some(ss => ss.id === s.id))
+        ]
+      : sortedSantri;
+
+    printBulkSantri(targetSantriList, customFileName);
   };
 
   // (States moved to top of component)
@@ -1504,32 +1528,26 @@ export default function SekretarisView({
                   <span>Data Induk</span>
                   <span 
                     onClick={() => {
-                      if (isSelectionMode || allowedGenders.length <= 1) return;
+                      if (allowedGenders.length <= 1) return;
                       const currentIndex = allowedGenders.indexOf(genderFilter as any);
                       const nextIndex = (currentIndex + 1) % allowedGenders.length;
                       setGenderFilter(allowedGenders[nextIndex] as any);
                     }}
                     className={`inline-flex items-center gap-1.5 transition-all duration-200 select-none ${
-                      isSelectionMode || allowedGenders.length <= 1
-                        ? 'opacity-80 cursor-not-allowed text-slate-500'
+                      allowedGenders.length <= 1
+                        ? 'opacity-80 cursor-default text-slate-500'
                         : 'cursor-pointer active:scale-95'
                     } ${
-                      !isSelectionMode && allowedGenders.length > 1 && genderFilter === 'semua' 
+                      allowedGenders.length > 1 && genderFilter === 'semua' 
                         ? 'text-emerald-600 hover:text-emerald-700' 
-                        : !isSelectionMode && allowedGenders.length > 1 && genderFilter === 'Putra' 
+                        : allowedGenders.length > 1 && genderFilter === 'Putra' 
                         ? 'text-indigo-600 hover:text-indigo-700' 
-                        : !isSelectionMode && allowedGenders.length > 1 && genderFilter === 'Putri'
+                        : allowedGenders.length > 1 && genderFilter === 'Putri'
                         ? 'text-rose-600 hover:text-rose-700'
-                        : genderFilter === 'Putra'
-                        ? 'text-indigo-600'
-                        : genderFilter === 'Putri'
-                        ? 'text-rose-600'
-                        : 'text-emerald-600'
+                        : 'text-slate-700 hover:text-slate-800'
                     }`}
                     title={
-                      isSelectionMode 
-                        ? "Matikan mode pilih untuk mengubah gender" 
-                        : allowedGenders.length <= 1
+                      allowedGenders.length <= 1
                         ? "Akses filter gender dikunci untuk peran Anda"
                         : "Klik untuk mengubah filter gender (Semua ⇄ Putra ⇄ Putri)"
                     }
@@ -1589,11 +1607,30 @@ export default function SekretarisView({
                 {/* Tombol Ekspor (rounded-full) */}
                 <button
                   id="btn-export-trigger"
-                  onClick={() => setIsExportModalOpen(true)}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600 hover:bg-emerald-50 hover:text-emerald-800 transition-all shadow-xs cursor-pointer hover:scale-105 active:scale-95"
-                  title="Ekspor Data"
+                  onClick={() => {
+                    if (isSelectionMode && selectedSantriIds.length === 0) {
+                      alert("Fitur pilih sedang aktif. Silakan centang atau pilih data santri yang ingin diekspor, atau nonaktifkan fitur pilih untuk mengekspor semua data.");
+                      return;
+                    }
+                    setIsExportModalOpen(true);
+                  }}
+                  className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all shadow-xs cursor-pointer hover:scale-105 active:scale-95 ${
+                    isSelectionMode && selectedSantriIds.length > 0
+                      ? 'bg-emerald-600 text-white ring-2 ring-emerald-300 shadow-md'
+                      : 'bg-slate-100 text-slate-600 hover:bg-emerald-50 hover:text-emerald-800'
+                  }`}
+                  title={
+                    isSelectionMode && selectedSantriIds.length > 0
+                      ? `Ekspor ${selectedSantriIds.length} Santri Terpilih`
+                      : 'Ekspor Data'
+                  }
                 >
                   <Download className="h-5 w-5" />
+                  {isSelectionMode && selectedSantriIds.length > 0 && (
+                    <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-rose-500 text-[9px] font-extrabold text-white shadow-xs">
+                      {selectedSantriIds.length}
+                    </span>
+                  )}
                 </button>
 
                 {/* Tambah Santri Mobile Button (rounded-full) */}
@@ -1952,9 +1989,7 @@ export default function SekretarisView({
                 id="btn-filter-toggle"
                 type="button"
                 onClick={() => setShowFilters(true)}
-                className={`relative h-11 w-11 shrink-0 items-center justify-center rounded-full border transition-all shadow-2xs cursor-pointer active:scale-95 ${
-                  isSelectionMode ? 'hidden' : 'flex'
-                } ${
+                className={`relative h-11 w-11 shrink-0 flex items-center justify-center rounded-full border transition-all shadow-2xs cursor-pointer active:scale-95 ${
                   totalActiveFilterCount > 0
                     ? 'border-emerald-300 bg-emerald-50 text-emerald-800 font-bold'
                     : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900'
@@ -1975,9 +2010,7 @@ export default function SekretarisView({
                   id="btn-column-visibility-modal-trigger"
                   type="button"
                   onClick={() => setIsColumnModalOpen(true)}
-                  className={`h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-emerald-50 hover:text-emerald-800 transition-all shadow-2xs cursor-pointer active:scale-95 ${
-                    isSelectionMode ? 'hidden' : 'flex'
-                  }`}
+                  className="h-11 w-11 shrink-0 flex items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-emerald-50 hover:text-emerald-800 transition-all shadow-2xs cursor-pointer active:scale-95"
                   title="Atur Visibilitas Kolom"
                 >
                   <SlidersHorizontal className="h-5 w-5 text-current" />
@@ -1986,7 +2019,7 @@ export default function SekretarisView({
 
               {/* Mobile Sort Button (Santri subtab - Hanya Tampil di Mode Tampilan Kartu) */}
               {subTab === 'santri' && viewMode === 'card' && (
-                <div className={`relative shrink-0 sm:hidden ${isSelectionMode ? 'hidden' : 'block'}`}>
+                <div className="relative shrink-0 sm:hidden block">
                   <button
                     id="btn-sort-card-toggle-mobile"
                     type="button"
@@ -2070,7 +2103,7 @@ export default function SekretarisView({
 
             {/* Sort Button (Hanya Tampil di Mode Tampilan Kartu) */}
             {subTab === 'santri' && viewMode === 'card' && (
-              <div className={`relative shrink-0 ${isSelectionMode ? 'hidden sm:block' : 'block'}`}>
+              <div className="relative shrink-0 block">
                 <button
                   id="btn-sort-card-toggle"
                   type="button"
@@ -2434,7 +2467,22 @@ export default function SekretarisView({
         isOpen={isExportModalOpen}
         onClose={() => setIsExportModalOpen(false)}
         subTab={subTab as any}
-        defaultFileName={`Data_Santri_${new Date().toISOString().split('T')[0]}`}
+        selectedCount={isSelectionMode && selectedSantriIds.length > 0 ? selectedSantriIds.length : undefined}
+        title={
+          isSelectionMode && selectedSantriIds.length > 0
+            ? `Ekspor ${selectedSantriIds.length} Data Santri Terpilih`
+            : undefined
+        }
+        description={
+          isSelectionMode && selectedSantriIds.length > 0
+            ? `Pilih format dokumen yang Anda butuhkan untuk mengunduh atau mencetak ${selectedSantriIds.length} data santri terpilih.`
+            : undefined
+        }
+        defaultFileName={
+          isSelectionMode && selectedSantriIds.length > 0
+            ? `Data_Santri_Terpilih_${selectedSantriIds.length}_${new Date().toISOString().split('T')[0]}`
+            : `Data_Santri_${new Date().toISOString().split('T')[0]}`
+        }
         onExportExcel={(fileName) => {
           handleExportExcelSantri(fileName);
         }}
@@ -2742,6 +2790,23 @@ export default function SekretarisView({
               >
                 <Printer className="h-3.5 w-3.5" />
                 <span>Print Masal</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedSantriIds.length === 0) {
+                    alert("Silakan pilih minimal 1 santri untuk diekspor.");
+                    return;
+                  }
+                  setIsExportModalOpen(true);
+                }}
+                disabled={selectedSantriIds.length === 0}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all disabled:opacity-40 disabled:pointer-events-none cursor-pointer border-none"
+                title="Ekspor Santri Terpilih"
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span>Ekspor</span>
               </button>
 
               {canBulkWrite && (

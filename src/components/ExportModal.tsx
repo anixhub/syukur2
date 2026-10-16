@@ -9,6 +9,7 @@ interface ExportModalProps {
   subTab?: 'santri' | 'surat' | 'akademik' | 'kamar' | 'rombel' | 'keamanan' | string;
   title?: string;
   description?: string;
+  selectedCount?: number;
   defaultFileName?: string;
   onExportExcel: (fileName: string) => void;
   onPrintPDF: (fileName: string) => void;
@@ -20,6 +21,7 @@ export function ExportModal({
   subTab = 'santri',
   title,
   description,
+  selectedCount,
   defaultFileName,
   onExportExcel,
   onPrintPDF
@@ -177,7 +179,13 @@ export function ExportModal({
             </div>
 
             <div className="mt-5 text-[11px] text-slate-400 text-center border-t border-slate-100 pt-3">
-              * Data yang diekspor disesuaikan dengan hasil pencarian &amp; filter aktif saat ini.
+              {selectedCount && selectedCount > 0 ? (
+                <span className="text-emerald-700 font-bold bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 inline-flex items-center gap-1">
+                  ✓ Mengekspor {selectedCount} data santri terpilih
+                </span>
+              ) : (
+                <span>* Data yang diekspor disesuaikan dengan hasil pencarian &amp; filter aktif saat ini.</span>
+              )}
             </div>
           </motion.div>
         </div>
